@@ -1,0 +1,15 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="24,8 40,16 40,32 24,40 8,32 8,16"
+    fill="white"
+    opacity="0.15"
+  />
+  <polygon
+    points="24,8 40,16 40,32 24,40 8,32 8,16"
+    stroke="white"
+    stroke-width="2.5"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

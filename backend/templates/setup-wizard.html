@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NebulaProxy - Setup Wizard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    :root {
+      --admin-bg: #09090b;
+      --admin-bg-secondary: #111113;
+      --admin-surface: #18181b;
+      --admin-surface-2: #1f1f23;
+      --admin-border: #27272a;
+      --admin-text: #fafafa;
+      --admin-text-muted: #a1a1aa;
+      --admin-primary: #e4e4e7;
+      --admin-primary-strong: #fafafa;
+    }
+
+    body {
+      background:
+        radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
+        radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
+        var(--admin-bg);
+      min-height: 100vh;
+      color: var(--admin-text);
+    }
+
+    .setup-container {
+      background: var(--admin-bg-secondary);
+      border: 1px solid var(--admin-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .setup-header {
+      background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
+      border-radius: 12px 12px 0 0;
+      padding: 2rem;
+      border-bottom: 1px solid var(--admin-border);
+    }
+
+    .step-indicator {
+      display: flex;
+      justify-content: space-between;
+      margin: 2rem 0;
+      position: relative;
+    }
+
+    .step-indicator::before {
+      content: '';
+      position: absolute;
+      top: 20px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--admin-border);
+      z-index: 0;
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid #3f3f46;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 0.5rem;
+      font-weight: 600;
+      color: var(--admin-text-muted);
+      transition: all 0.3s ease;
+    }
+
+    .step.active .step-circle {
+      background: var(--admin-primary);
+      border-color: var(--admin-primary);
+      color: #09090b;
+    }
+
+    .step.completed .step-circle {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: #10B981;
+      color: #10B981;
+    }
+
+    .step-label {
+      font-size: 0.75rem;
+      color: var(--admin-text-muted);
+      font-weight: 400;
+    }
+
+    .step.active .step-label {
+      color: var(--admin-text);
+      font-weight: 500;
+    }
+
+    .step.completed .step-label {
+      color: var(--admin-text-muted);
+    }
+
+    .step-content {
+      display: none;
+    }
+
+    .step-content.active {
+      display: block;
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    .card {
+      background: var(--admin-surface);
+      border: 1px solid var(--admin-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: #3f3f46;
+    }
+
+    .card-selectable {
+      cursor: pointer;
+    }
+
+    .card-selectable.selected {
+      background: var(--admin-surface-2);
+      border-color: var(--admin-primary);
+      box-shadow: 0 0 0 1px rgba(228, 228, 231, 0.15);
+    }
+
+    .input-futuristic {
+      background: #09090b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      padding: 0.625rem 0.875rem;
+      color: #fff;
+      width: 100%;
+      transition: all 0.2s ease;
+      font-size: 0.875rem;
+    }
+
+    .input-futuristic:focus {
+      outline: none;
+      border-color: var(--admin-primary);
+      box-shadow: 0 0 0 3px rgba(228, 228, 231, 0.18);
+    }
+
+    .btn-primary {
+      background: var(--admin-primary);
+      color: #09090b;
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 1px solid var(--admin-primary);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--admin-primary-strong);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--admin-surface-2);
+      color: var(--admin-text);
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--admin-border);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #27272a;
+      border-color: #3f3f46;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .status-success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #10B981;
+    }
+
+    .status-warning {
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      color: #FBbF24;
+    }
+
+    .status-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #EF4444;
+    }
+
+    .status-info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #3B82F6;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hidden { display: none !important; }
+
+    .form-label {
+      color: var(--admin-text-muted);
+      font-size: 0.8125rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .form-hint {
+      color: #71717a;
+      font-size: 0.75rem;
+      margin-top: 0.375rem;
+      display: block;
+    }
+
+    /* Drag and drop overlay */
+    .drag-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(11, 12, 15, 0.95);
+      backdrop-filter: blur(10px);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .drag-overlay.active {
+      display: flex;
+      opacity: 1;
+    }
+
+    .drag-content {
+      text-align: center;
+      padding: 3rem;
+      border: 2px dashed #3f3f46;
+      border-radius: 12px;
+      background: rgba(39, 39, 42, 0.45);
+      max-width: 500px;
+    }
+
+    .drag-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      animation: bounce 1s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Drag & Drop Overlay -->
+  <div class="drag-overlay" id="dragOverlay">
+    <div class="drag-content">
+      <div class="drag-icon">📁</div>
+      <h2 class="text-2xl font-light text-white mb-3">Drop your config file here</h2>
+      <p class="text-white/60 text-sm">
+        Supports .env and .json configuration files
+      </p>
+    </div>
+  </div>
+
+  <div class="min-h-screen py-8 px-4">
+    <div class="max-w-5xl mx-auto">
+      <div class="setup-container">
+        <!-- Header -->
+        <div class="setup-header">
+          <div class="flex items-center justify-center mb-3">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="white" opacity="0.9"/>
+              <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+              <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+            </svg>
+          </div>
+          <h1 class="text-3xl font-light text-white text-center mb-2">NebulaProxy Setup Wizard</h1>
+          <p class="text-white/80 text-center text-sm font-light">Let's configure your proxy in a few simple steps</p>
+        </div>
+
+        <div class="p-8">
+          <!-- Quick Import Banner -->
+          <div class="card mb-6" style="background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.2);">
+            <div class="flex items-start gap-4">
+              <div class="text-3xl">📁</div>
+              <div class="flex-1">
+                <h3 class="text-white font-medium mb-2">Already have a config file?</h3>
+                <p class="text-white/60 text-sm mb-3">
+                  Drag and drop your <code class="px-2 py-1 bg-white/10 rounded text-xs">.env</code> or <code class="px-2 py-1 bg-white/10 rounded text-xs">.json</code> configuration file anywhere on this page to skip the wizard and apply settings instantly.
+                </p>
+                <div class="status-badge status-info">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  Supports .env and .json files
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step Indicator -->
+          <div class="step-indicator">
+            <div class="step active" data-step="1">
+              <div class="step-circle">1</div>
+              <div class="step-label">Database</div>
+            </div>
+            <div class="step" data-step="2">
+              <div class="step-circle">2</div>
+              <div class="step-label">Authentication</div>
+            </div>
+            <div class="step" data-step="3">
+              <div class="step-circle">3</div>
+              <div class="step-label">Services</div>
+            </div>
+            <div class="step" data-step="4">
+              <div class="step-circle">4</div>
+              <div class="step-label">Finalize</div>
+            </div>
+          </div>
+
+          <!-- Step 1: Database -->
+          <div class="step-content active" data-step="1">
+            <h2 class="text-2xl font-light text-white mb-6">💾 Database Configuration</h2>
+
+            <div id="dbDetectionStatus" class="mb-6"></div>
+
+            <div class="card card-selectable" id="dbAutoCard" onclick="selectDbMode('auto')">
+              <div class="flex items-start gap-4">
+                <div class="text-3xl">🚀</div>
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-2">Automatic Setup (Recommended)</h3>
+                  <p class="text-white/60 text-sm mb-3">We'll create and configure a PostgreSQL container for you automatically. No manual setup required.</p>
+                  <div class="status-badge status-success hidden" id="dbAutoStatus">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Ready to create container
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card card-selectable" id="dbManualCard" onclick="selectDbMode('manual')">
+              <div class="flex items-start gap-4">
+                <div class="text-3xl">⚙️</div>
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-2">Manual Configuration</h3>
+                  <p class="text-white/60 text-sm mb-3">Connect to an existing PostgreSQL server with custom credentials.</p>
+                </div>
+              </div>
+            </div>
+
+            <div id="dbManualForm" class="card mt-4 hidden">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="form-label">Host</label>
+                  <input type="text" id="dbHost" class="input-futuristic" value="localhost" placeholder="localhost">
+                </div>
+                <div>
+                  <label class="form-label">Port</label>
+                  <input type="number" id="dbPort" class="input-futuristic" value="5432" placeholder="5432">
+                </div>
+                <div>
+                  <label class="form-label">Database Name</label>
+                  <input type="text" id="dbName" class="input-futuristic" value="nebula_proxy" placeholder="nebula_proxy">
+                </div>
+                <div>
+                  <label class="form-label">Username</label>
+                  <input type="text" id="dbUser" class="input-futuristic" value="nebula" placeholder="nebula">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Password</label>
+                  <input type="password" id="dbPassword" class="input-futuristic" placeholder="Enter database password">
+                </div>
+              </div>
+              <button type="button" class="btn-secondary mt-4" onclick="testDbConnection()">
+                <span class="flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  Test Connection
+                </span>
+              </button>
+              <div id="dbTestResult" class="mt-3"></div>
+            </div>
+          </div>
+
+          <!-- Step 2: Authentication -->
+          <div class="step-content" data-step="2">
+            <h2 class="text-2xl font-light text-white mb-6">🔐 Authentication Method</h2>
+
+            <div id="authDetectionStatus" class="mb-6"></div>
+
+            <div class="card card-selectable" id="authLocalCard" onclick="selectAuthMode('local')">
+              <div class="flex items-start gap-4">
+                <div class="text-3xl">👤</div>
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-2">Local Authentication</h3>
+                  <p class="text-white/60 text-sm mb-3">Use built-in user database. Perfect for small teams or no AD/LDAP infrastructure.</p>
+                  <div class="status-badge status-success">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Always available
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card card-selectable" id="authLdapCard" onclick="selectAuthMode('ldap')">
+              <div class="flex items-start gap-4">
+                <div class="text-3xl">🏢</div>
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-2">LDAP / Active Directory</h3>
+                  <p class="text-white/60 text-sm mb-3">Integrate with your existing LDAP or Active Directory infrastructure for enterprise SSO.</p>
+                  <div id="authLdapStatus"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="authLdapForm" class="card mt-4 hidden">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="form-label">LDAP Host</label>
+                  <input type="text" id="ldapHost" class="input-futuristic" placeholder="ldap.company.com or 10.10.0.1">
+                </div>
+                <div>
+                  <label class="form-label">Port</label>
+                  <input type="number" id="ldapPort" class="input-futuristic" value="389" placeholder="389">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Base DN</label>
+                  <input type="text" id="ldapBaseDN" class="input-futuristic" placeholder="dc=company,dc=com">
+                  <small class="form-hint">Example: dc=company,dc=com</small>
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Bind DN</label>
+                  <input type="text" id="ldapBindDN" class="input-futuristic" placeholder="cn=admin,dc=company,dc=com">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Bind Password</label>
+                  <input type="password" id="ldapBindPassword" class="input-futuristic">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Admin Group (Optional)</label>
+                  <input type="text" id="ldapAdminGroup" class="input-futuristic" placeholder="CN=ProxyAdmins,OU=Groups,DC=company,DC=com">
+                  <small class="form-hint">LDAP group for admin users</small>
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">User Group (Optional)</label>
+                  <input type="text" id="ldapUserGroup" class="input-futuristic" placeholder="CN=ProxyUsers,OU=Groups,DC=company,DC=com">
+                  <small class="form-hint">LDAP group for regular users</small>
+                </div>
+                <div class="col-span-2">
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="ldapRequireGroup" class="w-4 h-4">
+                    <span class="text-white/80 text-sm">Require group membership</span>
+                  </label>
+                  <small class="form-hint">If enabled, users must be in Admin or User group</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Services -->
+          <div class="step-content" data-step="3">
+            <h2 class="text-2xl font-light text-white mb-6">⚙️ Services Configuration</h2>
+
+            <div class="card">
+              <h3 class="text-white font-medium mb-4 flex items-center gap-2">
+                <span class="text-2xl">🔴</span>
+                Redis Configuration
+              </h3>
+              <p class="text-white/60 text-sm mb-4">Redis is required for configuration storage and caching.</p>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="form-label">Host</label>
+                  <input type="text" id="redisHost" class="input-futuristic" value="localhost" placeholder="localhost">
+                </div>
+                <div>
+                  <label class="form-label">Port</label>
+                  <input type="number" id="redisPort" class="input-futuristic" value="6379" placeholder="6379">
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="text-white font-medium mb-4 flex items-center gap-2">
+                <span class="text-2xl">📧</span>
+                SMTP Configuration (Optional)
+              </h3>
+              <p class="text-white/60 text-sm mb-4">Email notifications for alerts and user management.</p>
+
+              <label class="flex items-center gap-2 mb-4 cursor-pointer">
+                <input type="checkbox" id="smtpEnabled" class="w-4 h-4" onchange="toggleSmtpForm()">
+                <span class="text-white/80 text-sm">Enable SMTP</span>
+              </label>
+
+              <div id="smtpForm" class="hidden grid grid-cols-2 gap-4">
+                <div>
+                  <label class="form-label">SMTP Host</label>
+                  <input type="text" id="smtpHost" class="input-futuristic" placeholder="smtp.gmail.com">
+                </div>
+                <div>
+                  <label class="form-label">Port</label>
+                  <input type="number" id="smtpPort" class="input-futuristic" value="587" placeholder="587">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Username</label>
+                  <input type="text" id="smtpUser" class="input-futuristic" placeholder="your_email@gmail.com">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">Password</label>
+                  <input type="password" id="smtpPassword" class="input-futuristic">
+                </div>
+                <div class="col-span-2">
+                  <label class="form-label">From Email</label>
+                  <input type="email" id="smtpFromEmail" class="input-futuristic" placeholder="noreply@yourdomain.com">
+                  <small class="form-hint">Email address to send notifications from</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="text-white font-medium mb-4 flex items-center gap-2">
+                <span class="text-2xl">🔒</span>
+                SSL/ACME Configuration
+              </h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                  <label class="form-label">Admin Email (for Let's Encrypt)</label>
+                  <input type="email" id="acmeEmail" class="input-futuristic" placeholder="admin@yourdomain.com">
+                  <small class="form-hint">Required for SSL certificate notifications</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Finalize -->
+          <div class="step-content" data-step="4">
+            <h2 class="text-2xl font-light text-white mb-6">✅ Review & Finalize</h2>
+
+            <div class="card">
+              <h3 class="text-white font-medium mb-4">Configuration Summary</h3>
+              <div id="configSummary" class="space-y-3 text-sm"></div>
+            </div>
+
+            <div class="card">
+              <h3 class="text-white font-medium mb-4">Advanced Settings</h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                  <label class="form-label">JWT Secret</label>
+                  <input type="password" id="jwtSecret" class="input-futuristic" readonly>
+                  <small class="form-hint">Auto-generated secure token</small>
+                </div>
+                <div>
+                  <label class="form-label">Proxy Port</label>
+                  <input type="number" id="proxyPort" class="input-futuristic" value="80" placeholder="80">
+                </div>
+                <div>
+                  <label class="form-label">API Port</label>
+                  <input type="number" id="apiPort" class="input-futuristic" value="3000" placeholder="3000">
+                </div>
+              </div>
+            </div>
+
+            <div id="finalizeStatus" class="mt-6"></div>
+          </div>
+
+          <!-- Navigation Buttons -->
+          <div class="flex justify-between mt-8 pt-6 border-t border-white/10">
+            <button type="button" class="btn-secondary" id="prevBtn" onclick="previousStep()" disabled>
+              <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                Previous
+              </span>
+            </button>
+            <button type="button" class="btn-primary" id="nextBtn" onclick="nextStep()">
+              <span class="flex items-center gap-2">
+                Next
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+              </span>
+            </button>
+            <button type="button" class="btn-primary hidden" id="finishBtn" onclick="finishSetup()">
+              <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                Finish Setup
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+// Setup Wizard JavaScript
+let currentStep = 1;
+let config = {
+  dbMode: 'auto',
+  authMode: 'local',
+  database: {},
+  auth: {},
+  services: {},
+  advanced: {}
+};
+
+// Initialize on load
+window.addEventListener('DOMContentLoaded', async () => {
+  generateSecrets();
+  await detectDocker();
+  setupDragAndDrop();
+});
+
+// Drag and drop for config file
+function setupDragAndDrop() {
+  const body = document.body;
+  const overlay = document.getElementById('dragOverlay');
+  let dragCounter = 0;
+
+  body.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter++;
+    if (dragCounter === 1) {
+      overlay.classList.add('active');
+    }
+  });
+
+  body.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter === 0) {
+      overlay.classList.remove('active');
+    }
+  });
+
+  body.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  body.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter = 0;
+    overlay.classList.remove('active');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (file.name.endsWith('.env') || file.name.endsWith('.json')) {
+        await handleConfigFileDrop(file);
+      } else {
+        showNotification('Please drop a .env or .json configuration file', 'error');
+      }
+    }
+  });
+}
+
+async function handleConfigFileDrop(file) {
+  try {
+    const text = await file.text();
+    let importedConfig;
+
+    if (file.name.endsWith('.json')) {
+      importedConfig = JSON.parse(text);
+    } else {
+      importedConfig = parseEnvFile(text);
+    }
+
+    if (confirm(`Import configuration from ${file.name}? This will skip the wizard and apply settings directly.`)) {
+      showNotification('Importing configuration...', 'info');
+      await applyAndFinish(importedConfig);
+    }
+  } catch (error) {
+    showNotification(`Failed to import config: ${error.message}`, 'error');
+  }
+}
+
+function parseEnvFile(content) {
+  const config = {};
+  const lines = content.split('\n');
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) return;
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    if (key) config[key] = value;
+  });
+
+  return config;
+}
+
+async function applyAndFinish(importedConfig) {
+  try {
+    const response = await fetch('/api/setup/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(importedConfig)
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      showNotification('Configuration imported successfully! Starting services...', 'success');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    } else {
+      showNotification(`Import failed: ${getSetupErrorMessage(result, 'Unknown import error')}`, 'error');
+    }
+  } catch (error) {
+    showNotification(`Import failed: ${error.message}`, 'error');
+  }
+}
+
+function getSetupErrorMessage(result, fallback = 'Unknown error') {
+  if (Array.isArray(result?.errors) && result.errors.length > 0) {
+    return result.errors.join(', ');
+  }
+
+  if (typeof result?.error === 'string' && result.error.trim()) {
+    return result.error;
+  }
+
+  if (typeof result?.message === 'string' && result.message.trim()) {
+    return result.message;
+  }
+
+  return fallback;
+}
+
+function generateSecrets() {
+  document.getElementById('jwtSecret').value = generateSecret(64);
+}
+
+function generateSecret(length = 64) {
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function detectDocker() {
+  try {
+    const response = await fetch('/api/setup/detect/docker');
+    const data = await response.json();
+
+    const statusDiv = document.getElementById('dbDetectionStatus');
+
+    if (data.available) {
+      statusDiv.innerHTML = `
+        <div class="status-badge status-success">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Docker detected - Automatic setup available
+        </div>
+      `;
+      document.getElementById('dbAutoStatus').classList.remove('hidden');
+      selectDbMode('auto');
+    } else {
+      statusDiv.innerHTML = `
+        <div class="status-badge status-warning">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+          </svg>
+          Docker not available - Manual configuration required
+        </div>
+      `;
+      selectDbMode('manual');
+    }
+  } catch (error) {
+    console.error('Failed to detect Docker:', error);
+  }
+}
+
+function selectDbMode(mode) {
+  config.dbMode = mode;
+
+  const autoCard = document.getElementById('dbAutoCard');
+  const manualCard = document.getElementById('dbManualCard');
+  const manualForm = document.getElementById('dbManualForm');
+
+  autoCard.classList.remove('selected');
+  manualCard.classList.remove('selected');
+
+  if (mode === 'auto') {
+    autoCard.classList.add('selected');
+    manualForm.classList.add('hidden');
+  } else {
+    manualCard.classList.add('selected');
+    manualForm.classList.remove('hidden');
+  }
+}
+
+async function testDbConnection() {
+  const host = document.getElementById('dbHost').value;
+  const port = document.getElementById('dbPort').value;
+  const database = document.getElementById('dbName').value;
+  const user = document.getElementById('dbUser').value;
+  const password = document.getElementById('dbPassword').value;
+
+  const resultDiv = document.getElementById('dbTestResult');
+  resultDiv.innerHTML = '<div class="status-badge status-info"><span class="spinner"></span> Testing connection...</div>';
+
+  try {
+    const response = await fetch('/api/setup/test/postgres', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, port, database, user, password })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      resultDiv.innerHTML = `
+        <div class="status-badge status-success">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Connection successful
+        </div>
+      `;
+    } else {
+      resultDiv.innerHTML = `
+        <div class="status-badge status-error">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Connection failed: ${data.error}
+        </div>
+      `;
+    }
+  } catch (error) {
+    resultDiv.innerHTML = `
+      <div class="status-badge status-error">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        Test failed: ${error.message}
+      </div>
+    `;
+  }
+}
+
+function selectAuthMode(mode) {
+  config.authMode = mode;
+
+  const localCard = document.getElementById('authLocalCard');
+  const ldapCard = document.getElementById('authLdapCard');
+  const ldapForm = document.getElementById('authLdapForm');
+
+  localCard.classList.remove('selected');
+  ldapCard.classList.remove('selected');
+
+  if (mode === 'local') {
+    localCard.classList.add('selected');
+    ldapForm.classList.add('hidden');
+  } else {
+    ldapCard.classList.add('selected');
+    ldapForm.classList.remove('hidden');
+  }
+}
+
+function toggleSmtpForm() {
+  const enabled = document.getElementById('smtpEnabled').checked;
+  const form = document.getElementById('smtpForm');
+
+  if (enabled) {
+    form.classList.remove('hidden');
+  } else {
+    form.classList.add('hidden');
+  }
+}
+
+function nextStep() {
+  if (currentStep < 4) {
+    if (!validateStep(currentStep)) {
+      return;
+    }
+
+    currentStep++;
+    updateStepDisplay();
+
+    if (currentStep === 4) {
+      showConfigSummary();
+    }
+  }
+}
+
+function previousStep() {
+  if (currentStep > 1) {
+    currentStep--;
+    updateStepDisplay();
+  }
+}
+
+function validateStep(step) {
+  if (step === 1) {
+    if (config.dbMode === 'manual') {
+      const host = document.getElementById('dbHost').value;
+      const password = document.getElementById('dbPassword').value;
+
+      if (!host || !password) {
+        showNotification('Please fill in all database fields', 'error');
+        return false;
+      }
+    }
+  }
+
+  if (step === 2) {
+    if (config.authMode === 'ldap') {
+      const host = document.getElementById('ldapHost').value;
+      const baseDN = document.getElementById('ldapBaseDN').value;
+
+      if (!host || !baseDN) {
+        showNotification('Please fill in required LDAP fields', 'error');
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function updateStepDisplay() {
+  document.querySelectorAll('.step').forEach((step, index) => {
+    const stepNum = index + 1;
+    step.classList.remove('active', 'completed');
+
+    if (stepNum < currentStep) {
+      step.classList.add('completed');
+    } else if (stepNum === currentStep) {
+      step.classList.add('active');
+    }
+  });
+
+  document.querySelectorAll('.step-content').forEach((content, index) => {
+    const stepNum = index + 1;
+    content.classList.remove('active');
+
+    if (stepNum === currentStep) {
+      content.classList.add('active');
+    }
+  });
+
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const finishBtn = document.getElementById('finishBtn');
+
+  prevBtn.disabled = currentStep === 1;
+
+  if (currentStep === 4) {
+    nextBtn.classList.add('hidden');
+    finishBtn.classList.remove('hidden');
+  } else {
+    nextBtn.classList.remove('hidden');
+    finishBtn.classList.add('hidden');
+  }
+}
+
+function showConfigSummary() {
+  const summaryDiv = document.getElementById('configSummary');
+  const summary = [];
+
+  if (config.dbMode === 'auto') {
+    summary.push({
+      icon: '💾',
+      label: 'Database',
+      value: 'Automatic PostgreSQL container'
+    });
+  } else {
+    const host = document.getElementById('dbHost').value;
+    const database = document.getElementById('dbName').value;
+    summary.push({
+      icon: '💾',
+      label: 'Database',
+      value: `${host} / ${database}`
+    });
+  }
+
+  summary.push({
+    icon: '🔐',
+    label: 'Authentication',
+    value: config.authMode === 'local' ? 'Local (built-in)' : 'LDAP/Active Directory'
+  });
+
+  const redisHost = document.getElementById('redisHost').value;
+  summary.push({
+    icon: '🔴',
+    label: 'Redis',
+    value: `${redisHost}:${document.getElementById('redisPort').value}`
+  });
+
+  const smtpEnabled = document.getElementById('smtpEnabled').checked;
+  summary.push({
+    icon: '📧',
+    label: 'Email',
+    value: smtpEnabled ? document.getElementById('smtpHost').value : 'Disabled'
+  });
+
+  summaryDiv.innerHTML = summary.map(item => `
+    <div class="flex items-center gap-3 p-3 bg-white/5 rounded">
+      <span class="text-2xl">${item.icon}</span>
+      <div class="flex-1">
+        <div class="text-white/60 text-xs">${item.label}</div>
+        <div class="text-white font-medium">${item.value}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function finishSetup() {
+  const finishBtn = document.getElementById('finishBtn');
+  const statusDiv = document.getElementById('finalizeStatus');
+
+  finishBtn.disabled = true;
+  finishBtn.innerHTML = '<span class="flex items-center gap-2">Setting up<span class="spinner"></span></span>';
+
+  statusDiv.innerHTML = '<div class="status-badge status-info"><span class="spinner"></span> Configuring services...</div>';
+
+  try {
+    const finalConfig = await buildFinalConfig();
+
+    const response = await fetch('/api/setup/finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalConfig)
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      statusDiv.innerHTML = `
+        <div class="status-badge status-success">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Setup completed successfully! Redirecting...
+        </div>
+      `;
+
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    } else {
+      statusDiv.innerHTML = `
+        <div class="status-badge status-error">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Setup failed: ${getSetupErrorMessage(result, 'Unknown setup error')}
+        </div>
+      `;
+
+      finishBtn.disabled = false;
+      finishBtn.innerHTML = '<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Finish Setup</span>';
+    }
+  } catch (error) {
+    statusDiv.innerHTML = `
+      <div class="status-badge status-error">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        Setup failed: ${error.message}
+      </div>
+    `;
+
+    finishBtn.disabled = false;
+    finishBtn.innerHTML = '<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Finish Setup</span>';
+  }
+}
+
+async function buildFinalConfig() {
+  const config = {
+    NODE_ENV: 'production',
+    HOST: '0.0.0.0',
+    PORT: document.getElementById('apiPort').value || '3000',
+    FRONTEND_PORT: '3001',
+    FRONTEND_BUILD_ON_START: 'false',
+    FRONTEND_DIST_PATH: 'frontend/dist',
+
+    JWT_SECRET: document.getElementById('jwtSecret').value,
+    PROXY_CHECK_TOKEN: generateSecret(32),
+    AUTH_MODE: document.getElementById('authLocalCard').classList.contains('selected') ? 'local' : 'ldap',
+
+    DB_MODE: document.getElementById('dbAutoCard').classList.contains('selected') ? 'auto' : 'manual',
+    DB_TYPE: 'postgresql',
+
+    PROXY_ENABLED: 'true',
+    ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:3000,http://localhost:3001',
+    ALLOW_PRIVATE_BACKENDS: 'false',
+
+    HEALTHCHECK_INTERVAL_SECONDS: '5',
+    HEALTHCHECK_CONCURRENCY: '10',
+    HEALTHCHECK_TIMEOUT_MS: '10000',
+    HEALTHCHECK_CLEANUP_EVERY: '100',
+
+    LOG_RETENTION_DAYS: '30',
+    LOG_CLEANUP_INTERVAL_HOURS: '24',
+
+    ACME_EMAIL: document.getElementById('acmeEmail').value,
+
+    VITE_API_BASE_URL: '/api',
+    ALLOW_INSECURE_BACKENDS: 'false',
+  };
+
+  if (config.DB_MODE === 'manual') {
+    config.DB_HOST = document.getElementById('dbHost').value;
+    config.DB_PORT = document.getElementById('dbPort').value || '5432';
+    config.DB_NAME = document.getElementById('dbName').value || 'nebula_proxy';
+    config.DB_USER = document.getElementById('dbUser').value || 'nebula';
+    config.DB_PASSWORD = document.getElementById('dbPassword').value;
+  }
+
+  if (config.AUTH_MODE === 'ldap') {
+    const ldapHost = document.getElementById('ldapHost').value;
+    const ldapPort = document.getElementById('ldapPort').value || '389';
+    config.LDAP_URL = `ldap://${ldapHost}:${ldapPort}`;
+    config.LDAP_BASE_DN = document.getElementById('ldapBaseDN').value;
+    config.LDAP_BIND_DN = document.getElementById('ldapBindDN').value;
+    config.LDAP_BIND_PASSWORD = document.getElementById('ldapBindPassword').value;
+    config.LDAP_ADMIN_GROUP = document.getElementById('ldapAdminGroup')?.value || '';
+    config.LDAP_USER_GROUP = document.getElementById('ldapUserGroup')?.value || '';
+    config.LDAP_REQUIRE_GROUP = document.getElementById('ldapRequireGroup')?.checked ? 'true' : 'false';
+  }
+
+  const smtpEnabled = document.getElementById('smtpEnabled').checked;
+  if (smtpEnabled) {
+    config.SMTP_HOST = document.getElementById('smtpHost').value;
+    config.SMTP_PORT = document.getElementById('smtpPort').value || '587';
+    config.SMTP_USER = document.getElementById('smtpUser').value;
+    config.SMTP_PASS = document.getElementById('smtpPassword').value;
+    config.SMTP_SECURE = 'false';
+    config.SMTP_TLS_REJECT_UNAUTHORIZED = 'true';
+    config.SMTP_FROM_NAME = 'NebulaProxy';
+    config.SMTP_FROM_EMAIL = document.getElementById('smtpFromEmail')?.value || '';
+  } else {
+    config.SMTP_HOST = '';
+    config.SMTP_PORT = '587';
+    config.SMTP_SECURE = 'false';
+    config.SMTP_USER = '';
+    config.SMTP_PASS = '';
+    config.SMTP_TLS_REJECT_UNAUTHORIZED = 'true';
+    config.SMTP_FROM_NAME = 'NebulaProxy';
+    config.SMTP_FROM_EMAIL = '';
+  }
+
+  return config;
+}
+
+function showNotification(message, type = 'info') {
+  alert(message);
+}
+  </script>
+</body>
+</html>

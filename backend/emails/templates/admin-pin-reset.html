@@ -1,0 +1,21 @@
+﻿<p class="email-title">Admin PIN reset</p>
+<p class="email-subtitle">You requested a reset of your admin panel PIN. Use the code below to proceed.</p>
+
+<div class="alert alert-danger">
+  <span class="alert-label">Admin security</span>
+  <p>This code grants access to sensitive administrative functions. If you did not request this, contact your administrator immediately and change your account password.</p>
+</div>
+
+<div class="code-box">
+  <span class="code-label">PIN reset code</span>
+  <span class="code-value">{{code}}</span>
+  <span class="code-expiry">Expires in <strong>10 minutes</strong></span>
+</div>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/admin" class="btn btn-primary">Go to admin panel</a>
+</div>
+
+<div class="note">
+  <strong>Important:</strong> this code is single-use and cannot be reused. Do not share it with anyone. All admin actions are logged for audit purposes.
+</div>

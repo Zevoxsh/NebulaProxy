@@ -1,0 +1,53 @@
+{
+  "database": {
+    "type": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "name": "nebulaproxy",
+    "user": "postgres",
+    "password": "CHANGEZ_MOI"
+  },
+  "redis": {
+    "host": "localhost",
+    "port": 6379,
+    "password": "",
+    "db": 0
+  },
+  "jwtSecret": "CHANGEZ_MOI_SECRET_JWT_MINIMUM_32_CARACTERES_ALEATOIRES",
+  "port": 3000,
+  "host": "0.0.0.0",
+  "nodeEnv": "production",
+  "frontend": {
+    "port": 3001,
+    "distPath": "/app/frontend/dist",
+    "buildOnStart": false
+  },
+  "ldap": {
+    "enabled": false,
+    "url": "",
+    "bindDN": "",
+    "bindPassword": "",
+    "searchBase": "",
+    "searchFilter": "(sAMAccountName={{username}})"
+  },
+  "smtp": {
+    "enabled": false,
+    "host": "",
+    "port": 587,
+    "secure": false,
+    "user": "",
+    "password": "",
+    "from": "NebulaProxy <noreply@example.com>"
+  },
+  "allowedOrigins": "http://localhost:3001,http://localhost:3000",
+  "rateLimit": {
+    "max": 100,
+    "timeWindow": 60000
+  },
+  "security": {
+    "csrfEnabled": true,
+    "trustedProxies": []
+  },
+  "adminEmail": "admin@example.com",
+  "adminPassword": "CHANGEZ_MOI_MOT_DE_PASSE_ADMIN"
+}

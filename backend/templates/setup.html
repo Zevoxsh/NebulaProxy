@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NebulaProxy - Initial Setup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    :root {
+      --admin-bg: #09090b;
+      --admin-bg-secondary: #111113;
+      --admin-surface: #18181b;
+      --admin-surface-2: #1f1f23;
+      --admin-border: #27272a;
+      --admin-text: #fafafa;
+      --admin-text-muted: #a1a1aa;
+      --admin-primary: #e4e4e7;
+      --admin-primary-strong: #fafafa;
+    }
+
+    body {
+      background:
+        radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
+        radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
+        var(--admin-bg);
+      min-height: 100vh;
+      color: var(--admin-text);
+    }
+
+    .setup-container {
+      background: var(--admin-bg-secondary);
+      border: 1px solid var(--admin-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .setup-header {
+      background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
+      border-radius: 12px 12px 0 0;
+      padding: 2rem;
+      border-bottom: 1px solid var(--admin-border);
+    }
+
+    .section-card {
+      background: var(--admin-surface);
+      border: 1px solid var(--admin-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .section-card:hover {
+      border-color: #3f3f46;
+    }
+
+    .input-futuristic {
+      background: #09090b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      padding: 0.625rem 0.875rem;
+      color: #fff;
+      width: 100%;
+      transition: all 0.2s ease;
+      font-size: 0.875rem;
+    }
+
+    .input-futuristic:focus {
+      outline: none;
+      border-color: var(--admin-primary);
+      box-shadow: 0 0 0 3px rgba(228, 228, 231, 0.18);
+    }
+
+    .input-futuristic::placeholder {
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-primary {
+      background: var(--admin-primary);
+      color: #09090b;
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 1px solid var(--admin-primary);
+      font-size: 0.875rem;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--admin-primary-strong);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--admin-surface-2);
+      color: var(--admin-text);
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--admin-border);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.875rem;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #27272a;
+      border-color: #3f3f46;
+    }
+
+    .btn-generate {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10B981;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 0.5rem;
+    }
+
+    .btn-generate:hover {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: rgba(16, 185, 129, 0.5);
+    }
+
+    .error-box {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+
+    .error-box.show { display: block; }
+
+    .success-box {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      display: none;
+    }
+
+    .success-box.show { display: block; }
+
+    .section-title {
+      color: var(--admin-primary);
+      font-size: 1.125rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-label {
+      color: var(--admin-text-muted);
+      font-size: 0.8125rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .form-hint {
+      color: #71717a;
+      font-size: 0.75rem;
+      margin-top: 0.375rem;
+      display: block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 14px rgba(228, 228, 231, 0.12); }
+      50% { box-shadow: 0 0 24px rgba(228, 228, 231, 0.18); }
+    }
+
+    .glow-pulse {
+      animation: glow 3s ease-in-out infinite;
+    }
+
+    select.input-futuristic {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='rgba(255,255,255,0.5)'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      background-size: 16px;
+      padding-right: 2.5rem;
+    }
+
+    .progress-dots {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      margin: 1.5rem 0;
+    }
+
+    .progress-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+    }
+
+    .progress-dot.active {
+      background: var(--admin-primary);
+      box-shadow: 0 0 8px rgba(228, 228, 231, 0.25);
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #3f3f46;
+      border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #52525b;
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen py-8 px-4">
+    <div class="max-w-4xl mx-auto">
+      <!-- Header -->
+      <div class="setup-container animate-fade-in">
+        <div class="setup-header glow-pulse">
+          <div class="flex items-center justify-center mb-3">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="white" opacity="0.9"/>
+              <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+              <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+            </svg>
+          </div>
+          <h1 class="text-3xl font-light text-white text-center mb-2">NebulaProxy Setup</h1>
+          <p class="text-white/80 text-center text-sm font-light">Configure your proxy instance for the first time</p>
+        </div>
+
+        <div class="p-8">
+          <!-- Error Box -->
+          <div class="error-box" id="errorBox">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div class="flex-1">
+                <h3 class="text-red-400 font-medium mb-2">Configuration Errors</h3>
+                <ul id="errorList" class="text-red-300 text-sm space-y-1 list-disc list-inside"></ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Success Box -->
+          <div class="success-box" id="successBox">
+            <svg class="w-16 h-16 text-green-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <h3 class="text-2xl font-light text-green-400 mb-2">Setup Complete!</h3>
+            <p class="text-green-300/80 text-sm">Configuration saved. Proxy starting now...</p>
+            <div class="progress-dots mt-4">
+              <div class="progress-dot active"></div>
+              <div class="progress-dot active"></div>
+              <div class="progress-dot active"></div>
+            </div>
+          </div>
+
+          <!-- Setup Form -->
+          <form id="setupForm">
+            <!-- Config Import -->
+            <div class="section-card animate-fade-in">
+              <h2 class="section-title">📥 Import Configuration</h2>
+              <label class="form-label" for="configFile">Config File (.env or JSON)</label>
+              <input
+                id="configFile"
+                name="configFile"
+                type="file"
+                accept=".env,.json,application/json,text/plain"
+                class="input-futuristic"
+              />
+              <small class="form-hint">Upload a config file to auto-fill the fields below.</small>
+              <small id="importStatus" class="form-hint" style="display:none;"></small>
+            </div>
+
+            <div id="sections"></div>
+
+            <div class="flex gap-3 justify-end mt-8">
+              <button type="button" class="btn-secondary" id="validateBtn">
+                <span class="flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  Validate
+                </span>
+              </button>
+              <button type="submit" class="btn-primary" id="saveBtn">
+                <span class="flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  Save & Start Proxy
+                </span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="text-center mt-6 text-white/40 text-xs font-light">
+        <p>NebulaProxy v3.0 - Enterprise Reverse Proxy</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const fieldConfig = {
+      JWT_SECRET: { type: 'password', description: 'Secret key for JWT token generation', generate: true },
+      PROXY_CHECK_TOKEN: { type: 'password', description: 'Token for proxy health checks', generate: true },
+      DB_PASSWORD: { type: 'password', description: 'PostgreSQL database password', generate: true },
+      AUTH_MODE: { type: 'select', options: ['ldap', 'local'], description: 'Authentication method' },
+      NODE_ENV: { type: 'select', options: ['production', 'development'], description: 'Node environment' },
+      PROXY_ENABLED: { type: 'select', options: ['true', 'false'], description: 'Enable/disable proxy' },
+      FRONTEND_BUILD_ON_START: { type: 'select', options: ['true', 'false'], description: 'Build frontend on startup' },
+      LDAP_REQUIRE_GROUP: { type: 'select', options: ['true', 'false'], description: 'Require LDAP group membership' },
+      SMTP_SECURE: { type: 'select', options: ['true', 'false'], description: 'Use TLS for SMTP' },
+      SMTP_TLS_REJECT_UNAUTHORIZED: { type: 'select', options: ['true', 'false'], description: 'Reject unauthorized TLS' },
+      CSRF_ENABLED: { type: 'select', options: ['true', 'false'], description: 'Enable CSRF protection' },
+      DNS_REBINDING_PROTECTION: { type: 'select', options: ['true', 'false'], description: 'Enable DNS rebinding protection' },
+      HEALTHCHECK_SKIP_TCP: { type: 'select', options: ['true', 'false'], description: 'Skip TCP health checks' },
+      HEALTHCHECK_SKIP_UDP: { type: 'select', options: ['true', 'false'], description: 'Skip UDP health checks' },
+      ALLOW_PRIVATE_BACKENDS: { type: 'select', options: ['true', 'false'], description: 'Allow private/internal backend URLs' },
+      ALLOWED_ORIGINS: { type: 'text', description: 'Comma-separated allowed CORS origins' },
+      REDIRECTION_HOSTS: { type: 'text', description: 'Comma-separated redirection hostnames' },
+      TRUSTED_PROXIES: { type: 'text', description: 'Comma-separated trusted proxy IPs' }
+    };
+
+    function generateSecret(length = 64) {
+      const array = new Uint8Array(length);
+      crypto.getRandomValues(array);
+      return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    function createField(key, value) {
+      const config = fieldConfig[key] || { type: 'text' };
+      const div = document.createElement('div');
+      div.className = 'mb-5';
+
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.textContent = key;
+      label.htmlFor = key;
+      div.appendChild(label);
+
+      let input;
+      if (config.type === 'select') {
+        input = document.createElement('select');
+        input.className = 'input-futuristic';
+        config.options.forEach(opt => {
+          const option = document.createElement('option');
+          option.value = opt;
+          option.textContent = opt;
+          if (opt === value) option.selected = true;
+          input.appendChild(option);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = config.type || 'text';
+        input.className = 'input-futuristic';
+        input.value = value;
+      }
+      input.id = key;
+      input.name = key;
+      div.appendChild(input);
+
+      if (config.description) {
+        const hint = document.createElement('small');
+        hint.className = 'form-hint';
+        hint.textContent = config.description;
+        div.appendChild(hint);
+      }
+
+      if (config.generate) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-generate';
+        btn.innerHTML = '🎲 Generate Random';
+        btn.onclick = () => input.value = generateSecret(64);
+        div.appendChild(btn);
+      }
+
+      return div;
+    }
+
+    async function loadConfig() {
+      try {
+        const response = await fetch('/api/setup/config');
+        const data = await response.json();
+
+        const sectionsContainer = document.getElementById('sections');
+        sectionsContainer.innerHTML = '';
+
+        data.sections.forEach((section, index) => {
+          const sectionDiv = document.createElement('div');
+          sectionDiv.className = 'section-card animate-fade-in';
+          sectionDiv.style.animationDelay = `${index * 0.05}s`;
+
+          const title = document.createElement('h2');
+          title.className = 'section-title';
+          const icon = getIconForSection(section.name);
+          title.innerHTML = `${icon} ${section.name}`;
+          sectionDiv.appendChild(title);
+
+          section.variables.forEach(variable => {
+            const field = createField(variable.key, variable.value);
+            sectionDiv.appendChild(field);
+          });
+
+          sectionsContainer.appendChild(sectionDiv);
+        });
+      } catch (error) {
+        showError(['Failed to load configuration: ' + error.message]);
+      }
+    }
+
+    function getIconForSection(name) {
+      const icons = {
+        'General': '⚙️',
+        'JWT': '🔐',
+        'Auth': '👤',
+        'Database': '💾',
+        'LDAP': '🔑',
+        'Proxy': '🌐',
+        'TCP/UDP': '🔌',
+        'Health': '💚',
+        'Logs': '📝',
+        'SMTP': '📧',
+        'ACME': '🔒',
+        'Frontend': '🎨',
+        'Redis': '🔴',
+        'Security': '🛡️'
+      };
+      for (let key in icons) {
+        if (name.includes(key)) return icons[key];
+      }
+      return '📌';
+    }
+
+    function getFormData() {
+      const formData = {};
+      const inputs = document.querySelectorAll('#setupForm input, #setupForm select');
+      inputs.forEach(input => formData[input.name] = input.value);
+      return formData;
+    }
+
+    function parseEnvContent(content) {
+      const config = {};
+      const lines = content.split('\n');
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex === -1) return;
+        const key = trimmed.slice(0, eqIndex).trim();
+        let value = trimmed.slice(eqIndex + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+          value = value.slice(1, -1);
+        }
+        if (key) config[key] = value;
+      });
+      return config;
+    }
+
+    function applyConfigToForm(config) {
+      Object.entries(config).forEach(([key, value]) => {
+        const input = document.querySelector(`#setupForm [name="${key}"]`);
+        if (!input) return;
+        if (input.tagName.toLowerCase() === 'select') {
+          input.value = String(value);
+          if (input.value !== String(value)) {
+            const opt = document.createElement('option');
+            opt.value = String(value);
+            opt.textContent = String(value);
+            input.appendChild(opt);
+            input.value = String(value);
+          }
+        } else {
+          input.value = String(value);
+        }
+      });
+    }
+
+    function showImportStatus(message, isError = false) {
+      const status = document.getElementById('importStatus');
+      status.style.display = 'block';
+      status.style.color = isError ? '#F87171' : 'rgba(255, 255, 255, 0.6)';
+      status.textContent = message;
+    }
+
+    async function handleConfigFile(file) {
+      if (!file) return;
+      const text = await file.text();
+      let config;
+      try {
+        if (file.name.endsWith('.json') || text.trim().startsWith('{')) {
+          config = JSON.parse(text);
+        } else {
+          config = parseEnvContent(text);
+        }
+      } catch (err) {
+        showImportStatus('Invalid file format. Please upload a valid .env or JSON file.', true);
+        return;
+      }
+      applyConfigToForm(config);
+      showImportStatus(`Imported ${Object.keys(config).length} values from ${file.name}.`);
+    }
+
+    function showError(errors) {
+      const errorBox = document.getElementById('errorBox');
+      const errorList = document.getElementById('errorList');
+      errorList.innerHTML = '';
+      errors.forEach(error => {
+        const li = document.createElement('li');
+        li.textContent = error;
+        errorList.appendChild(li);
+      });
+      errorBox.classList.add('show');
+      errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function hideError() {
+      document.getElementById('errorBox').classList.remove('show');
+    }
+
+    async function validateConfig() {
+      hideError();
+      const config = getFormData();
+
+      try {
+        const response = await fetch('/api/setup/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (!data.valid) {
+          showError(data.errors);
+          return false;
+        }
+
+        // Show success with animation
+        const validateBtn = document.getElementById('validateBtn');
+        const originalHTML = validateBtn.innerHTML;
+        validateBtn.innerHTML = '<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Valid!</span>';
+        validateBtn.style.background = 'rgba(16, 185, 129, 0.2)';
+        validateBtn.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+        validateBtn.style.color = '#10B981';
+
+        setTimeout(() => {
+          validateBtn.innerHTML = originalHTML;
+          validateBtn.style.background = '';
+          validateBtn.style.borderColor = '';
+          validateBtn.style.color = '';
+        }, 2000);
+
+        return true;
+      } catch (error) {
+        showError(['Validation failed: ' + error.message]);
+        return false;
+      }
+    }
+
+    async function saveConfig(event) {
+      event.preventDefault();
+      hideError();
+
+      const saveBtn = document.getElementById('saveBtn');
+      const validateBtn = document.getElementById('validateBtn');
+
+      saveBtn.disabled = true;
+      validateBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="flex items-center gap-2">Saving<span class="spinner"></span></span>';
+
+      const config = getFormData();
+
+      try {
+        const response = await fetch('/api/setup/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          showError(data.errors);
+          saveBtn.disabled = false;
+          validateBtn.disabled = false;
+          saveBtn.innerHTML = '<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Save & Start Proxy</span>';
+          return;
+        }
+
+        document.getElementById('setupForm').style.display = 'none';
+        document.getElementById('successBox').classList.add('show');
+
+        setTimeout(() => {
+          // Redirect to the root after setup
+          window.location.href = '/';
+        }, 3000);
+      } catch (error) {
+        showError(['Failed to save: ' + error.message]);
+        saveBtn.disabled = false;
+        validateBtn.disabled = false;
+        saveBtn.innerHTML = '<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Save & Start Proxy</span>';
+      }
+    }
+
+    document.getElementById('validateBtn').addEventListener('click', validateConfig);
+    document.getElementById('setupForm').addEventListener('submit', saveConfig);
+    document.getElementById('configFile').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      handleConfigFile(file);
+    });
+    loadConfig();
+  </script>
+</body>
+</html>

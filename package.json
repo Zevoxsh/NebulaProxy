@@ -1,0 +1,60 @@
+{
+  "name": "nebula-proxy",
+  "version": "3.0.0",
+  "description": "Enterprise-grade Reverse Proxy Control Panel with Active Directory Integration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run dev -- --host",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev -- --host",
+    "prod": "npm run start:backend",
+    "install:all": "npm install && npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "test": "cd backend && npm test",
+    "test:watch": "cd backend && npm run test:watch",
+    "test:coverage": "cd backend && npm run test:coverage",
+    "test:smoke": "node backend/tests/api-smoke-test.js",
+    "build:frontend": "cd frontend && npm run build",
+    "init:db": "cd backend && node init-db.js",
+    "config:show": "cd backend && node scripts/config-manager.js show",
+    "config:edit": "cd backend && node scripts/config-manager.js edit",
+    "config:set": "cd backend && node scripts/config-manager.js set",
+    "config:reset": "cd backend && node scripts/config-manager.js reset",
+    "config:export": "cd backend && node scripts/config-manager.js export",
+    "config:import": "cd backend && node scripts/config-manager.js import",
+    "admin:reset-password": "cd backend && npm run admin:reset-password",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:build": "docker-compose build",
+    "docker:restart": "docker-compose restart"
+  },
+  "keywords": [
+    "reverse-proxy",
+    "ldap",
+    "active-directory",
+    "ssl",
+    "acme",
+    "letsencrypt",
+    "fastify",
+    "react",
+    "enterprise"
+  ],
+  "author": "NebulaProxy Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "axios": "^1.14.0"
+  }
+}

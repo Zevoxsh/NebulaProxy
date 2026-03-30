@@ -1,0 +1,29 @@
+﻿<p class="email-title">You have been invited</p>
+<p class="email-subtitle"><strong>{{inviterName}}</strong> has invited you to join the <strong>{{teamName}}</strong> team on NebulaProxy.</p>
+
+<div class="alert alert-info">
+  <span class="alert-label">Invitation</span>
+  <p>Accept the invitation to collaborate on shared domains with your team. This invitation expires in 7 days.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Team</td><td class="dv">{{teamName}}</td></tr>
+  <tr><td class="dk">Invited by</td><td class="dv">{{inviterName}} <span class="text-muted" style="font-weight:400;">{{inviterEmail}}</span></td></tr>
+  <tr><td class="dk">Role</td><td class="dv"><span class="badge badge-info">{{role}}</span></td></tr>
+  <tr><td class="dk">Members</td><td class="dv">{{memberCount}}</td></tr>
+  <tr><td class="dk">Domains</td><td class="dv">{{domainCount}}</td></tr>
+</table>
+
+<p style="font-size: 13px; color: #71717a; margin-bottom: 10px;">Permissions granted</p>
+<ul style="padding-left: 18px; color: #a1a1aa; font-size: 13px; line-height: 1.9; margin-bottom: 24px;">
+  {{permissionsList}}
+</ul>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/teams/invitations/{{invitationId}}/accept" class="btn btn-primary">Accept invitation</a>
+  <a href="{{dashboardUrl}}/teams/invitations/{{invitationId}}/decline" class="btn btn-ghost">Decline</a>
+</div>
+
+<div class="note">
+  If you do not recognise this invitation or did not expect it, you can safely ignore this email. No action will be taken.
+</div>

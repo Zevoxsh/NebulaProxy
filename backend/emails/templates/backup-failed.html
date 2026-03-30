@@ -1,0 +1,24 @@
+﻿<p class="email-title">Backup failed</p>
+<p class="email-subtitle">The scheduled database backup did not complete successfully.</p>
+
+<div class="alert alert-danger">
+  <span class="alert-label">Error</span>
+  <p>Your backup encountered an error. Data from this period is not protected until a successful backup runs.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Backup type</td><td class="dv">{{backupType}}</td></tr>
+  <tr><td class="dk">Scheduled at</td><td class="dv">{{scheduledTime}}</td></tr>
+  <tr><td class="dk">Failed at</td><td class="dv">{{failedAt}}</td></tr>
+  <tr><td class="dk">Error</td><td class="dv text-danger">{{errorMessage}}</td></tr>
+  <tr><td class="dk">Last success</td><td class="dv text-muted">{{lastSuccessfulBackup}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/admin/backups" class="btn btn-primary">View backups</a>
+  <a href="{{dashboardUrl}}/admin/backups/manual" class="btn btn-ghost">Run manual backup</a>
+</div>
+
+<div class="note">
+  <strong>Suggested checks:</strong> available disk space, database connectivity, backup configuration. Resolve this promptly to avoid data loss.
+</div>

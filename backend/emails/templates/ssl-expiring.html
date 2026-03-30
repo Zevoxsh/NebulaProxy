@@ -1,0 +1,23 @@
+﻿<p class="email-title">SSL certificate expiring soon</p>
+<p class="email-subtitle">Your certificate for {{domainName}} will expire in {{daysRemaining}} days. Renew now to avoid downtime.</p>
+
+<div class="alert alert-warning">
+  <span class="alert-label">Action required</span>
+  <p>Once expired, HTTPS connections will fail and browsers will show a security warning to your visitors.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Domain</td><td class="dv">{{domainName}}</td></tr>
+  <tr><td class="dk">Expires in</td><td class="dv text-warning">{{daysRemaining}} days</td></tr>
+  <tr><td class="dk">Expiry date</td><td class="dv">{{expirationDate}}</td></tr>
+  <tr><td class="dk">Issued to</td><td class="dv text-muted">{{issuedTo}}</td></tr>
+  <tr><td class="dk">Issuer</td><td class="dv text-muted">{{issuer}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/ssl/{{domainId}}/renew" class="btn btn-primary">Renew certificate</a>
+</div>
+
+<div class="note">
+  <strong>Tip:</strong> Enable auto-renewal in your domain settings to handle this automatically in the future.
+</div>

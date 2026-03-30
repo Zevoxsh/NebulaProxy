@@ -1,0 +1,1 @@
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS minecraft_edition VARCHAR(10) DEFAULT 'java';

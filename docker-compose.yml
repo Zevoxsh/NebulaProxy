@@ -1,0 +1,214 @@
+name: nebulaproxy
+
+# ─── Isolated bridge network — no container runs on the host network ──────────
+networks:
+  nebula-net:
+    driver: bridge
+
+services:
+
+  # ── Docker socket proxy ────────────────────────────────────────────────────
+  # Exposes only the needed Docker API subset — backend/watchdog never touch
+  # /var/run/docker.sock directly.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: nebulaproxy-socket-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      BUILD: 1
+      POST: 1
+      INFO: 1
+      NETWORKS: 1
+      VOLUMES: 1
+    ports:
+      - "127.0.0.1:2375:2375"   # accessible depuis le backend en host network
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-redis
+    volumes:
+      - redis-data:/data
+      - redis-secret:/run/redis-secret  # secret also written here for sibling containers
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"   # accessible depuis le backend en host network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $(cat /data/redis.secret) --no-auth-warning ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-postgres
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - pg-secret:/run/pg-secret  # auto-generated password exposed to backend (read-only)
+    environment:
+      POSTGRES_USER: nebulaproxy
+      POSTGRES_DB: nebulaproxy
+      # POSTGRES_PASSWORD_FILE is set by the custom entrypoint
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"   # accessible depuis le backend en host network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nebulaproxy -d nebulaproxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-backend
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/www/letsencrypt:/var/www/letsencrypt
+      - /etc/NebulaProxyV3:/repo
+      - backups:/app/backups
+      - uploads:/app/uploads
+      - redis-secret:/run/redis-secret:ro
+      - pg-secret:/run/pg-secret:ro
+    environment:
+      - GIT_DIR=/repo/.git
+      - REPO_PATH=/repo
+      - COMPOSE_PROJECT_NAME=nebulaproxy
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6379
+      - DB_HOST=127.0.0.1
+      - DB_PORT=5432
+      - DB_USER=nebulaproxy
+      - DB_NAME=nebulaproxy
+      - DOCKER_HOST=tcp://127.0.0.1:2375
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      socket-proxy:
+        condition: service_started
+    # host network = expose TOUS les ports dynamiquement (TCP/UDP domaines, 80, 443, 3000, 25565, SMTP...)
+    # Aucun port n'a besoin d'être listé — tout ce que le backend écoute est accessible sur l'hôte.
+    network_mode: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-frontend
+    ports:
+      - "3001:80"
+    extra_hosts:
+      - "backend:host-gateway"   # résout 'backend' vers l'hôte (backend en network_mode host)
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+
+  # ── Watchdog ───────────────────────────────────────────────────────────────
+  watchdog:
+    build:
+      context: ./watchdog
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-watchdog
+    restart: unless-stopped
+    volumes:
+      - /etc/NebulaProxyV3:/repo
+      - watchdog-logs:/var/log
+      - redis-secret:/run/redis-secret:ro
+    environment:
+      - REPO_PATH=/repo
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_HOST=tcp://socket-proxy:2375
+      - COMPOSE_PROJECT_NAME=nebulaproxy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f update-watchdog.sh > /dev/null && echo ok || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+      socket-proxy:
+        condition: service_started
+    networks:
+      - nebula-net
+
+volumes:
+  redis-data:
+    driver: local
+  redis-secret:
+    driver: local
+  pg-data:
+    driver: local
+  pg-secret:
+    driver: local
+  backups:
+    driver: local
+  uploads:
+    driver: local
+  watchdog-logs:
+    driver: local

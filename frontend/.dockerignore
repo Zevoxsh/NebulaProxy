@@ -1,0 +1,18 @@
+node_modules
+npm-debug.log
+dist/
+.env
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+*.md
+docs/
+
+# Git
+.git
+.gitignore

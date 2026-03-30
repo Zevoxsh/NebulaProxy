@@ -1,0 +1,23 @@
+﻿<p class="email-title">Domain back online</p>
+<p class="email-subtitle">{{domainName}} has recovered and is responding normally to all health checks.</p>
+
+<div class="alert alert-success">
+  <span class="alert-label">Resolved</span>
+  <p>All checks are passing. Your domain is back to normal operation.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Domain</td><td class="dv text-success">{{domainName}}</td></tr>
+  <tr><td class="dk">Status</td><td class="dv"><span class="badge badge-success">Online</span></td></tr>
+  <tr><td class="dk">Restored at</td><td class="dv">{{restoredAt}}</td></tr>
+  <tr><td class="dk">Total downtime</td><td class="dv">{{totalDowntime}}</td></tr>
+  <tr><td class="dk">Response time</td><td class="dv">{{responseTime}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/domains/{{domainId}}" class="btn btn-primary">View domain</a>
+</div>
+
+<div class="note">
+  Monitoring continues automatically. You will be alerted if issues arise again.
+</div>

@@ -1,0 +1,27 @@
+﻿<p class="email-title">Team domain offline</p>
+<p class="email-subtitle">A domain managed by <strong>{{teamName}}</strong> has been unreachable for more than 10 minutes.</p>
+
+<div class="alert alert-danger">
+  <span class="alert-label">Team incident</span>
+  <p>The domain is failing health checks. Other team members have also been notified.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Team</td><td class="dv">{{teamName}}</td></tr>
+  <tr><td class="dk">Domain</td><td class="dv text-danger">{{domainName}}</td></tr>
+  <tr><td class="dk">Owner</td><td class="dv text-muted">{{ownerName}}</td></tr>
+  <tr><td class="dk">Status</td><td class="dv"><span class="badge badge-danger">Offline</span></td></tr>
+  <tr><td class="dk">Down since</td><td class="dv">{{downSince}}</td></tr>
+  <tr><td class="dk">Last error</td><td class="dv text-muted">{{lastError}}</td></tr>
+  <tr><td class="dk">Your role</td><td class="dv"><span class="badge badge-muted">{{userRole}}</span></td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/teams/{{teamId}}/domains/{{domainId}}" class="btn btn-primary">View domain</a>
+  <a href="{{dashboardUrl}}/teams/{{teamId}}" class="btn btn-ghost">Team dashboard</a>
+</div>
+
+<div class="note">
+  You are receiving this as a member of <strong>{{teamName}}</strong>.
+  <a href="{{dashboardUrl}}/settings/notifications" style="color: #52525b;">Manage team notifications</a>
+</div>
