@@ -12,7 +12,7 @@
  * Private/reserved IPs always pass (not sent to ip-api).
  */
 
-import https from 'https';
+import http from 'http';
 
 const PRIVATE_IP_PATTERNS = [
   /^127\./,
@@ -109,7 +109,7 @@ class GeoIpService {
         timeout: this.REQUEST_TIMEOUT
       };
 
-      const req = https.request(options, (res) => {
+      const req = http.request(options, (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
