@@ -128,16 +128,19 @@ class LiveTrafficService {
         }
       }
 
-      // Throttle: one lookup per 1500ms ≈ 40 req/min (safe for 45 req/min limit)
+      // Throttle: one lookup per 500ms — ipwho.is has no strict rate limit
       for (const item of toEnrich) {
+        // Invalidate cached failure so getCountryCode actually hits the API
+        try { await geoIpService.invalidate(item.entry.ip); } catch (_) {}
+
         let country = null;
         try { country = await geoIpService.getCountryCode(item.entry.ip); } catch (_) {}
+
         if (country) {
           item.entry.country = country;
           try { await redis.hset(item.key, item.field, JSON.stringify(item.entry)); } catch (_) {}
         }
-        // Wait between each lookup to avoid rate-limiting
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 500));
       }
     } catch (_) {}
   }

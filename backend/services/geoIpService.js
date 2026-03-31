@@ -1,15 +1,12 @@
 /**
- * GeoIP Service — Country lookup for IP addresses
+ * GeoIP Service — Country lookup via ipwho.is
  *
- * Primary:  ipwho.is  (HTTPS, free, no key, no documented rate limit)
- * Fallback: ip-api.com (HTTP, free, 45 req/min)
- *
- * Results cached in Redis for 24 hours.
- * Private/reserved IPs always return null (not sent to any API).
+ * API: https://ipwho.is/{ip}  (free, HTTPS, no key, no documented rate limit)
+ * Results cached in Redis: 24h on success, 90s on failure.
+ * Private/reserved IPs always return null.
  */
 
 import https from 'https';
-import http  from 'http';
 
 const PRIVATE_IP_PATTERNS = [
   /^127\./,
@@ -23,28 +20,13 @@ const PRIVATE_IP_PATTERNS = [
   /^0\.0\.0\.0$/
 ];
 
-// Simple HTTP/HTTPS GET helper — resolves with body string or null on error
-function httpGet(opts, useHttps = true) {
-  return new Promise((resolve) => {
-    const lib = useHttps ? https : http;
-    const req = lib.request(opts, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve(body));
-    });
-    req.on('error',   () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
-    req.end();
-  });
-}
-
 class GeoIpService {
   constructor() {
-    this.redis        = null;
-    this.CACHE_TTL    = 86400;   // 24h for successful lookups
-    this.FAIL_TTL     = 90;      // 90s for failed lookups (retry soon)
-    this.CACHE_PREFIX = 'geoip:';
-    this.TIMEOUT      = 4000;
+    this.redis          = null;
+    this.CACHE_TTL      = 86400;  // 24h for successes
+    this.FAIL_TTL       = 90;     // 90s for failures — retry soon
+    this.CACHE_PREFIX   = 'geoip:';
+    this.TIMEOUT        = 5000;
     this.pendingLookups = new Map();
   }
 
@@ -74,7 +56,7 @@ class GeoIpService {
 
     if (this.pendingLookups.has(ip)) return this.pendingLookups.get(ip);
 
-    const promise = this._lookup(ip).then(async (code) => {
+    const promise = this._fetch(ip).then(async (code) => {
       if (this.redis) {
         try {
           await this.redis.setex(cacheKey, code ? this.CACHE_TTL : this.FAIL_TTL, code || '');
@@ -92,51 +74,45 @@ class GeoIpService {
   }
 
   /**
-   * Try ipwho.is first, fall back to ip-api.com.
+   * Fetch from ipwho.is — returns country code string or null.
    */
-  async _lookup(ip) {
-    const code = await this._fetchIpwho(ip);
-    if (code) return code;
-    return this._fetchIpApi(ip);
-  }
-
-  /** ipwho.is — HTTPS, free, generous limits */
-  async _fetchIpwho(ip) {
-    try {
-      const body = await httpGet({
+  _fetch(ip) {
+    return new Promise((resolve) => {
+      const req = https.request({
         hostname: 'ipwho.is',
-        path:     `/${encodeURIComponent(ip)}?fields=country_code,success`,
+        path:     `/${encodeURIComponent(ip)}`,
         method:   'GET',
+        headers:  { 'Accept': 'application/json' },
         timeout:  this.TIMEOUT,
-      }, true);
-      if (!body) return null;
-      const data = JSON.parse(body);
-      if (data.success && data.country_code && data.country_code.length === 2) {
-        return data.country_code.toUpperCase();
-      }
-      return null;
-    } catch {
-      return null;
-    }
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (data.success === true && typeof data.country_code === 'string' && data.country_code.length === 2) {
+              resolve(data.country_code.toUpperCase());
+            } else {
+              resolve(null);
+            }
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+
+      req.on('error',   () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.end();
+    });
   }
 
-  /** ip-api.com — HTTP fallback */
-  async _fetchIpApi(ip) {
-    try {
-      const body = await httpGet({
-        hostname: 'ip-api.com',
-        path:     `/json/${encodeURIComponent(ip)}?fields=status,countryCode`,
-        method:   'GET',
-        timeout:  this.TIMEOUT,
-      }, false);
-      if (!body) return null;
-      const data = JSON.parse(body);
-      if (data.status === 'success' && data.countryCode) {
-        return data.countryCode.toUpperCase();
-      }
-      return null;
-    } catch {
-      return null;
+  /**
+   * Force a fresh lookup for an IP (bypasses Redis cache).
+   */
+  async invalidate(ip) {
+    if (this.redis) {
+      try { await this.redis.del(this.CACHE_PREFIX + ip); } catch (_) {}
     }
   }
 
@@ -176,12 +152,6 @@ class GeoIpService {
     }
 
     return { blocked: false, countryCode, reason: null };
-  }
-
-  async invalidate(ip) {
-    if (this.redis) {
-      try { await this.redis.del(this.CACHE_PREFIX + ip); } catch (_) {}
-    }
   }
 }
 
