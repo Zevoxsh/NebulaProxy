@@ -145,6 +145,32 @@ export async function adminRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/config/export', {
+    preHandler: fastify.authorize(['admin'])
+  }, async (request, reply) => {
+    try {
+      await configManager.init();
+      const currentConfig = configManager.getAll();
+
+      // Build a clean export — keep all keys but redact nothing
+      // (admin-only endpoint, the admin already has access to these secrets)
+      const exportData = {
+        _exported_at: new Date().toISOString(),
+        _version: 1,
+        ...currentConfig,
+      };
+
+      const filename = `nebulaproxy-config-${new Date().toISOString().slice(0, 10)}.json`;
+      reply
+        .header('Content-Type', 'application/json')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(JSON.stringify(exportData, null, 2));
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to export configuration');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to export configuration' });
+    }
+  });
+
   fastify.post('/config/validate', {
     preHandler: fastify.authorize(['admin'])
   }, async (request, reply) => {

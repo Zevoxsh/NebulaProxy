@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Settings, AlertCircle, CheckCircle, Save, RefreshCw, ChevronLeft, ChevronRight, Type } from 'lucide-react';
+import { Settings, AlertCircle, CheckCircle, Save, RefreshCw, ChevronLeft, ChevronRight, Type, Download } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { useBrandingStore } from '../../store/brandingStore';
 import {
@@ -53,6 +53,21 @@ export default function AdminConfig() {
   useEffect(() => {
     fetchConfig();
   }, []);
+
+  const handleExportConfig = async () => {
+    try {
+      const res = await adminAPI.exportConfig();
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nebulaproxy-config-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Export failed', description: err.response?.data?.message || 'Failed to export configuration' });
+    }
+  };
 
   const fetchConfig = async () => {
     try {
@@ -326,10 +341,16 @@ export default function AdminConfig() {
           <h1 className="text-3xl font-semibold text-admin-text mb-2">System Configuration</h1>
           <p className="text-admin-text-muted">Essential runtime settings only</p>
         </div>
-        <AdminButton variant="secondary" onClick={fetchConfig}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Reload
-        </AdminButton>
+        <div className="flex items-center gap-2">
+          <AdminButton variant="secondary" onClick={handleExportConfig} title="Télécharger la config actuelle (importable dans le setup wizard)">
+            <Download className="w-4 h-4 mr-2" />
+            Exporter config
+          </AdminButton>
+          <AdminButton variant="secondary" onClick={fetchConfig}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Reload
+          </AdminButton>
+        </div>
       </div>
 
       {/* Error Message */}

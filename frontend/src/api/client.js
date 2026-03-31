@@ -198,6 +198,7 @@ export const adminAPI = {
   getConfig: () => api.get('/admin/config'),
   validateConfig: (data) => api.post('/admin/config/validate', data),
   updateConfig: (data) => api.put('/admin/config', data),
+  exportConfig: () => api.get('/admin/config/export'),
 
   // Admin branding
   getBranding: () => api.get('/admin/branding'),
