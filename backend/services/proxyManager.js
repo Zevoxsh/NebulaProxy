@@ -1659,17 +1659,47 @@ import { redisService } from './redis.js';
       try {
         const { ddosProtectionService } = await import('./ddosProtectionService.js');
 
-        // Challenge mode: check for bypass cookie before heavy checks
+        // Challenge mode: serve JS challenge directly (no redirect — avoids loops)
         if (domain.ddos_challenge_mode) {
+          const reqUrl   = req.url || '/';
+          const urlPath  = reqUrl.split('?')[0];
+
+          // Handle challenge verify POST
+          if (urlPath === '/__ddos_challenge/verify' && req.method === 'POST') {
+            let body = '';
+            req.on('data', c => { body += c; });
+            req.on('end', () => {
+              try {
+                const { token, nonce, return: ret = '/' } = JSON.parse(body);
+                if (token && nonce !== undefined && ddosProtectionService.verifyChallengeToken(clientIp, token)) {
+                  const cookie = ddosProtectionService.generateVerifiedCookie(clientIp);
+                  res.writeHead(200, {
+                    'Content-Type': 'application/json',
+                    'Set-Cookie': `__ddos_bypass=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`
+                  });
+                  res.end(JSON.stringify({ ok: true, return: ret }));
+                } else {
+                  res.writeHead(403, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Challenge failed' }));
+                }
+              } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Bad request' }));
+              }
+            });
+            return;
+          }
+
+          // Check bypass cookie
           const cookieHeader = req.headers['cookie'] || '';
           const bypassMatch  = cookieHeader.match(/__ddos_bypass=([^;]+)/);
           const bypassToken  = bypassMatch?.[1];
 
           if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken)) {
-            // Serve challenge page
-            const challengeUrl = `/__ddos_challenge?return=${encodeURIComponent(req.url || '/')}`;
-            res.writeHead(302, { 'Location': challengeUrl, 'X-Blocked-By': 'DDoS-Challenge' });
-            res.end();
+            // Serve challenge page inline (no redirect)
+            const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl);
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Blocked-By': 'DDoS-Challenge' });
+            res.end(html);
             return;
           }
         }
