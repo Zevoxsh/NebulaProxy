@@ -79,10 +79,10 @@ class GeoIpService {
     }
 
     const lookupPromise = this._fetchCountry(ip).then(async (code) => {
-      // Cache the result (even failures, as empty string)
-      if (this.redis) {
+      // Only cache successful lookups — failures will be retried next request
+      if (this.redis && code) {
         try {
-          await this.redis.setex(cacheKey, this.CACHE_TTL, code || '');
+          await this.redis.setex(cacheKey, this.CACHE_TTL, code);
         } catch (_) {}
       }
       this.pendingLookups.delete(ip);

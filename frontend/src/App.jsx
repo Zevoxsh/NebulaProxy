@@ -16,6 +16,7 @@ import CertificateDetail from './pages/CertificateDetail';
 import AccountSettings from './pages/AccountSettings';
 import Analytics from './pages/Analytics';
 import RealtimeTraffic from './pages/RealtimeTraffic';
+import CurrentTraffic from './pages/CurrentTraffic';
 import Layout from './components/layout/Layout';
 import { AdminLayout } from './components/layout/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -48,6 +49,7 @@ const ROUTE_METADATA = [
   { patterns: ['/dashboard'], title: 'Dashboard', description: 'System overview and key metrics.' },
   { patterns: ['/analytics'], title: 'Analytics', description: 'Métriques de trafic et performances.' },
   { patterns: ['/live-traffic'], title: 'Live Traffic', description: 'Trafic en temps réel par domaine.' },
+  { patterns: ['/current-traffic'], title: 'Requêtes actuelles', description: 'Flux en direct des 60 dernières secondes.' },
   { patterns: ['/domains'], title: 'Domains', description: 'Manage your domains and routing.' },
   { patterns: ['/domains/groups/:groupId'], title: 'Domain Group', description: 'Manage domains in a specific group.' },
   { patterns: ['/domains/:id'], title: 'Domain Details', description: 'View and manage a domain configuration.' },
@@ -236,6 +238,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/live-traffic" element={<RealtimeTraffic />} />
+          <Route path="/current-traffic" element={<CurrentTraffic />} />
           <Route path="/domains" element={<Domains />} />
           <Route path="/domains/groups/:groupId" element={<Domains />} />
           <Route path="/domains/:id" element={<DomainDetail />} />

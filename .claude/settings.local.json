@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:UsersAdministratorDocumentsNebulaProxyV3/frontend/src -type f -name *.js -o -name *.jsx)"
+    ]
+  }
+}

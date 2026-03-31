@@ -17,7 +17,8 @@ import {
   ArrowLeftRight,
   User,
   BarChart3,
-  Activity
+  Activity,
+  Zap
 } from 'lucide-react';
 import {
   Dialog,
@@ -123,7 +124,8 @@ export default function Layout() {
       items: [
         { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-        { path: '/live-traffic', icon: Activity, label: 'Live Traffic' }
+        { path: '/live-traffic', icon: Activity, label: 'Live Traffic' },
+        { path: '/current-traffic', icon: Zap, label: 'Requêtes actuelles' }
       ]
     },
     {
