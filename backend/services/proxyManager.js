@@ -239,8 +239,12 @@ import { redisService } from './redis.js';
       // the string/number key mismatch when domainId comes from request.params
       const numId = domain.id;
 
+      // Save old entry so we can restore it if startProxy fails (avoids
+      // permanent "Domain not found" until next restart)
+      const oldEntry = this.proxies.get(numId);
+
       // Stop if running
-      if (this.proxies.has(numId)) {
+      if (oldEntry) {
         await this.stopProxy(numId);
       }
 
@@ -249,7 +253,19 @@ import { redisService } from './redis.js';
 
       // Start if active
       if (domain.is_active) {
-        await this.startProxy(domain);
+        try {
+          await this.startProxy(domain);
+        } catch (startErr) {
+          // startProxy failed — restore old entry so the domain stays
+          // reachable instead of disappearing permanently
+          if (oldEntry) {
+            this.proxies.set(numId, oldEntry);
+            console.warn(`[ProxyManager] startProxy failed for domain ${numId}, restored old entry:`, startErr.message);
+          } else {
+            console.error(`[ProxyManager] startProxy failed for domain ${numId} (no old entry to restore):`, startErr.message);
+          }
+          throw startErr;
+        }
       }
     } finally {
       this.reloadLock = false;
@@ -279,12 +295,29 @@ import { redisService } from './redis.js';
 
     // Start/reload active proxies
     let successCount = 0;
+    const failed = [];
     for (const domain of activeDomains) {
       try {
         await this.reloadProxy(domain.id);
         successCount++;
       } catch (error) {
         console.error(`[ProxyManager] Error reloading proxy ${domain.id}:`, error.message);
+        failed.push(domain);
+      }
+    }
+
+    // Retry failed proxies once after a short delay (handles transient boot errors)
+    if (failed.length > 0) {
+      console.log(`[ProxyManager] Retrying ${failed.length} failed proxies in 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
+      for (const domain of failed) {
+        try {
+          await this.reloadProxy(domain.id);
+          successCount++;
+          console.log(`[ProxyManager] Retry succeeded for proxy ${domain.id}`);
+        } catch (error) {
+          console.error(`[ProxyManager] Retry failed for proxy ${domain.id}:`, error.message);
+        }
       }
     }
 
