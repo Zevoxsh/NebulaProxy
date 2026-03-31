@@ -43,8 +43,11 @@ class LiveTrafficService {
         entry.reqCount += 1;
         entry.bytes    += bytes;
         entry.lastSeen  = now;
-        // Update backend in case of load-balancing rotation
         if (backend) entry.backend = backend;
+        // Retry country lookup if it was missing (e.g. from a failed previous lookup)
+        if (!entry.country) {
+          try { entry.country = await geoIpService.getCountryCode(ip); } catch (_) {}
+        }
       } else {
         // Lookup country (cached in Redis 24h by geoIpService)
         let country = null;
