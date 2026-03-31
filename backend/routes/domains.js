@@ -2108,7 +2108,37 @@ export async function domainRoutes(fastify, options) {
     }
   });
 
-  // ── Live Traffic ──────────────────────────────────────────────────────────
+  // ── Live Traffic (all accessible domains) ────────────────────────────────
+
+  fastify.get('/traffic/live', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+      const userId = request.user.id;
+      const domains = await database.getDomainsByUserIdWithTeams(userId);
+      const results = await Promise.all(
+        domains.map(async (d) => {
+          const connections = await liveTrafficService.getForDomain(d.id);
+          return connections.map(c => ({
+            ...c,
+            hostname:  d.hostname,
+            proxyType: d.proxy_type,
+          }));
+        })
+      );
+      const connections = results.flat();
+      const uniqueIps = new Set(connections.map(c => c.ip)).size;
+      const totalReqs = connections.reduce((s, c) => s + (c.reqCount || 0), 0);
+      return reply.send({
+        connections,
+        total: connections.length,
+        stats: { uniqueIps, activeDomains: domains.length, totalReqs },
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to get global live traffic');
+      return reply.code(500).send({ error: 'Internal Server Error' });
+    }
+  });
+
+  // ── Live Traffic (per-domain) ─────────────────────────────────────────────
 
   fastify.get('/:id/traffic/live', { preHandler: fastify.authenticate }, async (request, reply) => {
     try {

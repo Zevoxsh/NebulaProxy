@@ -149,7 +149,8 @@ export const domainAPI = {
   getCircuitBreakerStatus: () => api.get('/domains/circuit-breaker/status'),
   resetCircuitBreaker: (key) => api.post(`/domains/circuit-breaker/reset/${encodeURIComponent(key)}`),
 
-  // Live traffic (per domain)
+  // Live traffic
+  getAllLiveTraffic: () => api.get('/domains/traffic/live'),
   getLiveTraffic: (id) => api.get(`/domains/${id}/traffic/live`),
   clearLiveTraffic: (id) => api.delete(`/domains/${id}/traffic/live`),
 };
