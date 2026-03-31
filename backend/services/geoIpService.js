@@ -85,9 +85,8 @@ class GeoIpService {
             // Cache successful lookups for 24h
             await this.redis.setex(cacheKey, this.CACHE_TTL, code);
           } else {
-            // Cache failures for 5 min so we don't hammer the rate limit,
-            // but still retry them eventually
-            await this.redis.setex(cacheKey, 300, '');
+            // Cache failures for 90s so the enrichment job can retry soon
+            await this.redis.setex(cacheKey, 90, '');
           }
         } catch (_) {}
       }

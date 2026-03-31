@@ -107,32 +107,37 @@ class LiveTrafficService {
 
   /**
    * Background job: scan all active domains and fill in missing country codes.
-   * Runs every 30s — respects ip-api rate limits via the service's own dedup/cache.
+   * Runs every 30s — throttled to ~40 req/min to stay within ip-api.com free tier.
    */
   async _enrichMissingCountries() {
     const redis = this._redis;
     if (!redis) return;
     try {
       const ids = await redis.smembers(ACTIVE_SET);
+
+      // Collect all entries missing a country across all domains
+      const toEnrich = []; // [{ key, field, entry }]
       for (const id of ids) {
         const key  = this._key(id);
         const hash = await redis.hgetall(key);
         if (!hash) continue;
-
         for (const [field, raw] of Object.entries(hash)) {
           let entry;
           try { entry = JSON.parse(raw); } catch (_) { continue; }
-          if (entry.country) continue; // already has country
-
-          let country = null;
-          try { country = await geoIpService.getCountryCode(entry.ip); } catch (_) {}
-          if (!country) continue;
-
-          entry.country = country;
-          try {
-            await redis.hset(key, field, JSON.stringify(entry));
-          } catch (_) {}
+          if (!entry.country) toEnrich.push({ key, field, entry });
         }
+      }
+
+      // Throttle: one lookup per 1500ms ≈ 40 req/min (safe for 45 req/min limit)
+      for (const item of toEnrich) {
+        let country = null;
+        try { country = await geoIpService.getCountryCode(item.entry.ip); } catch (_) {}
+        if (country) {
+          item.entry.country = country;
+          try { await redis.hset(item.key, item.field, JSON.stringify(item.entry)); } catch (_) {}
+        }
+        // Wait between each lookup to avoid rate-limiting
+        await new Promise(r => setTimeout(r, 1500));
       }
     } catch (_) {}
   }
