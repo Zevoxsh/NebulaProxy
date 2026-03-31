@@ -67,39 +67,292 @@ function parseIpList(text) {
 
 // ── Challenge utilities ─────────────────────────────────────────────────────
 
-// Generate a math challenge question + token (token encodes the expected answer)
-function generateMathChallenge(ip) {
-  const ops  = ['+', '-', '×'];
-  const op   = ops[Math.floor(Math.random() * ops.length)];
-  let a, b, answer;
-
-  if (op === '+') { a = randInt(10, 99); b = randInt(10, 99); answer = a + b; }
-  else if (op === '-') { a = randInt(20, 99); b = randInt(1, a - 1); answer = a - b; }
-  else { a = randInt(2, 12); b = randInt(2, 12); answer = a * b; }
-
-  const expires = Math.floor(Date.now() / 1000) + 600; // 10 min to solve
-  const data    = `${ip}:${answer}:${expires}`;
-  const sig     = crypto.createHmac('sha256', CHALLENGE_SECRET).update(data).digest('hex').slice(0, 20);
-  const token   = `${answer}.${expires}.${sig}`;
-
-  return { question: `${a} ${op} ${b}`, token };
-}
-
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Verify the math answer token (created by generateMathChallenge)
-function verifyMathToken(ip, token, userAnswer) {
+// Normalize an answer for comparison (lowercase, no accent, no spaces)
+function normalizeAnswer(a) {
+  return String(a).toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '');
+}
+
+// Build a challenge token — answer is NOT stored in plaintext (HMAC only)
+function buildChallengeToken(ip, answer) {
+  const expires = Math.floor(Date.now() / 1000) + 600;
+  const norm    = normalizeAnswer(answer);
+  const sig     = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${norm}:${expires}`).digest('hex').slice(0, 20);
+  return `${expires}.${sig}`;
+}
+
+// Verify user answer against a challenge token
+function verifyChallengeAnswer(ip, token, userAnswer) {
   if (!token || userAnswer === undefined || userAnswer === '') return false;
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  const [expectedAnswer, expiresStr, sig] = parts;
+  if (parts.length !== 2) return false;
+  const [expiresStr, sig] = parts;
   const expires = parseInt(expiresStr, 10);
   if (isNaN(expires) || expires < Math.floor(Date.now() / 1000)) return false;
-  if (parseInt(userAnswer, 10) !== parseInt(expectedAnswer, 10)) return false;
-  const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${expectedAnswer}:${expires}`).digest('hex').slice(0, 20);
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  const norm     = normalizeAnswer(userAnswer);
+  const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${norm}:${expires}`).digest('hex').slice(0, 20);
+  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
+}
+
+// ── Challenge catalogue ──────────────────────────────────────────────────────
+
+const _COLORS = [
+  { name: 'rouge',  hex: '#ef4444' },
+  { name: 'bleu',   hex: '#3b82f6' },
+  { name: 'vert',   hex: '#22c55e' },
+  { name: 'jaune',  hex: '#eab308' },
+  { name: 'violet', hex: '#a855f7' },
+  { name: 'orange', hex: '#f97316' },
+];
+
+const _WORDS = ['PROXY', 'CLOUD', 'GUARD', 'BLOCK', 'FLAME', 'STORM', 'GATE', 'VAULT'];
+
+const _RIDDLES = [
+  { q: "Quel animal chante 'cocorico' ?",                 a: 'coq'     },
+  { q: "Combien de côtés a un carré ?",                   a: '4'       },
+  { q: "Quelle est la couleur du ciel par beau temps ?",  a: 'bleu'    },
+  { q: "Quel est le fruit jaune qu'on épluche ?",         a: 'banane'  },
+  { q: "Combien de jours dans une semaine ?",             a: '7'       },
+  { q: "Combien de mois dans une année ?",                a: '12'      },
+  { q: "Quel est l'opposé de 'chaud' ?",                  a: 'froid'   },
+  { q: "Quelle est la capitale de la France ?",           a: 'paris'   },
+  { q: "Combien font 10 × 10 ?",                          a: '100'     },
+  { q: "Quel est le 1er mois de l'année ?",               a: 'janvier' },
+];
+
+const _ROMAN = {4:'IV',5:'V',6:'VI',7:'VII',8:'VIII',9:'IX',10:'X',
+  11:'XI',12:'XII',13:'XIII',14:'XIV',15:'XV',16:'XVI',17:'XVII',18:'XVIII',
+  19:'XIX',20:'XX',21:'XXI',22:'XXII',23:'XXIII',24:'XXIV',25:'XXV',
+  30:'XXX',40:'XL',50:'L',60:'LX',70:'LXX',80:'LXXX',90:'XC',100:'C'};
+
+const _SYMS = ['★', '●', '▲', '◆', '✦', '◉', '♦'];
+
+// Returns { type, question, token, display, options, gameSecret }
+// display     = extra HTML snippet (symbols row, word card, colored text…)
+// options     = array of strings for click-to-choose challenges, null otherwise
+// gameSecret  = random hex used as the answer for interactive game challenges
+function generateChallenge(ip) {
+  const TYPES = [
+    'math_add', 'math_sub', 'math_mul',
+    'seq_arith', 'seq_geo',
+    'count_symbols',
+    'word_reverse', 'anagram',
+    'roman', 'alphabet',
+    'odd_out', 'stroop', 'riddle',
+    // ── Jeux interactifs ────────────────────────────────
+    'morpion', 'simon', 'whack', 'sort_nums',
+    'find_emoji', 'rps', 'speed_click', 'slider',
+  ];
+  const type = TYPES[randInt(0, TYPES.length - 1)];
+  let question, answer, display = '', options = null, gameSecret = null;
+
+  switch (type) {
+
+    // ── 1. Addition ──────────────────────────────────────────────────────────
+    case 'math_add': {
+      const a = randInt(10, 99), b = randInt(10, 99);
+      answer   = a + b;
+      question = `${a} + ${b} = ?`;
+      break;
+    }
+
+    // ── 2. Soustraction ─────────────────────────────────────────────────────
+    case 'math_sub': {
+      const a = randInt(20, 99), b = randInt(1, 19);
+      answer   = a - b;
+      question = `${a} − ${b} = ?`;
+      break;
+    }
+
+    // ── 3. Multiplication ────────────────────────────────────────────────────
+    case 'math_mul': {
+      const a = randInt(2, 12), b = randInt(2, 12);
+      answer   = a * b;
+      question = `${a} × ${b} = ?`;
+      break;
+    }
+
+    // ── 4. Suite arithmétique ────────────────────────────────────────────────
+    case 'seq_arith': {
+      const s = randInt(1, 15), d = randInt(2, 8);
+      answer   = s + 4 * d;
+      question = `Quelle est la suite ? ${s}, ${s+d}, ${s+2*d}, ${s+3*d}, __ ?`;
+      break;
+    }
+
+    // ── 5. Suite géométrique ─────────────────────────────────────────────────
+    case 'seq_geo': {
+      const s = randInt(1, 4), r = randInt(2, 3);
+      answer   = s * Math.pow(r, 4);
+      question = `Quelle est la suite ? ${s}, ${s*r}, ${s*r**2}, ${s*r**3}, __ ?`;
+      break;
+    }
+
+    // ── 6. Compter des symboles ──────────────────────────────────────────────
+    case 'count_symbols': {
+      const sym = _SYMS[randInt(0, _SYMS.length - 1)];
+      const cnt = randInt(5, 15);
+      answer   = cnt;
+      question = `Combien de <span class="sym-inline">${sym}</span> apparaissent ci-dessous ?`;
+      display  = `<div class="sym-display">${Array(cnt).fill(sym).join(' ')}</div>`;
+      break;
+    }
+
+    // ── 7. Mot à l'envers ────────────────────────────────────────────────────
+    case 'word_reverse': {
+      const word = _WORDS[randInt(0, _WORDS.length - 1)];
+      answer   = word.split('').reverse().join('');
+      question = `Écrivez ce mot à l'envers :`;
+      display  = `<div class="word-card">${word}</div>`;
+      break;
+    }
+
+    // ── 8. Anagramme ─────────────────────────────────────────────────────────
+    case 'anagram': {
+      const word = _WORDS[randInt(0, _WORDS.length - 1)];
+      let sh = word.split('').sort(() => Math.random() - 0.5).join('');
+      if (sh === word) sh = word.split('').reverse().join('');
+      answer   = word;
+      question = `Quel mot se cache dans ces lettres ?`;
+      display  = `<div class="word-card letter-scatter">${sh.split('').map(l => `<span>${l}</span>`).join('')}</div>`;
+      break;
+    }
+
+    // ── 9. Chiffres romains ──────────────────────────────────────────────────
+    case 'roman': {
+      const vals = Object.keys(_ROMAN).map(Number);
+      const val  = vals[randInt(0, vals.length - 1)];
+      answer   = val;
+      question = `Convertissez en chiffres arabes :`;
+      display  = `<div class="word-card roman">${_ROMAN[val]}</div>`;
+      break;
+    }
+
+    // ── 10. Position dans l'alphabet ─────────────────────────────────────────
+    case 'alphabet': {
+      const pos = randInt(1, 26);
+      answer   = String.fromCharCode(64 + pos);
+      question = `Quelle est la ${pos}${pos === 1 ? 'ère' : 'ème'} lettre de l'alphabet ?`;
+      break;
+    }
+
+    // ── 11. L'intrus (parité) ─────────────────────────────────────────────────
+    case 'odd_out': {
+      const wantEven = randInt(0, 1) === 0;
+      const nums = new Set();
+      while (nums.size < 4) {
+        const n = randInt(2, 30);
+        if (wantEven ? n % 2 === 0 : n % 2 !== 0) nums.add(n);
+      }
+      let outlier = randInt(2, 31);
+      if (wantEven ? outlier % 2 === 0 : outlier % 2 !== 0) outlier++;
+      const list = [...nums];
+      list.splice(randInt(0, list.length), 0, outlier);
+      answer   = String(outlier);
+      question = wantEven
+        ? `Cliquez sur le nombre <b>impair</b> parmi ceux-ci :`
+        : `Cliquez sur le nombre <b>pair</b> parmi ceux-ci :`;
+      options  = list.map(String);
+      break;
+    }
+
+    // ── 12. Test de Stroop (couleur du texte) ─────────────────────────────────
+    case 'stroop': {
+      const textColorIdx = randInt(0, _COLORS.length - 1);
+      const wordIdx      = (textColorIdx + randInt(1, _COLORS.length - 1)) % _COLORS.length;
+      const textColor    = _COLORS[textColorIdx];
+      const dispWord     = _COLORS[wordIdx].name.toUpperCase();
+      answer   = textColor.name;
+      question = `De quelle <b>couleur</b> est écrit ce mot ?`;
+      display  = `<div class="color-word" style="color:${textColor.hex}">${dispWord}</div>`;
+      options  = _COLORS.map(c => c.name);
+      break;
+    }
+
+    // ── 13. Devinette ────────────────────────────────────────────────────────
+    case 'riddle': {
+      const r  = _RIDDLES[randInt(0, _RIDDLES.length - 1)];
+      answer   = r.a;
+      question = r.q;
+      break;
+    }
+
+    // ── 14. Morpion (Tic-Tac-Toe) ────────────────────────────────────────────
+    case 'morpion': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Battez (ou égalisez) notre IA au morpion !';
+      break;
+    }
+
+    // ── 15. Simon Says ───────────────────────────────────────────────────────
+    case 'simon': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Mémorisez et répétez la séquence de couleurs !';
+      break;
+    }
+
+    // ── 16. Whack-a-Mole ─────────────────────────────────────────────────────
+    case 'whack': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Frappez 5 taupes pour passer ! 🐭';
+      break;
+    }
+
+    // ── 17. Cliquer dans l'ordre croissant ───────────────────────────────────
+    case 'sort_nums': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Cliquez les nombres du plus petit au plus grand !';
+      break;
+    }
+
+    // ── 18. Trouve l'emoji ────────────────────────────────────────────────────
+    case 'find_emoji': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Trouvez et cliquez tous les emojis identiques !';
+      break;
+    }
+
+    // ── 19. Pierre-Feuille-Ciseaux ────────────────────────────────────────────
+    case 'rps': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = "Battez l'IA au Pierre-Feuille-Ciseaux !";
+      break;
+    }
+
+    // ── 20. Clic rapide ───────────────────────────────────────────────────────
+    case 'speed_click': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Cliquez 7 fois sur le bouton avant la fin !';
+      break;
+    }
+
+    // ── 21. Glisseur de précision ─────────────────────────────────────────────
+    case 'slider': {
+      gameSecret = crypto.randomBytes(4).toString('hex');
+      answer     = gameSecret;
+      question   = 'Glissez le curseur dans la zone verte et validez !';
+      break;
+    }
+  }
+
+  return { type, question, token: buildChallengeToken(ip, answer), display, options, gameSecret };
+}
+
+// Keep legacy name as alias (used by proxyManager + server)
+function verifyMathToken(ip, token, userAnswer) {
+  return verifyChallengeAnswer(ip, token, userAnswer);
 }
 
 // Bypass cookie token (set after challenge is solved, valid 1h)
@@ -448,7 +701,32 @@ class DdosProtectionService {
   // ── Challenge mode (HTTP) ─────────────────────────────────────────────────
 
   generateChallengePage(ip, returnUrl) {
-    const { question, token } = generateMathChallenge(ip);
+    const { type, question, token, display, options, gameSecret } = generateChallenge(ip);
+
+    const GAME_TYPES = ['morpion','simon','whack','sort_nums','find_emoji','rps','speed_click','slider'];
+    const isGame    = GAME_TYPES.includes(type);
+    const isOptions = !isGame && Array.isArray(options) && options.length > 0;
+    const isNumeric = ['math_add','math_sub','math_mul','seq_arith','seq_geo','count_symbols','roman'].includes(type);
+
+    // Build option buttons HTML (odd_out / stroop)
+    const optBtnsHtml = isOptions
+      ? options.map(o => `<button type="button" class="opt-btn" data-val="${o}">${o}</button>`).join('')
+      : '';
+
+    // Build question label
+    const labelMap = {
+      math_add: 'Calculez', math_sub: 'Calculez', math_mul: 'Calculez',
+      seq_arith: 'Suite', seq_geo: 'Suite',
+      count_symbols: 'Comptez',
+      word_reverse: 'Inversez', anagram: 'Déchiffrez',
+      roman: 'Convertissez', alphabet: 'Identifiez',
+      odd_out: "L'intrus", stroop: 'Observez bien',
+      riddle: 'Devinette',
+      morpion: 'Jeu', simon: 'Mémoire', whack: 'Réflexes',
+      sort_nums: 'Ordonnez', find_emoji: 'Cherchez',
+      rps: 'Duel', speed_click: 'Vitesse', slider: 'Précision',
+    };
+    const label = labelMap[type] || 'Répondez';
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -459,202 +737,204 @@ class DdosProtectionService {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      font-size:13px;color:#fafafa;
+      background:radial-gradient(1200px 600px at 8% -10%,rgba(255,255,255,.08),transparent 56%),
+                 radial-gradient(900px 480px at 92% -15%,rgba(255,255,255,.04),transparent 52%),
+                 #09090b;
+      -webkit-font-smoothing:antialiased;
+      min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;
+    }
+    .wrap{width:100%;max-width:420px;animation:fade-in .24s ease-out both}
 
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px;
-      color: #fafafa;
-      background:
-        radial-gradient(1200px 600px at 8% -10%, rgba(255,255,255,0.08), transparent 56%),
-        radial-gradient(900px 480px at 92% -15%, rgba(255,255,255,0.04), transparent 52%),
-        #09090b;
-      -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
+    /* Brand */
+    .brand{display:flex;align-items:center;justify-content:center;gap:.625rem;margin-bottom:1.75rem}
+    .brand-mark{
+      width:32px;height:32px;border-radius:8px;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;
+      background:linear-gradient(140deg,rgba(228,228,231,.2),rgba(161,161,170,.26));
+      border:1px solid rgba(228,228,231,.35);
     }
-
-    .wrap {
-      width: 100%;
-      max-width: 400px;
-      animation: fade-in 0.24s ease-out both;
-    }
-
-    /* Brand header */
-    .brand {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.625rem;
-      margin-bottom: 1.75rem;
-    }
-    .brand-mark {
-      width: 32px; height: 32px;
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(140deg, rgba(228,228,231,0.2), rgba(161,161,170,0.26));
-      border: 1px solid rgba(228,228,231,0.35);
-      flex-shrink: 0;
-    }
-    .brand-mark svg { width: 16px; height: 16px; stroke: #fafafa; }
-    .brand-name {
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: #71717a;
-    }
+    .brand-mark svg{width:16px;height:16px;stroke:#fafafa}
+    .brand-name{font-size:.8rem;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#71717a}
 
     /* Card */
-    .card {
-      background: #111113;
-      border: 1px solid #27272a;
-      border-radius: 0.75rem;
-      padding: 2rem 1.75rem;
-    }
+    .card{background:#111113;border:1px solid #27272a;border-radius:.75rem;padding:2rem 1.75rem}
 
     /* Icon */
-    .icon-wrap {
-      width: 44px; height: 44px;
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(140deg, rgba(228,228,231,0.16), rgba(161,161,170,0.2));
-      border: 1px solid rgba(228,228,231,0.28);
-      margin: 0 auto 1.25rem;
+    .icon-wrap{
+      width:44px;height:44px;border-radius:10px;margin:0 auto 1.25rem;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(140deg,rgba(228,228,231,.16),rgba(161,161,170,.2));
+      border:1px solid rgba(228,228,231,.28);
     }
-    .icon-wrap svg { width: 20px; height: 20px; stroke: #fafafa; }
+    .icon-wrap svg{width:20px;height:20px;stroke:#fafafa}
 
-    h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #fafafa;
-      text-align: center;
-      margin-bottom: 0.375rem;
-      letter-spacing: -0.01em;
-    }
-    .sub {
-      font-size: 0.8rem;
-      color: #71717a;
-      text-align: center;
-      line-height: 1.55;
-      margin-bottom: 1.5rem;
-    }
+    h1{font-size:1.1rem;font-weight:600;color:#fafafa;text-align:center;margin-bottom:.375rem;letter-spacing:-.01em}
+    .sub{font-size:.8rem;color:#71717a;text-align:center;line-height:1.55;margin-bottom:1.5rem}
 
     /* Question box */
-    .question-box {
-      background: #09090b;
-      border: 1px solid #27272a;
-      border-radius: 8px;
-      padding: 1.125rem 1rem;
-      margin-bottom: 1.25rem;
-      text-align: center;
+    .qbox{
+      background:#09090b;border:1px solid #27272a;border-radius:8px;
+      padding:1.125rem 1rem;margin-bottom:1.25rem;text-align:center;
     }
-    .question-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: #52525b;
-      margin-bottom: 0.5rem;
-    }
-    .question {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: #fafafa;
-      letter-spacing: -0.02em;
-      font-variant-numeric: tabular-nums;
-    }
-    .question .eq { color: #a1a1aa; }
+    .qlabel{font-size:.7rem;text-transform:uppercase;letter-spacing:.14em;color:#52525b;margin-bottom:.5rem}
+    .qtext{font-size:1.4rem;font-weight:700;color:#fafafa;letter-spacing:-.01em;line-height:1.4}
+    .qtext b{color:#fafafa;font-weight:700}
 
-    /* Input + button row */
-    .input-row { display: flex; gap: 0.625rem; margin-bottom: 0.625rem; }
+    /* Symbol display (count challenge) */
+    .sym-display{
+      margin-top:.75rem;font-size:1.2rem;letter-spacing:.25em;line-height:1.8;
+      color:#a1a1aa;word-break:break-all;
+    }
+    .sym-inline{color:#fafafa}
 
-    input[type=number] {
-      flex: 1;
-      min-width: 0;
-      background: rgba(24,24,27,0.92);
-      border: 1px solid #3f3f46;
-      border-radius: 8px;
-      color: #fafafa;
-      font-family: inherit;
-      font-size: 0.875rem;
-      font-weight: 500;
-      padding: 0.55rem 0.75rem;
-      outline: none;
-      -moz-appearance: textfield;
-      text-align: center;
-      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    /* Word / roman card */
+    .word-card{
+      display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
+      margin-top:.75rem;padding:.5rem 1.25rem;
+      background:rgba(244,244,245,.07);border:1px solid #3f3f46;border-radius:8px;
+      font-size:1.5rem;font-weight:700;letter-spacing:.12em;color:#fafafa;
     }
-    input[type=number]::-webkit-outer-spin-button,
-    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-    input[type=number]:focus {
-      border-color: rgba(244,244,245,0.5);
-      box-shadow: 0 0 0 3px rgba(244,244,245,0.1);
-      background: rgba(31,31,35,0.92);
+    .word-card.roman{font-size:2rem;letter-spacing:.08em}
+    .letter-scatter span{
+      display:inline-block;margin:0 .2rem;
+      background:rgba(244,244,245,.09);border:1px solid #3f3f46;border-radius:4px;
+      padding:.1rem .45rem;font-size:1.2rem;font-weight:700;
     }
-    input[type=number]::placeholder { color: #52525b; }
 
-    button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      padding: 0.55rem 1rem;
-      border-radius: 8px;
-      border: 1px solid rgba(244,244,245,0.35);
-      background: linear-gradient(135deg, #fafafa, #e4e4e7);
-      color: #09090b;
-      font-family: inherit;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: filter 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
-      box-shadow: 0 7px 16px rgba(0,0,0,0.28);
+    /* Color word (Stroop) */
+    .color-word{
+      display:block;margin-top:.75rem;
+      font-size:2rem;font-weight:800;letter-spacing:.1em;
     }
-    button:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 9px 20px rgba(0,0,0,0.34); }
-    button:active { transform: translateY(0); filter: none; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
-    /* Status message */
-    .msg {
-      font-size: 0.75rem;
-      min-height: 1.1rem;
-      text-align: center;
-      color: transparent;
+    /* Input row */
+    .input-row{display:flex;gap:.625rem;margin-bottom:.625rem}
+    input[type=text],input[type=number]{
+      flex:1;min-width:0;
+      background:rgba(24,24,27,.92);border:1px solid #3f3f46;border-radius:8px;
+      color:#fafafa;font-family:inherit;font-size:.875rem;font-weight:500;
+      padding:.55rem .75rem;outline:none;text-align:center;
+      -moz-appearance:textfield;
+      transition:border-color .18s,box-shadow .18s,background .18s;
     }
-    .msg.ok  { color: #22c55e; }
-    .msg.err { color: #ef4444; }
+    input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
+    input:focus{border-color:rgba(244,244,245,.5);box-shadow:0 0 0 3px rgba(244,244,245,.1);background:rgba(31,31,35,.92)}
+    input::placeholder{color:#52525b}
+
+    /* Primary button */
+    .btn-primary{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:.55rem 1rem;border-radius:8px;
+      border:1px solid rgba(244,244,245,.35);
+      background:linear-gradient(135deg,#fafafa,#e4e4e7);
+      color:#09090b;font-family:inherit;font-size:.8rem;font-weight:600;
+      cursor:pointer;white-space:nowrap;
+      transition:filter .18s,transform .18s,box-shadow .18s;
+      box-shadow:0 7px 16px rgba(0,0,0,.28);
+    }
+    .btn-primary:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 9px 20px rgba(0,0,0,.34)}
+    .btn-primary:active{transform:translateY(0);filter:none}
+    .btn-primary:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+
+    /* Option buttons (odd_out / stroop) */
+    .opt-grid{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-bottom:.75rem}
+    .opt-btn{
+      padding:.5rem 1rem;border-radius:8px;
+      border:1px solid #3f3f46;background:rgba(24,24,27,.92);
+      color:#a1a1aa;font-family:inherit;font-size:.875rem;font-weight:500;
+      cursor:pointer;transition:border-color .18s,background .18s,color .18s,transform .12s;
+      text-transform:capitalize;
+    }
+    .opt-btn:hover{background:rgba(39,39,42,.92);border-color:rgba(244,244,245,.3);color:#fafafa}
+    .opt-btn.selected{
+      background:rgba(244,244,245,.13);border-color:rgba(244,244,245,.5);
+      color:#fafafa;transform:scale(1.04);
+    }
+    .opt-btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
+
+    /* Status */
+    .msg{font-size:.75rem;min-height:1.1rem;text-align:center;color:transparent;margin-top:.1rem}
+    .msg.ok{color:#22c55e}
+    .msg.err{color:#ef4444}
 
     /* Divider */
-    .divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-      margin: 1.25rem 0;
-    }
+    .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);margin:1.25rem 0}
 
-    /* Footer note */
-    .note {
-      font-size: 0.7rem;
-      color: #3f3f46;
-      text-align: center;
-      line-height: 1.5;
-    }
-    .note a { color: #52525b; text-decoration: none; }
-    .note a:hover { color: #71717a; }
+    .note{font-size:.7rem;color:#3f3f46;text-align:center;line-height:1.5}
+    .note a{color:#52525b;text-decoration:none}
+    .note a:hover{color:#71717a}
 
-    @keyframes fade-in {
-      from { opacity: 0; transform: translateY(8px); }
-      to   { opacity: 1; transform: translateY(0); }
+    /* ── Morpion ── */
+    .tt-board{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:.75rem}
+    .tt-cell{
+      aspect-ratio:1;background:#09090b;border:1px solid #27272a;border-radius:8px;
+      font-size:1.5rem;font-weight:700;cursor:pointer;
+      transition:background .12s,border-color .12s;display:flex;align-items:center;justify-content:center;
     }
-    @keyframes shake {
-      0%,100% { transform: translateX(0); }
-      20%,60%  { transform: translateX(-5px); }
-      40%,80%  { transform: translateX(5px); }
+    .tt-cell:not(:disabled):hover{background:#1c1c1f;border-color:#3f3f46}
+    .tt-cell:disabled{cursor:default}
+
+    /* ── Simon ── */
+    .simon-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:.75rem}
+    .simon-btn{
+      aspect-ratio:2/1;border-radius:8px;border:2px solid rgba(0,0,0,.2);
+      background:color-mix(in srgb,var(--c) 40%,#09090b);
+      cursor:pointer;transition:background .1s,transform .1s;
     }
-    .shake { animation: shake 0.32s ease; }
+    .simon-btn:not(:disabled):hover{background:color-mix(in srgb,var(--c) 65%,#09090b)}
+    .simon-btn.lit{background:var(--c)!important;transform:scale(.95)}
+    .simon-btn:disabled{cursor:default}
+
+    /* ── Whack-a-mole ── */
+    .mole-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:.75rem}
+    .mole-hole{
+      aspect-ratio:1;background:#09090b;border:1px solid #27272a;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;cursor:pointer;
+      font-size:1.5rem;opacity:.2;transition:opacity .1s,transform .1s;user-select:none;
+    }
+    .mole-hole.active{opacity:1;cursor:pointer}
+    .mole-hole.bonk{transform:scale(.8);opacity:.4}
+
+    /* ── Sort numbers ── */
+    .sort-grid{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:.75rem}
+    .sort-btn{
+      padding:.55rem .9rem;border-radius:8px;border:1px solid #3f3f46;
+      background:rgba(24,24,27,.92);color:#fafafa;font-size:.95rem;font-weight:600;
+      cursor:pointer;transition:background .15s,border-color .15s,transform .1s;
+    }
+    .sort-btn:hover{background:rgba(39,39,42,.92);border-color:rgba(244,244,245,.3)}
+    .sort-btn.used{opacity:.3;cursor:default}
+
+    /* ── Emoji find ── */
+    .emoji-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:.75rem}
+    .emoji-cell{
+      aspect-ratio:1;background:#09090b;border:1px solid #27272a;border-radius:8px;
+      font-size:1.3rem;cursor:pointer;transition:background .12s,transform .1s;
+    }
+    .emoji-cell:hover{background:#1c1c1f}
+    .emoji-cell.found{background:rgba(34,197,94,.15);border-color:#22c55e;cursor:default}
+    .emoji-cell:disabled{cursor:default}
+
+    /* ── Rock Paper Scissors ── */
+    .rps-grid{display:flex;gap:.75rem;justify-content:center;margin-top:.75rem}
+    .rps-btn{
+      flex:1;display:flex;flex-direction:column;align-items:center;gap:.25rem;padding:.75rem .5rem;
+      background:#09090b;border:1px solid #27272a;border-radius:10px;
+      cursor:pointer;transition:background .12s,border-color .12s,transform .1s;
+    }
+    .rps-btn span{font-size:1.6rem}
+    .rps-btn small{font-size:.65rem;color:#71717a;font-weight:500}
+    .rps-btn:not(:disabled):hover{background:#1c1c1f;border-color:#3f3f46}
+    .rps-btn.picked{border-color:rgba(244,244,245,.5);background:rgba(244,244,245,.1)}
+    .rps-btn:disabled{cursor:default;opacity:.5}
+
+    @keyframes fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
+    .shake{animation:shake .32s ease}
   </style>
 </head>
 <body>
@@ -670,23 +950,28 @@ class DdosProtectionService {
     <div class="icon-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     </div>
-
     <h1>Vérification de sécurité</h1>
-    <p class="sub">Résolvez ce calcul pour prouver que vous n'êtes pas un robot.</p>
+    <p class="sub">Prouvez que vous n'êtes pas un robot pour continuer.</p>
 
-    <div class="question-box" id="qbox">
-      <div class="question-label">Combien font</div>
-      <div class="question">${question} <span class="eq">=</span> ?</div>
+    <div class="qbox" id="qbox">
+      <div class="qlabel">${label}</div>
+      <div class="qtext">${question}</div>
+      ${display}
     </div>
 
+    ${isOptions ? `
+    <div class="opt-grid" id="opts">${optBtnsHtml}</div>
+    ` : isGame ? `
+    <div id="game-area"></div>
+    ` : `
     <form id="form" autocomplete="off">
       <div class="input-row">
-        <input type="number" id="ans" placeholder="Votre réponse" autofocus required>
-        <button type="submit" id="btn">Valider</button>
+        <input type="${isNumeric ? 'number' : 'text'}" id="ans" placeholder="Votre réponse" autofocus required>
+        <button type="submit" id="btn" class="btn-primary">Valider</button>
       </div>
     </form>
+    `}
     <div class="msg" id="msg">&nbsp;</div>
-
     <div class="divider"></div>
     <p class="note">Protégé par NebulaProxy Shield &bull; <a href="/">Retour à l'accueil</a></p>
   </div>
@@ -695,51 +980,286 @@ class DdosProtectionService {
 (function(){
   var TOKEN=${JSON.stringify(token)};
   var RETURN=${JSON.stringify(returnUrl||'/')};
-  var form=document.getElementById('form');
-  var btn=document.getElementById('btn');
+  var SECRET=${JSON.stringify(gameSecret||'')};
+  var TYPE=${JSON.stringify(type)};
   var msg=document.getElementById('msg');
-  var ansEl=document.getElementById('ans');
   var qbox=document.getElementById('qbox');
 
-  form.addEventListener('submit',function(e){
-    e.preventDefault();
-    var answer=ansEl.value.trim();
-    if(!answer){return;}
-    btn.disabled=true;
-    btn.textContent='Vérification...';
-    msg.className='msg';
-    msg.textContent='\u00a0';
+  function shake(el){el=el||qbox;el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');}
 
-    fetch('/__ddos_challenge/verify',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:TOKEN,answer:answer,return:RETURN})
-    })
+  function submit(answer,onFail){
+    msg.className='msg';msg.textContent='\u00a0';
+    fetch('/__ddos_challenge/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:TOKEN,answer:String(answer),return:RETURN})})
     .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
     .then(function(res){
       if(res.ok&&res.data.ok){
-        msg.className='msg ok';
-        msg.textContent='Réponse correcte, redirection\u2026';
+        msg.className='msg ok';msg.textContent='Accès autorisé, redirection\u2026';
         window.location.href=res.data.return||RETURN;
       } else {
-        msg.className='msg err';
-        msg.textContent='Réponse incorrecte. Réessayez.';
-        ansEl.value='';
-        ansEl.focus();
-        qbox.classList.remove('shake');
-        void qbox.offsetWidth;
-        qbox.classList.add('shake');
-        btn.disabled=false;
-        btn.textContent='Valider';
+        msg.className='msg err';msg.textContent='Incorrect. Réessayez.';
+        shake();if(onFail)onFail();
       }
     })
-    .catch(function(){
-      msg.className='msg err';
-      msg.textContent='Erreur réseau. Réessayez.';
-      btn.disabled=false;
-      btn.textContent='Valider';
+    .catch(function(){msg.className='msg err';msg.textContent='Erreur réseau.';if(onFail)onFail();});
+  }
+
+  /* ── Input challenges ─────────────────────────────────────────────── */
+  var form=document.getElementById('form');
+  if(form){
+    var btn=document.getElementById('btn'),ansEl=document.getElementById('ans');
+    form.addEventListener('submit',function(e){
+      e.preventDefault();var a=ansEl.value.trim();if(!a)return;
+      btn.disabled=true;btn.textContent='Vérification\u2026';
+      submit(a,function(){ansEl.value='';ansEl.focus();btn.disabled=false;btn.textContent='Valider';});
     });
-  });
+  }
+
+  /* ── Option challenges ────────────────────────────────────────────── */
+  var opts=document.getElementById('opts');
+  if(opts){
+    opts.addEventListener('click',function(e){
+      var b=e.target.closest('.opt-btn');if(!b||b.disabled)return;
+      opts.querySelectorAll('.opt-btn').forEach(function(x){x.disabled=true;});
+      b.classList.add('selected');
+      submit(b.dataset.val,function(){
+        opts.querySelectorAll('.opt-btn').forEach(function(x){x.disabled=false;x.classList.remove('selected');});
+      });
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════════ */
+  /* ── Game challenges ──────────────────────────────────────────────── */
+  /* ══════════════════════════════════════════════════════════════════ */
+  var ga=document.getElementById('game-area');
+  if(!ga)return;
+
+  function gset(html){ga.innerHTML=html;}
+  function gstatus(txt,cls){msg.className='msg'+(cls?' '+cls:'');msg.textContent=txt;}
+
+  /* ── MORPION ───────────────────────────────────────────────────────── */
+  if(TYPE==='morpion'){
+    var board=Array(9).fill(null),locked=false;
+    function renderBoard(){
+      var cells=board.map(function(c,i){
+        var sym=c?('<span style="color:'+(c==='X'?'#fafafa':'#a1a1aa')+'">'+c+'</span>'):'';
+        return '<button class="tt-cell" data-i="'+i+'" '+(c||locked?'disabled':'')+'>'+sym+'</button>';
+      }).join('');
+      gset('<div class="tt-board">'+cells+'</div>');
+      ga.querySelectorAll('.tt-cell').forEach(function(b){
+        b.addEventListener('click',function(){play(+this.dataset.i);});
+      });
+    }
+    function checkWin(b,p){
+      var W=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      return W.some(function(l){return l.every(function(i){return b[i]===p;});});
+    }
+    function aiMove(){
+      var empty=board.reduce(function(a,c,i){if(!c)a.push(i);return a;},[]);
+      if(!empty.length)return;
+      // Try to win or block
+      for(var p of['O','X']){
+        for(var i of empty){
+          var t=board.slice();t[i]=p;
+          if(checkWin(t,p)){board[i]='O';return;}
+        }
+      }
+      // Take center or random
+      if(!board[4])board[4]='O';
+      else board[empty[Math.floor(Math.random()*empty.length)]]='O';
+    }
+    function play(i){
+      if(locked||board[i])return;
+      board[i]='X';
+      if(checkWin(board,'X')){locked=true;renderBoard();gstatus('Vous avez gagné ! Validation\u2026','ok');submit(SECRET);return;}
+      var empty=board.filter(function(c){return!c;});
+      if(!empty.length){locked=true;renderBoard();gstatus('Match nul — ça compte ! Validation\u2026','ok');submit(SECRET);return;}
+      aiMove();
+      if(checkWin(board,'O')){locked=true;renderBoard();gstatus('Perdu ! Réessayez.','err');setTimeout(function(){board=Array(9).fill(null);locked=false;renderBoard();gstatus('');},1500);return;}
+      var empty2=board.filter(function(c){return!c;});
+      if(!empty2.length){locked=true;renderBoard();gstatus('Match nul — ça compte ! Validation\u2026','ok');submit(SECRET);return;}
+      renderBoard();
+    }
+    renderBoard();
+  }
+
+  /* ── SIMON ─────────────────────────────────────────────────────────── */
+  else if(TYPE==='simon'){
+    var SCOLS=[{n:'rouge',h:'#ef4444'},{n:'bleu',h:'#3b82f6'},{n:'vert',h:'#22c55e'},{n:'jaune',h:'#eab308'}];
+    var seq=[],step=0,showing=false,seqLen=4;
+    gset('<div class="simon-grid">'+SCOLS.map(function(c){return'<button class="simon-btn" data-c="'+c.n+'" style="--c:'+c.h+'" disabled></button>';}).join('')+'</div><div id="simon-info" style="text-align:center;font-size:.8rem;color:#71717a;margin-top:.75rem">Regardez la séquence...</div>');
+    var simonBtns=ga.querySelectorAll('.simon-btn'),simonInfo=document.getElementById('simon-info');
+    for(var i=0;i<seqLen;i++)seq.push(SCOLS[randInt0(SCOLS.length)].n);
+    function randInt0(n){return Math.floor(Math.random()*n);}
+    function flash(idx,cb){
+      var b=ga.querySelector('[data-c="'+seq[idx]+'"]');
+      b.classList.add('lit');setTimeout(function(){b.classList.remove('lit');setTimeout(cb,200);},500);
+    }
+    function playSeq(i){
+      if(i>=seq.length){simonInfo.textContent='À vous !';simonBtns.forEach(function(b){b.disabled=false;});return;}
+      flash(i,function(){playSeq(i+1);});
+    }
+    function enableBtns(){simonBtns.forEach(function(b){b.addEventListener('click',simonClick);});}
+    function simonClick(){
+      if(showing)return;
+      var picked=this.dataset.c;
+      if(picked===seq[step]){
+        this.classList.add('lit');setTimeout(function(){ga.querySelectorAll('.simon-btn').forEach(function(b){b.classList.remove('lit');});},200);
+        step++;
+        if(step>=seq.length){simonBtns.forEach(function(b){b.disabled=true;});gstatus('Parfait ! Validation\u2026','ok');submit(SECRET);}
+      } else {
+        shake();gstatus('Raté ! La séquence recommence\u2026','err');
+        simonBtns.forEach(function(b){b.disabled=true;});step=0;
+        setTimeout(function(){gstatus('');playSeq(0);},1000);
+      }
+    }
+    enableBtns();
+    setTimeout(function(){playSeq(0);},600);
+  }
+
+  /* ── WHACK-A-MOLE ──────────────────────────────────────────────────── */
+  else if(TYPE==='whack'){
+    var score=0,moleTimer=null,activeMole=-1,locked2=false;
+    gset('<div class="mole-grid">'+Array(9).fill(0).map(function(_,i){return'<div class="mole-hole" id="h'+i+'"><span class="mole-face">🐭</span></div>';}).join('')+'</div><div style="text-align:center;margin-top:.75rem"><span id="mole-score" style="font-size:.9rem;color:#a1a1aa">Taupes : 0 / 5</span></div>');
+    function nextMole(){
+      if(locked2)return;
+      if(activeMole>=0){var ph=document.getElementById('h'+activeMole);if(ph)ph.classList.remove('active');}
+      activeMole=Math.floor(Math.random()*9);
+      var hole=document.getElementById('h'+activeMole);
+      if(!hole)return;
+      hole.classList.add('active');
+      hole.onclick=function(){
+        if(!this.classList.contains('active'))return;
+        this.classList.remove('active');this.classList.add('bonk');
+        setTimeout(function(){hole.classList.remove('bonk');},300);
+        score++;document.getElementById('mole-score').textContent='Taupes : '+score+' / 5';
+        if(score>=5){locked2=true;clearInterval(moleTimer);gstatus('Bien joué ! Validation\u2026','ok');submit(SECRET);}
+      };
+    }
+    moleTimer=setInterval(nextMole,900);nextMole();
+    setTimeout(function(){
+      if(!locked2){locked2=true;clearInterval(moleTimer);gstatus('Trop lent ! Réessayez.','err');
+        setTimeout(function(){score=0;locked2=false;gstatus('');document.getElementById('mole-score').textContent='Taupes : 0 / 5';moleTimer=setInterval(nextMole,900);nextMole();},1500);}
+    },15000);
+  }
+
+  /* ── SORT NUMBERS ──────────────────────────────────────────────────── */
+  else if(TYPE==='sort_nums'){
+    var pool=[],sorted=[],clicks=[],done3=false;
+    while(pool.length<5){var n=Math.floor(Math.random()*49)+1;if(pool.indexOf(n)<0)pool.push(n);}
+    sorted=pool.slice().sort(function(a,b){return a-b;});
+    var shuffled=pool.slice().sort(function(){return Math.random()-.5;});
+    function renderSort(){
+      gset('<div class="sort-grid">'+shuffled.map(function(n){
+        var used=clicks.indexOf(n)>=0;
+        return'<button class="sort-btn'+(used?' used':'')+(done3?'':'')+'" data-n="'+n+'" '+(used?'disabled':'')+'>'+n+'</button>';
+      }).join('')+'</div><div style="text-align:center;font-size:.75rem;color:#52525b;margin-top:.5rem">Ordre : '+clicks.join(' &lt; ')+'</div>');
+      ga.querySelectorAll('.sort-btn:not([disabled])').forEach(function(b){
+        b.addEventListener('click',function(){
+          var n=+this.dataset.n;
+          if(n===sorted[clicks.length]){
+            clicks.push(n);renderSort();
+            if(clicks.length===sorted.length){gstatus('Parfait ! Validation\u2026','ok');submit(SECRET);}
+          } else {
+            shake();gstatus('Mauvais ordre ! Recommencez.','err');
+            clicks=[];setTimeout(function(){renderSort();gstatus('');},800);
+          }
+        });
+      });
+    }
+    renderSort();
+  }
+
+  /* ── FIND EMOJI ────────────────────────────────────────────────────── */
+  else if(TYPE==='find_emoji'){
+    var EMLIST=['🌟','🎯','🍕','🚀','🦊','🎸','🐉','🌈','🍦','🎃','🦋','🎨'];
+    var tidx=Math.floor(Math.random()*EMLIST.length);
+    var target=EMLIST[tidx];
+    var others=EMLIST.filter(function(_,i){return i!==tidx;});
+    var grid=[];var targetCount=4;
+    for(var t=0;t<targetCount;t++)grid.push({e:target,ok:true});
+    while(grid.length<16)grid.push({e:others[Math.floor(Math.random()*others.length)],ok:false});
+    grid.sort(function(){return Math.random()-.5;});
+    var found=0;
+    gset('<div style="text-align:center;font-size:.75rem;color:#71717a;margin-bottom:.5rem">Trouvez tous les <span style="font-size:1rem">'+target+'</span> ('+targetCount+' cachés)</div><div class="emoji-grid">'+grid.map(function(c,i){return'<button class="emoji-cell" data-i="'+i+'">'+c.e+'</button>';}).join('')+'</div>');
+    ga.addEventListener('click',function(e){
+      var b=e.target.closest('.emoji-cell');if(!b||b.disabled)return;
+      var idx=+b.dataset.i;
+      if(grid[idx].ok){
+        b.disabled=true;b.classList.add('found');found++;
+        if(found>=targetCount){gstatus('Tous trouvés ! Validation\u2026','ok');submit(SECRET);}
+      } else {
+        shake(b);gstatus('Raté ! Ce n\'est pas le bon emoji.','err');
+        setTimeout(function(){gstatus('');},1000);
+      }
+    });
+  }
+
+  /* ── ROCK PAPER SCISSORS ────────────────────────────────────────────── */
+  else if(TYPE==='rps'){
+    var RPSMAP={rock:'✊',paper:'✋',scissors:'✌\uFE0F'};
+    var RPSKEYS=Object.keys(RPSMAP);
+    function rpsWins(a,b){return(a==='rock'&&b==='scissors')||(a==='scissors'&&b==='paper')||(a==='paper'&&b==='rock');}
+    gset('<div class="rps-grid">'+RPSKEYS.map(function(k){return'<button class="rps-btn" data-k="'+k+'"><span>'+RPSMAP[k]+'</span><small>'+k.charAt(0).toUpperCase()+k.slice(1)+'</small></button>';}).join('')+'</div><div id="rps-result" style="text-align:center;min-height:2.5rem;padding-top:.5rem;font-size:.85rem;color:#a1a1aa"></div>');
+    ga.addEventListener('click',function(e){
+      var b=e.target.closest('.rps-btn');if(!b)return;
+      ga.querySelectorAll('.rps-btn').forEach(function(x){x.disabled=true;x.classList.remove('picked');});
+      b.classList.add('picked');
+      var mine=b.dataset.k;
+      var ai=RPSKEYS[Math.floor(Math.random()*3)];
+      var res=document.getElementById('rps-result');
+      var label=mine.charAt(0).toUpperCase()+mine.slice(1);
+      var ailabel=ai.charAt(0).toUpperCase()+ai.slice(1);
+      if(rpsWins(mine,ai)){
+        res.innerHTML='Vous : '+RPSMAP[mine]+'  vs  IA : '+RPSMAP[ai]+'<br><b style="color:#22c55e">Gagné !</b>';
+        gstatus('Vous avez gagné ! Validation\u2026','ok');submit(SECRET);
+      } else if(mine===ai){
+        res.innerHTML='Vous : '+RPSMAP[mine]+'  vs  IA : '+RPSMAP[ai]+'<br><span style="color:#eab308">Égalité, rejouez !</span>';
+        setTimeout(function(){ga.querySelectorAll('.rps-btn').forEach(function(x){x.disabled=false;x.classList.remove('picked');});res.innerHTML='';},900);
+      } else {
+        res.innerHTML='Vous : '+RPSMAP[mine]+'  vs  IA : '+RPSMAP[ai]+'<br><span style="color:#ef4444">Perdu, réessayez !</span>';
+        shake();setTimeout(function(){ga.querySelectorAll('.rps-btn').forEach(function(x){x.disabled=false;x.classList.remove('picked');});res.innerHTML='';},900);
+      }
+    });
+  }
+
+  /* ── SPEED CLICK ────────────────────────────────────────────────────── */
+  else if(TYPE==='speed_click'){
+    var TARGET=7,SECS=5,clicks2=0,started=false,timerSC=null;
+    gset('<div style="text-align:center"><div id="sc-count" style="font-size:2rem;font-weight:700;color:#fafafa;margin-bottom:.5rem">0 / '+TARGET+'</div><div id="sc-bar-wrap" style="background:#27272a;border-radius:4px;height:6px;overflow:hidden;margin-bottom:1rem"><div id="sc-bar" style="height:100%;background:#22c55e;width:100%;transition:width .1s linear"></div></div><button id="sc-btn" class="btn-primary" style="padding:.75rem 2rem;font-size:1rem">CLIQUEZ !</button></div>');
+    var scBtn=document.getElementById('sc-btn'),scCount=document.getElementById('sc-count'),scBar=document.getElementById('sc-bar');
+    var deadline,rafSC;
+    function updateBar(){
+      if(!started)return;
+      var left=Math.max(0,(deadline-Date.now())/(SECS*1000));
+      scBar.style.width=(left*100)+'%';
+      scBar.style.background=left>.4?'#22c55e':left>.15?'#eab308':'#ef4444';
+      if(left>0)rafSC=requestAnimationFrame(updateBar);
+    }
+    scBtn.addEventListener('click',function(){
+      if(!started){started=true;deadline=Date.now()+SECS*1000;rafSC=requestAnimationFrame(updateBar);
+        timerSC=setTimeout(function(){
+          if(clicks2<TARGET){scBtn.disabled=true;gstatus('Trop lent ! Réessayez.','err');
+            setTimeout(function(){clicks2=0;started=false;scBtn.disabled=false;scCount.textContent='0 / '+TARGET;scBar.style.width='100%';gstatus('');},1500);}
+        },SECS*1000);
+      }
+      clicks2++;scCount.textContent=clicks2+' / '+TARGET;
+      if(clicks2>=TARGET){clearTimeout(timerSC);cancelAnimationFrame(rafSC);scBtn.disabled=true;gstatus('Incroyable ! Validation\u2026','ok');submit(SECRET);}
+    });
+  }
+
+  /* ── SLIDER ─────────────────────────────────────────────────────────── */
+  else if(TYPE==='slider'){
+    var SLtarget=25+Math.floor(Math.random()*50),SLwidth=20;
+    var SLmin=SLtarget,SLmax=SLtarget+SLwidth;
+    gset('<div style="padding:.5rem 0"><div style="position:relative;height:20px;background:#27272a;border-radius:4px;margin-bottom:.75rem;overflow:hidden"><div style="position:absolute;left:'+SLtarget+'%;width:'+SLwidth+'%;height:100%;background:rgba(34,197,94,.3);border:1px solid #22c55e;border-radius:4px;pointer-events:none"></div></div><input type="range" id="sl" min="0" max="100" value="0" style="width:100%;accent-color:#fafafa;cursor:pointer"><div style="display:flex;justify-content:space-between;font-size:.7rem;color:#52525b;margin:.25rem 0"><span>0</span><span style="color:#22c55e">Zone cible</span><span>100</span></div><button id="sl-btn" class="btn-primary" style="width:100%;margin-top:.75rem">Valider la position</button></div>');
+    document.getElementById('sl-btn').addEventListener('click',function(){
+      var v=+document.getElementById('sl').value;
+      if(v>=SLmin&&v<=SLmax){gstatus('Dans la zone ! Validation\u2026','ok');submit(SECRET);}
+      else{shake();gstatus('Hors de la zone verte. Réessayez.','err');setTimeout(function(){gstatus('');},1000);}
+    });
+  }
+
 })();
 </script>
 </body>
@@ -751,7 +1271,7 @@ class DdosProtectionService {
   }
 
   verifyMathToken(ip, token, answer) {
-    return verifyMathToken(ip, token, answer);
+    return verifyChallengeAnswer(ip, token, answer);
   }
 
   generateVerifiedCookie(ip) {
