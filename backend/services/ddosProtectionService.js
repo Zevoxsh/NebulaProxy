@@ -455,130 +455,241 @@ class DdosProtectionService {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vérification de sécurité — NebulaProxy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-      background: #0B0C0F;
-      color: #e2e8f0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #fafafa;
+      background:
+        radial-gradient(1200px 600px at 8% -10%, rgba(255,255,255,0.08), transparent 56%),
+        radial-gradient(900px 480px at 92% -15%, rgba(255,255,255,0.04), transparent 52%),
+        #09090b;
+      -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      padding: 1rem;
-    }
-    .wrap {
-      text-align: center;
-      max-width: 420px;
-      width: 100%;
-    }
-    .logo {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: .5rem;
-      margin-bottom: 2rem;
-      opacity: .6;
-      font-size: .8rem;
-      letter-spacing: .15em;
-      text-transform: uppercase;
-      color: #6b7280;
+      padding: 1.5rem;
     }
-    .logo svg { width: 18px; height: 18px; }
-    .card {
-      background: #111318;
-      border: 1px solid #1e2028;
-      border-radius: 16px;
-      padding: 2.5rem 2rem;
+
+    .wrap {
+      width: 100%;
+      max-width: 400px;
+      animation: fade-in 0.24s ease-out both;
     }
-    .icon-wrap {
-      width: 56px; height: 56px;
-      background: linear-gradient(135deg, #1d4ed8 0%, #4f46e5 100%);
-      border-radius: 14px;
+
+    /* Brand header */
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.625rem;
+      margin-bottom: 1.75rem;
+    }
+    .brand-mark {
+      width: 32px; height: 32px;
+      border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 1.25rem;
-      box-shadow: 0 0 24px rgba(59,130,246,.25);
+      background: linear-gradient(140deg, rgba(228,228,231,0.2), rgba(161,161,170,0.26));
+      border: 1px solid rgba(228,228,231,0.35);
+      flex-shrink: 0;
     }
-    .icon-wrap svg { width: 28px; height: 28px; color: #fff; }
-    h1 { font-size: 1.15rem; font-weight: 700; margin-bottom: .4rem; color: #f1f5f9; }
-    .sub { color: #6b7280; font-size: .875rem; line-height: 1.55; margin-bottom: 2rem; }
-    .question-box {
-      background: #0d0e12;
-      border: 1px solid #1e2028;
-      border-radius: 12px;
-      padding: 1.25rem;
-      margin-bottom: 1.5rem;
+    .brand-mark svg { width: 16px; height: 16px; stroke: #fafafa; }
+    .brand-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #71717a;
     }
-    .question-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em; color: #4b5563; margin-bottom: .6rem; }
-    .question { font-size: 2rem; font-weight: 800; color: #f1f5f9; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
-    .question span { color: #3b82f6; }
-    .input-row { display: flex; gap: .75rem; margin-bottom: 1rem; }
-    input[type=number] {
-      flex: 1;
-      background: #0d0e12;
-      border: 1.5px solid #1e2028;
+
+    /* Card */
+    .card {
+      background: #111113;
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      padding: 2rem 1.75rem;
+    }
+
+    /* Icon */
+    .icon-wrap {
+      width: 44px; height: 44px;
       border-radius: 10px;
-      color: #f1f5f9;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(140deg, rgba(228,228,231,0.16), rgba(161,161,170,0.2));
+      border: 1px solid rgba(228,228,231,0.28);
+      margin: 0 auto 1.25rem;
+    }
+    .icon-wrap svg { width: 20px; height: 20px; stroke: #fafafa; }
+
+    h1 {
       font-size: 1.1rem;
       font-weight: 600;
-      padding: .7rem 1rem;
+      color: #fafafa;
+      text-align: center;
+      margin-bottom: 0.375rem;
+      letter-spacing: -0.01em;
+    }
+    .sub {
+      font-size: 0.8rem;
+      color: #71717a;
+      text-align: center;
+      line-height: 1.55;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Question box */
+    .question-box {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 1.125rem 1rem;
+      margin-bottom: 1.25rem;
+      text-align: center;
+    }
+    .question-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #52525b;
+      margin-bottom: 0.5rem;
+    }
+    .question {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #fafafa;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .question .eq { color: #a1a1aa; }
+
+    /* Input + button row */
+    .input-row { display: flex; gap: 0.625rem; margin-bottom: 0.625rem; }
+
+    input[type=number] {
+      flex: 1;
+      min-width: 0;
+      background: rgba(24,24,27,0.92);
+      border: 1px solid #3f3f46;
+      border-radius: 8px;
+      color: #fafafa;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 0.55rem 0.75rem;
       outline: none;
       -moz-appearance: textfield;
       text-align: center;
-      transition: border-color .2s;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
     }
     input[type=number]::-webkit-outer-spin-button,
     input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-    input[type=number]:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
-    button {
-      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
-      border: none;
-      border-radius: 10px;
-      color: #fff;
-      cursor: pointer;
-      font-size: .95rem;
-      font-weight: 600;
-      padding: .72rem 1.4rem;
-      transition: opacity .15s, transform .1s;
-      white-space: nowrap;
+    input[type=number]:focus {
+      border-color: rgba(244,244,245,0.5);
+      box-shadow: 0 0 0 3px rgba(244,244,245,0.1);
+      background: rgba(31,31,35,0.92);
     }
-    button:hover { opacity: .92; transform: translateY(-1px); }
-    button:active { transform: translateY(0); opacity: 1; }
-    button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-    .msg { font-size: .82rem; min-height: 1.2rem; margin-top: .25rem; }
+    input[type=number]::placeholder { color: #52525b; }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1rem;
+      border-radius: 8px;
+      border: 1px solid rgba(244,244,245,0.35);
+      background: linear-gradient(135deg, #fafafa, #e4e4e7);
+      color: #09090b;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: filter 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+      box-shadow: 0 7px 16px rgba(0,0,0,0.28);
+    }
+    button:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 9px 20px rgba(0,0,0,0.34); }
+    button:active { transform: translateY(0); filter: none; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* Status message */
+    .msg {
+      font-size: 0.75rem;
+      min-height: 1.1rem;
+      text-align: center;
+      color: transparent;
+    }
     .msg.ok  { color: #22c55e; }
     .msg.err { color: #ef4444; }
-    .footer { margin-top: 1.75rem; font-size: .75rem; color: #374151; }
-    .footer a { color: #374151; text-decoration: none; }
-    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
-    .shake { animation: shake .35s ease; }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      margin: 1.25rem 0;
+    }
+
+    /* Footer note */
+    .note {
+      font-size: 0.7rem;
+      color: #3f3f46;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .note a { color: #52525b; text-decoration: none; }
+    .note a:hover { color: #71717a; }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%,60%  { transform: translateX(-5px); }
+      40%,80%  { transform: translateX(5px); }
+    }
+    .shake { animation: shake 0.32s ease; }
   </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="logo">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    NebulaProxy
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <span class="brand-name">NebulaProxy</span>
   </div>
+
   <div class="card">
     <div class="icon-wrap">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     </div>
+
     <h1>Vérification de sécurité</h1>
-    <p class="sub">Résolvez ce calcul pour confirmer que vous n'êtes pas un robot.</p>
-    <div class="question-box">
+    <p class="sub">Résolvez ce calcul pour prouver que vous n'êtes pas un robot.</p>
+
+    <div class="question-box" id="qbox">
       <div class="question-label">Combien font</div>
-      <div class="question" id="q">${question} <span>=</span> ?</div>
+      <div class="question">${question} <span class="eq">=</span> ?</div>
     </div>
+
     <form id="form" autocomplete="off">
       <div class="input-row">
         <input type="number" id="ans" placeholder="Votre réponse" autofocus required>
         <button type="submit" id="btn">Valider</button>
       </div>
     </form>
-    <div class="msg" id="msg"></div>
+    <div class="msg" id="msg">&nbsp;</div>
+
+    <div class="divider"></div>
+    <p class="note">Protégé par NebulaProxy Shield &bull; <a href="/">Retour à l'accueil</a></p>
   </div>
-  <div class="footer">Protégé par NebulaProxy Shield &bull; <a href="/">Retour à l'accueil</a></div>
 </div>
 <script>
 (function(){
@@ -588,6 +699,7 @@ class DdosProtectionService {
   var btn=document.getElementById('btn');
   var msg=document.getElementById('msg');
   var ansEl=document.getElementById('ans');
+  var qbox=document.getElementById('qbox');
 
   form.addEventListener('submit',function(e){
     e.preventDefault();
@@ -596,7 +708,7 @@ class DdosProtectionService {
     btn.disabled=true;
     btn.textContent='Vérification...';
     msg.className='msg';
-    msg.textContent='';
+    msg.textContent='\u00a0';
 
     fetch('/__ddos_challenge/verify',{
       method:'POST',
@@ -605,19 +717,18 @@ class DdosProtectionService {
     })
     .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
     .then(function(res){
-      if(res.ok && res.data.ok){
+      if(res.ok&&res.data.ok){
         msg.className='msg ok';
-        msg.textContent='Réponse correcte, redirection...';
+        msg.textContent='Réponse correcte, redirection\u2026';
         window.location.href=res.data.return||RETURN;
       } else {
         msg.className='msg err';
         msg.textContent='Réponse incorrecte. Réessayez.';
         ansEl.value='';
         ansEl.focus();
-        var card=document.querySelector('.question-box');
-        card.classList.remove('shake');
-        void card.offsetWidth;
-        card.classList.add('shake');
+        qbox.classList.remove('shake');
+        void qbox.offsetWidth;
+        qbox.classList.add('shake');
         btn.disabled=false;
         btn.textContent='Valider';
       }
