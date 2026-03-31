@@ -502,7 +502,8 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
           color="#EF4444"
         />
         {ddos.enabled && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+          <div className="space-y-3 mt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Requêtes / seconde" hint="Seuil avant ban automatique (HTTP)">
               <input
                 type="number" min="1" max="10000" className={INPUT}
@@ -532,7 +533,7 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
               />
             </Field>
           </div>
-          <div className="flex flex-col gap-3 mt-3">
+          <div className="flex flex-col gap-3">
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={ddos.challengeMode}
                 onChange={e => setDdos(d => ({ ...d, challengeMode: e.target.checked }))}
@@ -545,6 +546,7 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
                 className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
               <span className="text-sm text-white/70">Ban automatique sur taux élevé d'erreurs 4xx (scanners, fuzzers)</span>
             </label>
+          </div>
           </div>
         )}
         <Msg skey="ddos" />
