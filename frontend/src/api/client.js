@@ -186,6 +186,8 @@ export const adminAPI = {
   deleteDdosWhitelist: (id) => api.delete(`/admin/ddos/whitelist/${id}`),
   getDdosEvents: (params) => api.get('/admin/ddos/events', { params }),
   getDdosEventStats: () => api.get('/admin/ddos/events/stats'),
+  getChallengeTypes: () => api.get('/admin/ddos/challenge-types'),
+  setChallengeTypes: (enabledIds) => api.put('/admin/ddos/challenge-types', { enabledIds }),
 
   // Admin team management
   getAllTeams: () => api.get('/admin/teams'),

@@ -99,6 +99,9 @@ function verifyChallengeAnswer(ip, token, userAnswer) {
   try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
 }
 
+// null = all types active; array = only listed types active
+let _enabledTypes = null;
+
 // ── Challenge catalogue ──────────────────────────────────────────────────────
 
 const _COLORS = [
@@ -137,17 +140,19 @@ const _SYMS = ['★', '●', '▲', '◆', '✦', '◉', '♦'];
 // options     = array of strings for click-to-choose challenges, null otherwise
 // gameSecret  = random hex used as the answer for interactive game challenges
 function generateChallenge(ip) {
-  const TYPES = [
+  const ALL_TYPES = [
     'math_add', 'math_sub', 'math_mul',
     'seq_arith', 'seq_geo',
     'count_symbols',
     'word_reverse', 'anagram',
     'roman', 'alphabet',
     'odd_out', 'stroop', 'riddle',
-    // ── Jeux interactifs ────────────────────────────────
     'morpion', 'simon', 'whack', 'sort_nums',
     'find_emoji', 'rps', 'speed_click', 'slider',
   ];
+  const TYPES = (_enabledTypes && _enabledTypes.length > 0)
+    ? ALL_TYPES.filter(t => _enabledTypes.includes(t))
+    : ALL_TYPES;
   const type = TYPES[randInt(0, TYPES.length - 1)];
   let question, answer, display = '', options = null, gameSecret = null;
 
@@ -423,6 +428,9 @@ class DdosProtectionService {
     // Refresh whitelist every 5 min
     setInterval(() => this._loadWhitelist().catch(() => {}), 5 * 60 * 1000);
 
+    // Load enabled challenge types from Redis
+    await this._loadEnabledTypes().catch(() => {});
+
     // Initial blocklist sync (non-blocking)
     this.syncAllBlocklists().catch(err => console.error('[DDoS] Initial sync failed:', err.message));
 
@@ -435,6 +443,52 @@ class DdosProtectionService {
     this._eventFlushTimer = setInterval(() => this._flushEvents(), EVENT_LOG_INTERVAL);
 
     console.log('[DDoS] Protection service initialized (enterprise mode)');
+  }
+
+  // ── Challenge type selection ──────────────────────────────────────────────
+
+  static get ALL_CHALLENGE_TYPES() {
+    return [
+      { id: 'math_add',      label: 'Addition',              desc: '23 + 45 = ?',                    category: 'Maths'  },
+      { id: 'math_sub',      label: 'Soustraction',          desc: '67 − 12 = ?',                    category: 'Maths'  },
+      { id: 'math_mul',      label: 'Multiplication',        desc: '7 × 8 = ?',                      category: 'Maths'  },
+      { id: 'seq_arith',     label: 'Suite arithmétique',    desc: '3, 7, 11, __ ?',                 category: 'Maths'  },
+      { id: 'seq_geo',       label: 'Suite géométrique',     desc: '2, 6, 18, __ ?',                 category: 'Maths'  },
+      { id: 'count_symbols', label: 'Compter les symboles',  desc: '★★★★★ → combien ?',             category: 'Texte'  },
+      { id: 'word_reverse',  label: 'Mot à l\'envers',       desc: 'PROXY → YXORP',                  category: 'Texte'  },
+      { id: 'anagram',       label: 'Anagramme',             desc: 'P·R·O·X·Y → trouver le mot',     category: 'Texte'  },
+      { id: 'roman',         label: 'Chiffres romains',      desc: 'XIV → 14',                       category: 'Texte'  },
+      { id: 'alphabet',      label: 'Position alphabet',     desc: '7ème lettre → G',                category: 'Texte'  },
+      { id: 'odd_out',       label: 'L\'intrus',             desc: 'Cliquer le nombre impair',       category: 'Texte'  },
+      { id: 'stroop',        label: 'Test de Stroop',        desc: 'Cliquer la couleur du texte',    category: 'Texte'  },
+      { id: 'riddle',        label: 'Devinette',             desc: 'Cocorico → coq',                 category: 'Texte'  },
+      { id: 'morpion',       label: 'Morpion',               desc: 'Tic-Tac-Toe contre l\'IA',       category: 'Jeux'   },
+      { id: 'simon',         label: 'Simon Says',            desc: '3 couleurs à mémoriser',         category: 'Jeux'   },
+      { id: 'whack',         label: 'Whack-a-Mole',         desc: 'Frapper 4 taupes',               category: 'Jeux'   },
+      { id: 'sort_nums',     label: 'Trier les nombres',     desc: 'Cliquer du + petit au + grand',  category: 'Jeux'   },
+      { id: 'find_emoji',    label: 'Chercher les emojis',   desc: 'Trouver 3 emojis identiques',    category: 'Jeux'   },
+      { id: 'rps',           label: 'Pierre-Feuille-Ciseaux', desc: 'Battre l\'IA',                 category: 'Jeux'   },
+      { id: 'speed_click',   label: 'Clic rapide',           desc: '5 clics en 7 secondes',          category: 'Jeux'   },
+      { id: 'slider',        label: 'Glisseur de précision', desc: 'Viser la zone verte',            category: 'Jeux'   },
+    ];
+  }
+
+  async _loadEnabledTypes() {
+    if (!this.redis) return;
+    const val = await this.redis.get('ddos:challenge:enabled_types');
+    if (val) _enabledTypes = JSON.parse(val);
+  }
+
+  async setEnabledChallengeTypes(types) {
+    _enabledTypes = Array.isArray(types) && types.length > 0 ? types : null;
+    if (this.redis) {
+      if (_enabledTypes) await this.redis.set('ddos:challenge:enabled_types', JSON.stringify(_enabledTypes));
+      else               await this.redis.del('ddos:challenge:enabled_types');
+    }
+  }
+
+  getEnabledChallengeTypes() {
+    return _enabledTypes;
   }
 
   // ── Whitelist ─────────────────────────────────────────────────────────────

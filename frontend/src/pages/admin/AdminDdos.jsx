@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Shield, Ban, RefreshCw, Trash2, Plus, Database, ShieldAlert,
-  Activity, List, CheckCircle, AlertTriangle, Globe, Clock, Zap
+  Activity, List, CheckCircle, AlertTriangle, Globe, Clock, Zap,
+  Sliders, Save, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 
@@ -72,6 +73,10 @@ export default function AdminDdos() {
   const [showWlForm, setShowWlForm] = useState(false);
   const [wlForm, setWlForm] = useState({ cidr: '', description: '' });
 
+  // Challenge types selection
+  const [challengeTypes, setChallengeTypes] = useState([]);
+  const [ctSaving, setCtSaving] = useState(false);
+
   const showMsg = (type, text, ms = 4000) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), ms);
@@ -79,13 +84,14 @@ export default function AdminDdos() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [sRes, bRes, blRes, wRes, eRes, esRes] = await Promise.all([
+      const [sRes, bRes, blRes, wRes, eRes, esRes, ctRes] = await Promise.all([
         adminAPI.getDdosStats(),
         adminAPI.getDdosBans({ ip: filterIp || undefined, limit: 100 }),
         adminAPI.getDdosBlocklists(),
         adminAPI.getDdosWhitelist(),
         adminAPI.getDdosEvents({ limit: 50, attackType: filterType || undefined }),
-        adminAPI.getDdosEventStats()
+        adminAPI.getDdosEventStats(),
+        adminAPI.getChallengeTypes(),
       ]);
       setStats(sRes.data);
       setBans(bRes.data.bans || []);
@@ -93,6 +99,7 @@ export default function AdminDdos() {
       setWhitelist(wRes.data.whitelist || []);
       setEvents(eRes.data.events || []);
       setEventStats(esRes.data.stats || []);
+      setChallengeTypes(ctRes.data.types || []);
     } catch {
       showMsg('error', 'Impossible de charger les données DDoS');
     } finally {
@@ -173,12 +180,35 @@ export default function AdminDdos() {
     }
   };
 
+  const toggleChallengeType = (id) => {
+    setChallengeTypes(prev => prev.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t));
+  };
+
+  const toggleAllCategory = (category, enabled) => {
+    setChallengeTypes(prev => prev.map(t => t.category === category ? { ...t, enabled } : t));
+  };
+
+  const handleSaveChallengeTypes = async () => {
+    const enabledIds = challengeTypes.filter(t => t.enabled).map(t => t.id);
+    if (enabledIds.length === 0) { showMsg('error', 'Au moins un type de challenge doit rester actif'); return; }
+    setCtSaving(true);
+    try {
+      await adminAPI.setChallengeTypes(enabledIds);
+      showMsg('success', `${enabledIds.length} type(s) de challenge sauvegardés`);
+    } catch (err) {
+      showMsg('error', err.response?.data?.error || 'Échec de la sauvegarde');
+    } finally {
+      setCtSaving(false);
+    }
+  };
+
   const TABS = [
-    { id: 'overview',     label: 'Vue d\'ensemble', icon: Activity },
-    { id: 'bans',         label: 'Bans actifs',     icon: Ban },
-    { id: 'whitelist',    label: 'Whitelist',        icon: CheckCircle },
-    { id: 'events',       label: 'Événements',       icon: List },
-    { id: 'blocklists',   label: 'Threat Intel',     icon: Database },
+    { id: 'overview',    label: 'Vue d\'ensemble', icon: Activity },
+    { id: 'bans',        label: 'Bans actifs',     icon: Ban },
+    { id: 'whitelist',   label: 'Whitelist',        icon: CheckCircle },
+    { id: 'events',      label: 'Événements',       icon: List },
+    { id: 'blocklists',  label: 'Threat Intel',     icon: Database },
+    { id: 'challenges',  label: 'Challenges',       icon: Sliders },
   ];
 
   if (loading) {
@@ -589,6 +619,97 @@ export default function AdminDdos() {
           </div>
         </div>
       )}
+
+      {/* ── Challenge Types Tab ── */}
+      {tab === 'challenges' && (() => {
+        const categories = ['Maths', 'Texte', 'Jeux'];
+        const categoryIcons = { Maths: '🧮', Texte: '📝', Jeux: '🎮' };
+        const enabledCount = challengeTypes.filter(t => t.enabled).length;
+        return (
+          <div className="space-y-4">
+            {/* Header bar */}
+            <div className="bg-[#161B22] border border-white/[0.06] rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Sliders className="w-4 h-4 text-white/40" strokeWidth={1.5} />
+                <div>
+                  <p className="text-sm font-medium text-white">Types de challenge actifs</p>
+                  <p className="text-xs text-white/40 mt-0.5">
+                    <span className={`font-semibold ${enabledCount === 0 ? 'text-red-400' : 'text-white/70'}`}>{enabledCount}</span>
+                    <span> / {challengeTypes.length} activés — tirés aléatoirement lors du challenge</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setChallengeTypes(prev => prev.map(t => ({ ...t, enabled: true })))}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/[0.08] text-white/50 hover:text-white hover:border-white/20 transition-all"
+                >
+                  Tout activer
+                </button>
+                <button
+                  onClick={handleSaveChallengeTypes}
+                  disabled={ctSaving || enabledCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-black hover:bg-white/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {ctSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+                </button>
+              </div>
+            </div>
+
+            {/* Category groups */}
+            {categories.map(cat => {
+              const items = challengeTypes.filter(t => t.category === cat);
+              const catEnabled = items.filter(t => t.enabled).length;
+              return (
+                <div key={cat} className="bg-[#161B22] border border-white/[0.06] rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{categoryIcons[cat]}</span>
+                      <span className="text-sm font-medium text-white">{cat}</span>
+                      <span className="text-xs text-white/30 ml-1">{catEnabled}/{items.length}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => toggleAllCategory(cat, true)}
+                        className="px-2.5 py-1 rounded text-[11px] font-medium border border-white/[0.08] text-white/40 hover:text-white hover:border-white/20 transition-all"
+                      >Activer tous</button>
+                      <button
+                        onClick={() => toggleAllCategory(cat, false)}
+                        className="px-2.5 py-1 rounded text-[11px] font-medium border border-white/[0.08] text-white/40 hover:text-red-400 hover:border-red-500/30 transition-all"
+                      >Désactiver tous</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-white/[0.03]">
+                    {items.map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => toggleChallengeType(t.id)}
+                        className={`flex items-start gap-3 p-4 text-left transition-all group bg-[#161B22] hover:bg-white/[0.02] ${t.enabled ? '' : 'opacity-50'}`}
+                      >
+                        <div className={`mt-0.5 flex-shrink-0 w-8 h-5 rounded-full relative transition-colors ${t.enabled ? 'bg-white/80' : 'bg-white/10'}`}>
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-[#161B22] shadow transition-all ${t.enabled ? 'left-3.5' : 'left-0.5'}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-white leading-tight">{t.label}</p>
+                          <p className="text-[11px] text-white/35 mt-0.5 font-mono leading-snug">{t.desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {enabledCount === 0 && (
+              <div className="flex items-center gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-xl text-xs text-red-400">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                Aucun type actif — activez au moins un challenge avant de sauvegarder.
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
