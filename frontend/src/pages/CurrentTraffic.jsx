@@ -47,8 +47,7 @@ function ProtoBadge({ proto }) {
   );
 }
 
-// Window: only show connections seen in the last 60 seconds
-const CURRENT_WINDOW_MS = 60 * 1000;
+// No time window — show all stored connections
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -69,10 +68,7 @@ export default function CurrentTraffic() {
   const load = useCallback(async () => {
     try {
       const res = await domainAPI.getAllLiveTraffic();
-      const all = res.data.connections || [];
-      const threshold = Date.now() - CURRENT_WINDOW_MS;
-      // Only keep connections seen in the last 60 seconds
-      setConnections(all.filter(c => c.lastSeen > threshold));
+      setConnections(res.data.connections || []);
     } catch (_) {
       // silently ignore — will retry
     } finally {
@@ -130,7 +126,7 @@ export default function CurrentTraffic() {
             Requêtes actuelles
           </h1>
           <p className="text-admin-text-muted text-sm mt-1">
-            Connexions des 60 dernières secondes — rafraîchissement 1s
+            Toutes les connexions enregistrées — rafraîchissement 1s
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -159,7 +155,7 @@ export default function CurrentTraffic() {
       <div className="card-standard p-4 flex items-center gap-4">
         <Activity className="w-4 h-4 text-[#9D4EDD]" strokeWidth={1.5} />
         <span className="text-admin-text font-semibold text-lg">{sorted.length}</span>
-        <span className="text-admin-text-muted text-sm">connexion(s) active(s) dans la fenêtre de 60s</span>
+        <span className="text-admin-text-muted text-sm">connexion(s) enregistrée(s)</span>
         {autoRefresh && (
           <span className="ml-auto text-[10px] text-admin-text-muted flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
@@ -219,7 +215,7 @@ export default function CurrentTraffic() {
         {sorted.length === 0 ? (
           <div className="p-12 text-center text-admin-text-muted text-sm">
             <Wifi className="w-10 h-10 mx-auto mb-3 opacity-20" strokeWidth={1} />
-            Aucune requête dans les 60 dernières secondes
+            Aucune connexion enregistrée
           </div>
         ) : (
           <Table>

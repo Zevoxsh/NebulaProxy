@@ -1,15 +1,14 @@
 /**
  * LiveTrafficService - Real-time connection/request tracking per domain
- * Stores recent hits in Redis hashes with auto-expiry.
+ * Stores hits in Redis hashes — no auto-expiry on individual entries.
  * Fire-and-forget design: errors are silently suppressed.
  */
 
 import { geoIpService } from './geoIpService.js';
 
-const HASH_TTL_SEC  = 300;            // 5-minute TTL on the whole domain hash
-const STALE_MS      = 5 * 60 * 1000; // Filter entries older than 5 min on read
-const PREFIX        = 'live:traffic:';
-const ACTIVE_SET    = 'live:traffic:active';
+const HASH_TTL_SEC = 86400;       // 24h TTL on the whole domain hash (refreshed on each hit)
+const PREFIX       = 'live:traffic:';
+const ACTIVE_SET   = 'live:traffic:active';
 
 class LiveTrafficService {
   constructor() {
@@ -18,6 +17,8 @@ class LiveTrafficService {
 
   init(redisClient) {
     this._redis = redisClient;
+    // Periodically enrich entries that are missing country codes
+    setInterval(() => this._enrichMissingCountries(), 30_000);
   }
 
   _key(domainId) {
@@ -44,12 +45,11 @@ class LiveTrafficService {
         entry.bytes    += bytes;
         entry.lastSeen  = now;
         if (backend) entry.backend = backend;
-        // Retry country lookup if it was missing (e.g. from a failed previous lookup)
+        // Retry country lookup if it was missing
         if (!entry.country) {
           try { entry.country = await geoIpService.getCountryCode(ip); } catch (_) {}
         }
       } else {
-        // Lookup country (cached in Redis 24h by geoIpService)
         let country = null;
         try { country = await geoIpService.getCountryCode(ip); } catch (_) {}
         entry = { ip, country, protocol, backend: backend || null, reqCount: 1, bytes, firstSeen: now, lastSeen: now };
@@ -66,8 +66,7 @@ class LiveTrafficService {
   }
 
   /**
-   * Get recent connections for one domain.
-   * Filters out entries not seen in the last 5 minutes.
+   * Get all connections for one domain — no time filtering, keeps full history.
    */
   async getForDomain(domainId) {
     const redis = this._redis;
@@ -75,10 +74,9 @@ class LiveTrafficService {
     try {
       const hash = await redis.hgetall(this._key(domainId));
       if (!hash) return [];
-      const threshold = Date.now() - STALE_MS;
       return Object.values(hash)
         .map(v => { try { return JSON.parse(v); } catch (_) { return null; } })
-        .filter(e => e && e.lastSeen > threshold)
+        .filter(Boolean)
         .sort((a, b) => b.lastSeen - a.lastSeen);
     } catch (_) {
       return [];
@@ -86,8 +84,7 @@ class LiveTrafficService {
   }
 
   /**
-   * Get all recent connections across all domains.
-   * Returns entries enriched with domainId.
+   * Get all connections across all domains.
    */
   async getAll() {
     const redis = this._redis;
@@ -106,6 +103,38 @@ class LiveTrafficService {
     } catch (_) {
       return [];
     }
+  }
+
+  /**
+   * Background job: scan all active domains and fill in missing country codes.
+   * Runs every 30s — respects ip-api rate limits via the service's own dedup/cache.
+   */
+  async _enrichMissingCountries() {
+    const redis = this._redis;
+    if (!redis) return;
+    try {
+      const ids = await redis.smembers(ACTIVE_SET);
+      for (const id of ids) {
+        const key  = this._key(id);
+        const hash = await redis.hgetall(key);
+        if (!hash) continue;
+
+        for (const [field, raw] of Object.entries(hash)) {
+          let entry;
+          try { entry = JSON.parse(raw); } catch (_) { continue; }
+          if (entry.country) continue; // already has country
+
+          let country = null;
+          try { country = await geoIpService.getCountryCode(entry.ip); } catch (_) {}
+          if (!country) continue;
+
+          entry.country = country;
+          try {
+            await redis.hset(key, field, JSON.stringify(entry));
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   async clearDomain(domainId) {
@@ -129,15 +158,15 @@ class LiveTrafficService {
     } catch (_) {}
   }
 
-  /** Stats snapshot for display */
+  /** Stats snapshot */
   async getStats() {
     const redis = this._redis;
     if (!redis) return { uniqueIps: 0, activeDomains: 0, totalReqs: 0 };
     try {
       const all = await this.getAll();
-      const uniqueIps = new Set(all.map(e => e.ip)).size;
+      const uniqueIps     = new Set(all.map(e => e.ip)).size;
       const activeDomains = new Set(all.map(e => e.domainId)).size;
-      const totalReqs = all.reduce((s, e) => s + e.reqCount, 0);
+      const totalReqs     = all.reduce((s, e) => s + e.reqCount, 0);
       return { uniqueIps, activeDomains, totalReqs };
     } catch (_) {
       return { uniqueIps: 0, activeDomains: 0, totalReqs: 0 };
