@@ -2058,8 +2058,6 @@ class DatabaseService {
   // Get request logs by domain ID with pagination and filtering
   async getRequestLogsByDomain(domainId, options = {}) {
     const {
-      limit = 100,
-      offset = 0,
       method = null,
       statusCode = null,
       search = null,
@@ -2099,8 +2097,7 @@ class DatabaseService {
       params.push(endDate);
     }
 
-    query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    query += ` ORDER BY timestamp DESC`;
 
     return this.queryAll(query, params);
   }

@@ -1124,16 +1124,14 @@ export async function domainRoutes(fastify, options) {
         });
       }
 
-      const { limit = 100, offset = 0, method, statusCode, search, startDate, endDate } = request.query;
+      const { method, statusCode, search, startDate, endDate } = request.query;
 
       const logs = await database.getRequestLogsByDomain(domainId, {
-        limit: parseInt(limit, 10),
-        offset: parseInt(offset, 10),
         method,
         statusCode: statusCode ? parseInt(statusCode, 10) : null,
         search,
         startDate,
-        endDate
+        endDate,
       });
 
       reply.send({

@@ -201,7 +201,6 @@ export default function DomainDetail() {
     method: '',
     statusCode: '',
     search: '',
-    limit: 50
   });
 
   // Auto-refresh
@@ -981,18 +980,11 @@ export default function DomainDetail() {
             </table>
           </div>
 
-                {/* Footer */}
                 {logs.length > 0 && (
-                  <div className="px-4 py-3 border-t border-white/[0.08] flex items-center justify-between">
+                  <div className="px-4 py-3 border-t border-white/[0.08]">
                     <p className="text-xs text-white/50 font-light">
-                      Showing {logs.length} most recent requests
+                      {logs.length} requête(s) affichée(s)
                     </p>
-                    <button
-                      onClick={() => setFilters({ ...filters, limit: filters.limit + 50 })}
-                      className="px-4 py-2 bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.08] hover:border-[#9D4EDD]/30 text-white/70 hover:text-[#C77DFF] rounded-lg text-xs font-light transition-all duration-500"
-                    >
-                      Load More
-                    </button>
                   </div>
                 )}
               </div>
