@@ -155,7 +155,7 @@ function generateChallenge(ip) {
 
     // ── 1. Addition ──────────────────────────────────────────────────────────
     case 'math_add': {
-      const a = randInt(10, 99), b = randInt(10, 99);
+      const a = randInt(5, 50), b = randInt(5, 50);
       answer   = a + b;
       question = `${a} + ${b} = ?`;
       break;
@@ -163,7 +163,7 @@ function generateChallenge(ip) {
 
     // ── 2. Soustraction ─────────────────────────────────────────────────────
     case 'math_sub': {
-      const a = randInt(20, 99), b = randInt(1, 19);
+      const a = randInt(10, 50), b = randInt(1, 10);
       answer   = a - b;
       question = `${a} − ${b} = ?`;
       break;
@@ -235,7 +235,7 @@ function generateChallenge(ip) {
 
     // ── 10. Position dans l'alphabet ─────────────────────────────────────────
     case 'alphabet': {
-      const pos = randInt(1, 26);
+      const pos = randInt(1, 20);
       answer   = String.fromCharCode(64 + pos);
       question = `Quelle est la ${pos}${pos === 1 ? 'ère' : 'ème'} lettre de l'alphabet ?`;
       break;
@@ -910,7 +910,7 @@ class DdosProtectionService {
     .sort-btn.used{opacity:.3;cursor:default}
 
     /* ── Emoji find ── */
-    .emoji-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:.75rem}
+    .emoji-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:.75rem;max-width:260px;margin-left:auto;margin-right:auto}
     .emoji-cell{
       aspect-ratio:1;background:#09090b;border:1px solid #27272a;border-radius:8px;
       font-size:1.3rem;cursor:pointer;transition:background .12s,transform .1s;
@@ -1057,11 +1057,12 @@ class DdosProtectionService {
     function aiMove(){
       var empty=board.reduce(function(a,c,i){if(!c)a.push(i);return a;},[]);
       if(!empty.length)return;
-      // Try to win or block
-      for(var p of['O','X']){
-        for(var i of empty){
-          var t=board.slice();t[i]=p;
-          if(checkWin(t,p)){board[i]='O';return;}
+      // Try to win, then block player
+      var checks=['O','X'];
+      for(var ci=0;ci<checks.length;ci++){var p=checks[ci];
+        for(var ei=0;ei<empty.length;ei++){var si=empty[ei];
+          var t=board.slice();t[si]=p;
+          if(checkWin(t,p)){board[si]='O';return;}
         }
       }
       // Take center or random
@@ -1086,17 +1087,18 @@ class DdosProtectionService {
   /* ── SIMON ─────────────────────────────────────────────────────────── */
   else if(TYPE==='simon'){
     var SCOLS=[{n:'rouge',h:'#ef4444'},{n:'bleu',h:'#3b82f6'},{n:'vert',h:'#22c55e'},{n:'jaune',h:'#eab308'}];
-    var seq=[],step=0,showing=false,seqLen=4;
+    var randInt0=function(n){return Math.floor(Math.random()*n);};
+    var seq=[],step=0,showing=false,seqLen=3;
+    for(var i=0;i<seqLen;i++)seq.push(SCOLS[randInt0(SCOLS.length)].n);
     gset('<div class="simon-grid">'+SCOLS.map(function(c){return'<button class="simon-btn" data-c="'+c.n+'" style="--c:'+c.h+'" disabled></button>';}).join('')+'</div><div id="simon-info" style="text-align:center;font-size:.8rem;color:#71717a;margin-top:.75rem">Regardez la séquence...</div>');
     var simonBtns=ga.querySelectorAll('.simon-btn'),simonInfo=document.getElementById('simon-info');
-    for(var i=0;i<seqLen;i++)seq.push(SCOLS[randInt0(SCOLS.length)].n);
-    function randInt0(n){return Math.floor(Math.random()*n);}
     function flash(idx,cb){
       var b=ga.querySelector('[data-c="'+seq[idx]+'"]');
       b.classList.add('lit');setTimeout(function(){b.classList.remove('lit');setTimeout(cb,200);},500);
     }
     function playSeq(i){
-      if(i>=seq.length){simonInfo.textContent='À vous !';simonBtns.forEach(function(b){b.disabled=false;});return;}
+      showing=true;simonBtns.forEach(function(b){b.disabled=true;});
+      if(i>=seq.length){showing=false;simonInfo.textContent='À vous !';simonBtns.forEach(function(b){b.disabled=false;});return;}
       flash(i,function(){playSeq(i+1);});
     }
     function enableBtns(){simonBtns.forEach(function(b){b.addEventListener('click',simonClick);});}
@@ -1120,7 +1122,7 @@ class DdosProtectionService {
   /* ── WHACK-A-MOLE ──────────────────────────────────────────────────── */
   else if(TYPE==='whack'){
     var score=0,moleTimer=null,activeMole=-1,locked2=false;
-    gset('<div class="mole-grid">'+Array(9).fill(0).map(function(_,i){return'<div class="mole-hole" id="h'+i+'"><span class="mole-face">🐭</span></div>';}).join('')+'</div><div style="text-align:center;margin-top:.75rem"><span id="mole-score" style="font-size:.9rem;color:#a1a1aa">Taupes : 0 / 5</span></div>');
+    gset('<div class="mole-grid">'+Array(9).fill(0).map(function(_,i){return'<div class="mole-hole" id="h'+i+'"><span class="mole-face">🐭</span></div>';}).join('')+'</div><div style="text-align:center;margin-top:.75rem"><span id="mole-score" style="font-size:.9rem;color:#a1a1aa">Taupes : 0 / 4</span></div>');
     function nextMole(){
       if(locked2)return;
       if(activeMole>=0){var ph=document.getElementById('h'+activeMole);if(ph)ph.classList.remove('active');}
@@ -1132,21 +1134,21 @@ class DdosProtectionService {
         if(!this.classList.contains('active'))return;
         this.classList.remove('active');this.classList.add('bonk');
         setTimeout(function(){hole.classList.remove('bonk');},300);
-        score++;document.getElementById('mole-score').textContent='Taupes : '+score+' / 5';
-        if(score>=5){locked2=true;clearInterval(moleTimer);gstatus('Bien joué ! Validation\u2026','ok');submit(SECRET);}
+        score++;document.getElementById('mole-score').textContent='Taupes : '+score+' / 4';
+        if(score>=4){locked2=true;clearInterval(moleTimer);gstatus('Bien joué ! Validation...','ok');submit(SECRET);}
       };
     }
     moleTimer=setInterval(nextMole,900);nextMole();
     setTimeout(function(){
       if(!locked2){locked2=true;clearInterval(moleTimer);gstatus('Trop lent ! Réessayez.','err');
-        setTimeout(function(){score=0;locked2=false;gstatus('');document.getElementById('mole-score').textContent='Taupes : 0 / 5';moleTimer=setInterval(nextMole,900);nextMole();},1500);}
+        setTimeout(function(){score=0;locked2=false;gstatus('');document.getElementById('mole-score').textContent='Taupes : 0 / 4';moleTimer=setInterval(nextMole,900);nextMole();},1500);}
     },15000);
   }
 
   /* ── SORT NUMBERS ──────────────────────────────────────────────────── */
   else if(TYPE==='sort_nums'){
     var pool=[],sorted=[],clicks=[],done3=false;
-    while(pool.length<5){var n=Math.floor(Math.random()*49)+1;if(pool.indexOf(n)<0)pool.push(n);}
+    while(pool.length<4){var n=Math.floor(Math.random()*20)+1;if(pool.indexOf(n)<0)pool.push(n);}
     sorted=pool.slice().sort(function(a,b){return a-b;});
     var shuffled=pool.slice().sort(function(){return Math.random()-.5;});
     function renderSort(){
@@ -1176,9 +1178,9 @@ class DdosProtectionService {
     var tidx=Math.floor(Math.random()*EMLIST.length);
     var target=EMLIST[tidx];
     var others=EMLIST.filter(function(_,i){return i!==tidx;});
-    var grid=[];var targetCount=4;
+    var grid=[];var targetCount=3;
     for(var t=0;t<targetCount;t++)grid.push({e:target,ok:true});
-    while(grid.length<16)grid.push({e:others[Math.floor(Math.random()*others.length)],ok:false});
+    while(grid.length<12)grid.push({e:others[Math.floor(Math.random()*others.length)],ok:false});
     grid.sort(function(){return Math.random()-.5;});
     var found=0;
     gset('<div style="text-align:center;font-size:.75rem;color:#71717a;margin-bottom:.5rem">Trouvez tous les <span style="font-size:1rem">'+target+'</span> ('+targetCount+' cachés)</div><div class="emoji-grid">'+grid.map(function(c,i){return'<button class="emoji-cell" data-i="'+i+'">'+c.e+'</button>';}).join('')+'</div>');
@@ -1187,9 +1189,9 @@ class DdosProtectionService {
       var idx=+b.dataset.i;
       if(grid[idx].ok){
         b.disabled=true;b.classList.add('found');found++;
-        if(found>=targetCount){gstatus('Tous trouvés ! Validation\u2026','ok');submit(SECRET);}
+        if(found>=targetCount){gstatus('Tous trouvés ! Validation...','ok');submit(SECRET);}
       } else {
-        shake(b);gstatus('Raté ! Ce n\'est pas le bon emoji.','err');
+        shake(b);gstatus('Mauvais emoji, réessayez !','err');
         setTimeout(function(){gstatus('');},1000);
       }
     });
@@ -1225,7 +1227,7 @@ class DdosProtectionService {
 
   /* ── SPEED CLICK ────────────────────────────────────────────────────── */
   else if(TYPE==='speed_click'){
-    var TARGET=7,SECS=5,clicks2=0,started=false,timerSC=null;
+    var TARGET=5,SECS=7,clicks2=0,started=false,timerSC=null;
     gset('<div style="text-align:center"><div id="sc-count" style="font-size:2rem;font-weight:700;color:#fafafa;margin-bottom:.5rem">0 / '+TARGET+'</div><div id="sc-bar-wrap" style="background:#27272a;border-radius:4px;height:6px;overflow:hidden;margin-bottom:1rem"><div id="sc-bar" style="height:100%;background:#22c55e;width:100%;transition:width .1s linear"></div></div><button id="sc-btn" class="btn-primary" style="padding:.75rem 2rem;font-size:1rem">CLIQUEZ !</button></div>');
     var scBtn=document.getElementById('sc-btn'),scCount=document.getElementById('sc-count'),scBar=document.getElementById('sc-bar');
     var deadline,rafSC;
