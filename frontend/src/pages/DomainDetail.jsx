@@ -7,17 +7,13 @@ import {
   Radio, Wifi
 } from 'lucide-react';
 import { domainAPI } from '../api/client';
+import { FlagImg } from '../utils/flagCache';
 import LoadBalancingPanel from '../components/features/LoadBalancingPanel';
 import DomainAdvancedPanel from '../components/features/DomainAdvancedPanel';
 import { Combobox } from '../components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-const getFlag = (code) => {
-  if (!code) return '🌐';
-  try { return String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0))); }
-  catch { return '🌐'; }
-};
 const fmtBytes = (b) => {
   if (!b) return '0 B';
   if (b < 1024) return `${b} B`;
@@ -108,9 +104,14 @@ function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh
                 {filtered.map((c, i) => (
                   <tr key={`${c.ip}-${c.protocol}-${i}`} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                     <td className="px-4 py-2.5 font-mono text-sm text-white">{c.ip}</td>
-                    <td className="px-4 py-2.5 text-base">
-                      <span title={c.country || 'Inconnu'}>{getFlag(c.country)}</span>
-                      {c.country && <span className="ml-1 text-xs text-white/40 font-mono">{c.country}</span>}
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        {c.country
+                          ? <FlagImg code={c.country} title={c.country} className="w-5 h-3.5 rounded-sm" />
+                          : <Globe className="w-4 h-4 text-white/20" strokeWidth={1.5} />
+                        }
+                        <span className="text-xs text-white/40 font-mono">{c.country || '—'}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${PROTO_STYLE[c.protocol] || 'bg-white/5 text-white/40'}`}>

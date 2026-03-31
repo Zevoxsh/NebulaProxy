@@ -4,6 +4,7 @@ import {
   MonitorDot, Filter, ChevronDown, Users, BarChart3
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { FlagImg } from '../../utils/flagCache';
 import {
   AdminCard, AdminCardHeader, AdminCardTitle, AdminCardContent, AdminCardFooter,
   AdminStatCard, AdminButton, AdminBadge
@@ -12,13 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-const getFlag = (code) => {
-  if (!code) return '🌐';
-  try {
-    return String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)));
-  } catch { return '🌐'; }
-};
 
 const formatBytes = (b) => {
   if (!b) return '0 B';
@@ -259,13 +253,14 @@ export default function AdminTraffic() {
                 {filtered.map((c, i) => (
                   <TableRow key={`${c.ip}-${c.protocol}-${c.domainId}-${i}`} className="border-admin-border">
                     <TableCell className="font-mono text-sm text-admin-text">{c.ip}</TableCell>
-                    <TableCell className="text-sm">
-                      <span title={c.country || 'Inconnu'} className="text-lg leading-none">
-                        {getFlag(c.country)}
-                      </span>
-                      {c.country && (
-                        <span className="ml-1.5 text-xs text-admin-text-muted font-mono">{c.country}</span>
-                      )}
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {c.country
+                          ? <FlagImg code={c.country} title={c.country} className="w-5 h-3.5 rounded-sm" />
+                          : <Globe className="w-4 h-4 text-admin-text-muted opacity-40" strokeWidth={1.5} />
+                        }
+                        <span className="text-xs text-admin-text-muted font-mono">{c.country || '—'}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-admin-text max-w-[160px] truncate">
                       {c.hostname || <span className="text-admin-text-muted italic">—</span>}
