@@ -3,13 +3,139 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Globe, Server, Activity, Clock, AlertCircle,
   CheckCircle, Filter, Search, RefreshCw, Download, TrendingUp,
-  Zap, Database, Users, BarChart3, Settings, FileText, Shield, Power, Trash2
+  Zap, Database, Users, BarChart3, Settings, FileText, Shield, Power, Trash2,
+  Radio, Wifi
 } from 'lucide-react';
 import { domainAPI } from '../api/client';
 import LoadBalancingPanel from '../components/features/LoadBalancingPanel';
 import DomainAdvancedPanel from '../components/features/DomainAdvancedPanel';
 import { Combobox } from '../components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+const getFlag = (code) => {
+  if (!code) return '🌐';
+  try { return String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0))); }
+  catch { return '🌐'; }
+};
+const fmtBytes = (b) => {
+  if (!b) return '0 B';
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1048576).toFixed(2)} MB`;
+};
+const timeAgo = (ts) => {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return 'à l\'instant';
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}min`;
+  return `${Math.floor(s / 3600)}h`;
+};
+const PROTO_STYLE = {
+  http:      'bg-blue-500/10   text-blue-400   border border-blue-500/20',
+  tcp:       'bg-orange-500/10 text-orange-400  border border-orange-500/20',
+  udp:       'bg-purple-500/10 text-purple-400  border border-purple-500/20',
+  minecraft: 'bg-green-500/10  text-green-400   border border-green-500/20',
+};
+
+function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh, onClear }) {
+  const [filterIp, setFilterIp] = useState('');
+  const filtered = connections.filter(c => !filterIp || c.ip?.includes(filterIp));
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            placeholder="Filtrer par IP..."
+            value={filterIp}
+            onChange={e => setFilterIp(e.target.value)}
+            className="h-8 text-xs px-3 bg-white/[0.04] border border-white/[0.12] rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-[#9D4EDD]/50 w-40"
+          />
+          <span className="text-xs text-white/40">{filtered.length} entrée(s)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleAuto}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              autoRefresh
+                ? 'bg-gradient-to-r from-[#9D4EDD] to-[#7B2CBF] text-white'
+                : 'bg-white/[0.04] border border-white/[0.12] text-white/60'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" strokeWidth={1.5} />
+            {autoRefresh ? 'Live' : 'Pausé'}
+          </button>
+          <button
+            onClick={onRefresh}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/[0.04] border border-white/[0.12] text-white/60 hover:text-white transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+            Rafraîchir
+          </button>
+          <button
+            onClick={onClear}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#F87171] hover:bg-[#EF4444]/20 transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+            Effacer
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-12 text-center text-white/30 text-sm">
+            <Wifi className="w-10 h-10 mx-auto mb-3 opacity-20" strokeWidth={1} />
+            {connections.length === 0
+              ? 'Aucun trafic enregistré — les connexions apparaîtront ici (fenêtre 5 min)'
+              : 'Aucun résultat pour ce filtre'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  {['IP', 'Pays', 'Protocole', 'Backend', 'Requêtes', 'Data', 'Dernier hit'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-white/40">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((c, i) => (
+                  <tr key={`${c.ip}-${c.protocol}-${i}`} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                    <td className="px-4 py-2.5 font-mono text-sm text-white">{c.ip}</td>
+                    <td className="px-4 py-2.5 text-base">
+                      <span title={c.country || 'Inconnu'}>{getFlag(c.country)}</span>
+                      {c.country && <span className="ml-1 text-xs text-white/40 font-mono">{c.country}</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${PROTO_STYLE[c.protocol] || 'bg-white/5 text-white/40'}`}>
+                        {c.protocol}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-white/40 font-mono max-w-[160px] truncate">{c.backend || '—'}</td>
+                    <td className="px-4 py-2.5 text-sm font-semibold text-white">{c.reqCount}</td>
+                    <td className="px-4 py-2.5 text-xs text-white/50">{fmtBytes(c.bytes)}</td>
+                    <td className="px-4 py-2.5 text-xs text-white/40">{timeAgo(c.lastSeen)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="px-4 py-2.5 border-t border-white/[0.04] bg-white/[0.01]">
+          <p className="text-xs text-white/25">
+            Fenêtre glissante 5 min — les entrées inactives disparaissent automatiquement.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DomainDetail() {
   const methodOptions = [
@@ -52,12 +178,18 @@ export default function DomainDetail() {
     isActive: true
   });
 
+  // Live traffic state
+  const [trafficData, setTrafficData]         = useState([]);
+  const [trafficLoading, setTrafficLoading]   = useState(false);
+  const [trafficAuto, setTrafficAuto]         = useState(true);
+
   // Tab management
   const getTabFromPath = () => {
     const path = location.pathname;
     if (path.endsWith('/logs')) return 'logs';
     if (path.endsWith('/load-balancing')) return 'load-balancing';
     if (path.endsWith('/advanced')) return 'advanced';
+    if (path.endsWith('/traffic')) return 'traffic';
     return 'overview';
   };
 
@@ -90,18 +222,52 @@ export default function DomainDetail() {
     }
   }, [autoRefresh, filters, activeTab]);
 
+  // Load traffic when switching to traffic tab
+  useEffect(() => {
+    if (activeTab === 'traffic') loadTraffic();
+  }, [activeTab]);
+
+  // Auto-refresh traffic
+  useEffect(() => {
+    if (trafficAuto && activeTab === 'traffic') {
+      const interval = setInterval(loadTraffic, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [trafficAuto, activeTab]);
+
   useEffect(() => {
     setActiveTab(getTabFromPath());
   }, [location.pathname]);
 
   const navigateToTab = (tab) => {
     const pathMap = {
-      'overview': `/domains/${id}`,
-      'logs': `/domains/${id}/logs`,
+      'overview':       `/domains/${id}`,
+      'logs':           `/domains/${id}/logs`,
       'load-balancing': `/domains/${id}/load-balancing`,
-      'advanced': `/domains/${id}/advanced`
+      'advanced':       `/domains/${id}/advanced`,
+      'traffic':        `/domains/${id}/traffic`,
     };
     navigate(pathMap[tab] || `/domains/${id}`, { replace: true });
+  };
+
+  const loadTraffic = async () => {
+    if (!id) return;
+    setTrafficLoading(true);
+    try {
+      const res = await domainAPI.getLiveTraffic(id);
+      setTrafficData(res.data.connections || []);
+    } catch (_) {
+    } finally {
+      setTrafficLoading(false);
+    }
+  };
+
+  const clearTraffic = async () => {
+    if (!confirm('Effacer les données de trafic pour ce domaine ?')) return;
+    try {
+      await domainAPI.clearLiveTraffic(id);
+      setTrafficData([]);
+    } catch (_) {}
   };
 
   const loadDomainData = async () => {
@@ -344,10 +510,11 @@ export default function DomainDetail() {
             {/* Tabs */}
             <div className="flex gap-2 mt-6 border-b border-white/[0.08]">
               {[
-                { id: 'overview', label: 'Overview', icon: Settings },
-                { id: 'logs', label: 'Logs', icon: FileText },
+                { id: 'overview',       label: 'Overview',      icon: Settings },
+                { id: 'logs',           label: 'Logs',          icon: FileText },
                 { id: 'load-balancing', label: 'Load Balancing', icon: Server },
-                { id: 'advanced', label: 'Avancé', icon: Zap }
+                { id: 'advanced',       label: 'Avancé',        icon: Zap },
+                { id: 'traffic',        label: 'Trafic live',   icon: Radio },
               ].map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -839,6 +1006,18 @@ export default function DomainDetail() {
           {/* Advanced Tab */}
           {activeTab === 'advanced' && (
             <DomainAdvancedPanel domain={domain} onUpdate={loadDomainData} />
+          )}
+
+          {/* Traffic Tab */}
+          {activeTab === 'traffic' && (
+            <TrafficTab
+              connections={trafficData}
+              loading={trafficLoading}
+              autoRefresh={trafficAuto}
+              onToggleAuto={() => setTrafficAuto(v => !v)}
+              onRefresh={loadTraffic}
+              onClear={clearTraffic}
+            />
           )}
         </div>
       </div>

@@ -147,7 +147,11 @@ export const domainAPI = {
 
   // Circuit breaker (admin)
   getCircuitBreakerStatus: () => api.get('/domains/circuit-breaker/status'),
-  resetCircuitBreaker: (key) => api.post(`/domains/circuit-breaker/reset/${encodeURIComponent(key)}`)
+  resetCircuitBreaker: (key) => api.post(`/domains/circuit-breaker/reset/${encodeURIComponent(key)}`),
+
+  // Live traffic (per domain)
+  getLiveTraffic: (id) => api.get(`/domains/${id}/traffic/live`),
+  clearLiveTraffic: (id) => api.delete(`/domains/${id}/traffic/live`),
 };
 
 export const redirectionAPI = {
@@ -188,6 +192,10 @@ export const adminAPI = {
   getDdosEventStats: () => api.get('/admin/ddos/events/stats'),
   getChallengeTypes: () => api.get('/admin/ddos/challenge-types'),
   setChallengeTypes: (enabledIds) => api.put('/admin/ddos/challenge-types', { enabledIds }),
+
+  // Live traffic (all domains)
+  getAdminLiveTraffic: () => api.get('/admin/traffic/live'),
+  clearAdminLiveTraffic: () => api.delete('/admin/traffic/live'),
 
   // Admin team management
   getAllTeams: () => api.get('/admin/teams'),

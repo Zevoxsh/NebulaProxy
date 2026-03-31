@@ -25,6 +25,17 @@ import { circuitBreaker } from './circuitBreaker.js';
 import { geoIpService } from './geoIpService.js';
 import { redisService } from './redis.js';
 
+// Lazy singleton for live traffic tracking (avoids circular deps at load time)
+let _lts = null;
+const lts = () => {
+  if (!_lts) {
+    import('./liveTrafficService.js')
+      .then(m => { _lts = m.liveTrafficService; })
+      .catch(() => {});
+  }
+  return _lts;
+};
+
   class ProxyManager extends EventEmitter {
     constructor() {
       super();
@@ -401,6 +412,9 @@ import { redisService } from './redis.js';
           return;
         }
 
+        // Live traffic tracking (fire-and-forget)
+        { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'tcp', `${backendHost}:${backendPort}`); }
+
         clientSocket.setNoDelay(true);
         if (this.TCP_KEEPALIVE_MS > 0) {
           clientSocket.setKeepAlive(true, this.TCP_KEEPALIVE_MS);
@@ -746,6 +760,8 @@ import { redisService } from './redis.js';
 
         upstreamEntry = { upstream, timeout: null, metrics, clientIp, backendHost, backendPort, proxySent: false };
         upstreams.set(clientKey, upstreamEntry);
+        // Live traffic tracking (fire-and-forget)
+        { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'udp', `${backendHost}:${backendPort}`); }
         console.log(`[UDP Proxy ${domain.id}] New client ${clientKey} -> ${backendHost}:${backendPort}`);
       }
 
@@ -1054,6 +1070,9 @@ import { redisService } from './redis.js';
             cleanup();
             return;
           }
+
+          // Live traffic tracking (fire-and-forget)
+          { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
 
           console.log(`[MinecraftProxy] Routing ${hostname} -> ${backendHost}:${backendPort}`);
 
@@ -1766,6 +1785,8 @@ import { redisService } from './redis.js';
       backendPort     = target.port;
       backendProtocol = target.protocol || 'http:';
       backendId       = target.backendId || null;
+      // Live traffic tracking (fire-and-forget)
+      { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'http', `${backendHost}:${backendPort}`); }
     } catch (err) {
       console.error(`[HTTP Proxy ${domain.id}] Backend selection failed:`, err.message);
       const html503 = domain.custom_503_page

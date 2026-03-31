@@ -34,6 +34,7 @@ import UrlBlockingRules from './pages/admin/UrlBlockingRules';
 import AdminAudit from './pages/admin/AdminAudit';
 import AdminBackups from './pages/admin/AdminBackups';
 import AdminDdos from './pages/admin/AdminDdos';
+import AdminTraffic from './pages/admin/AdminTraffic';
 import AdminPinReset from './pages/admin/AdminPinReset';
 import StatusPage from './pages/StatusPage';
 import { Toaster } from './components/ui/toaster';
@@ -76,6 +77,8 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/smtp-proxy'], title: 'Admin SMTP Proxy', description: 'Configure and monitor SMTP proxy settings.' },
   { patterns: ['/admin/backups'], title: 'Admin Backups', description: 'Create, export, and reimport database backups.' },
   { patterns: ['/admin/ddos'], title: 'Admin DDoS Protection', description: 'Manage IP bans and threat intelligence blocklists.' },
+  { patterns: ['/admin/traffic'], title: 'Admin Live Traffic', description: 'Monitor live connections across all domains.' },
+  { patterns: ['/domains/:id/traffic'], title: 'Domain Live Traffic', description: 'Monitor live connections for this domain.' },
   { patterns: ['/admin/updates'], title: 'Admin Updates', description: 'Manage system updates and release status.' },
   { patterns: ['/admin/url-blocking'], title: 'Admin URL Blocking', description: 'Manage URL blocking rules across all domains.' },
   { patterns: ['/admin/audit'], title: 'Admin Audit Trail', description: 'Inspect administrative audit logs and events.' },
@@ -239,6 +242,7 @@ function App() {
           <Route path="/domains/:id/logs" element={<DomainDetail />} />
           <Route path="/domains/:id/load-balancing" element={<DomainDetail />} />
           <Route path="/domains/:id/advanced" element={<DomainDetail />} />
+          <Route path="/domains/:id/traffic" element={<DomainDetail />} />
           <Route path="/redirections" element={<Redirections />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId/*" element={<TeamDetail />} />
@@ -276,7 +280,7 @@ function App() {
           <Route path="/admin/url-blocking" element={<UrlBlockingRules />} />
           <Route path="/admin/ddos" element={<AdminDdos />} />
           <Route path="/admin/audit" element={<AdminAudit />} />
-          <Route path="/admin/ddos" element={<AdminDdos />} />
+          <Route path="/admin/traffic" element={<AdminTraffic />} />
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
         <Route

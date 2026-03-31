@@ -1,4 +1,5 @@
 import { database } from '../services/database.js';
+import { liveTrafficService } from '../services/liveTrafficService.js';
 import { checkDomainQuota } from '../middleware/quotaCheck.js';
 import { proxyManager } from '../services/proxyManager.js';
 import { acmeManager } from '../services/acmeManager.js';
@@ -2104,6 +2105,44 @@ export async function domainRoutes(fastify, options) {
     } catch (error) {
       fastify.log.error({ error }, 'Failed to update DDoS protection settings');
       return reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to update DDoS protection settings' });
+    }
+  });
+
+  // ── Live Traffic ──────────────────────────────────────────────────────────
+
+  fastify.get('/:id/traffic/live', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const userId   = request.user.id;
+      const isAdmin  = request.user.role === 'admin';
+      const domain   = await database.getDomainById(domainId);
+      if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      if (!await canAccessDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Access denied' });
+      }
+      const connections = await liveTrafficService.getForDomain(domainId);
+      return reply.send({ connections, total: connections.length });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to get live traffic');
+      return reply.code(500).send({ error: 'Internal Server Error' });
+    }
+  });
+
+  fastify.delete('/:id/traffic/live', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const userId   = request.user.id;
+      const isAdmin  = request.user.role === 'admin';
+      const domain   = await database.getDomainById(domainId);
+      if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      if (!await canModifyDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Access denied' });
+      }
+      await liveTrafficService.clearDomain(domainId);
+      return reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to clear live traffic');
+      return reply.code(500).send({ error: 'Internal Server Error' });
     }
   });
 

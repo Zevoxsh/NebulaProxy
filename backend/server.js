@@ -38,6 +38,8 @@ import { apiKeysRoutes } from './routes/apiKeys.js';
 import { updateRoutes } from './routes/updates.js';
 import notificationRoutes from './routes/admin/notifications.js';
 import { ddosAdminRoutes } from './routes/admin/ddos.js';
+import { trafficAdminRoutes } from './routes/admin/traffic.js';
+import { liveTrafficService } from './services/liveTrafficService.js';
 import { notificationRoutes as userNotificationRoutes } from './routes/notifications.js';
 import { notificationPreferencesRoutes } from './routes/notificationPreferences.js';
 import urlBlockingRoutes from './routes/urlBlockingRules.js';
@@ -667,6 +669,9 @@ await fastify.register(backupRoutes, { prefix: '/api/admin/backups' });
 // DDoS protection admin routes
 await fastify.register(ddosAdminRoutes, { prefix: '/api/admin/ddos' });
 
+// Live traffic admin routes
+await fastify.register(trafficAdminRoutes, { prefix: '/api/admin/traffic' });
+
 // URL blocking rules routes
 await fastify.register(urlBlockingRoutes, { prefix: '/api/url-blocking' });
 
@@ -818,6 +823,8 @@ const start = async () => {
         }
         // Initialize GeoIP service with Redis for caching
         geoIpService.init(redisService.client);
+        // Initialize live traffic service with Redis
+        liveTrafficService.init(redisService.client);
         // Initialize DDoS protection service with Redis
         await ddosProtectionService.init(redisService.client);
       } else {

@@ -23,7 +23,8 @@ import {
   ChevronsRight,
   User,
   Bell,
-  Database
+  Database,
+  Radio
 } from 'lucide-react';
 import {
   Sheet,
@@ -200,7 +201,8 @@ export function AdminLayout() {
         { path: '/admin/teams', icon: Shield, label: 'Teams' },
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
-        { path: '/admin/ddos', icon: Shield, label: 'DDoS Protection' }
+        { path: '/admin/ddos', icon: Shield, label: 'DDoS Protection' },
+        { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }
       ]
     },
     {
