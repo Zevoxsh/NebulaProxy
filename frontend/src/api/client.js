@@ -181,6 +181,11 @@ export const adminAPI = {
   getDdosStats: () => api.get('/admin/ddos/stats'),
   getDdosBlocklists: () => api.get('/admin/ddos/blocklists'),
   syncDdosBlocklists: () => api.post('/admin/ddos/blocklists/sync'),
+  getDdosWhitelist: () => api.get('/admin/ddos/whitelist'),
+  createDdosWhitelist: (data) => api.post('/admin/ddos/whitelist', data),
+  deleteDdosWhitelist: (id) => api.delete(`/admin/ddos/whitelist/${id}`),
+  getDdosEvents: (params) => api.get('/admin/ddos/events', { params }),
+  getDdosEventStats: () => api.get('/admin/ddos/events/stats'),
 
   // Admin team management
   getAllTeams: () => api.get('/admin/teams'),

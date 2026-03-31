@@ -2062,7 +2062,10 @@ export async function domainRoutes(fastify, options) {
       const domainId = parseInt(request.params.id, 10);
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
-      const { enabled, reqPerSecond, connectionsPerMinute, banDurationSec } = request.body;
+      const {
+        enabled, reqPerSecond, connectionsPerMinute, banDurationSec,
+        maxConnectionsPerIp, challengeMode, banOn4xxRate
+      } = request.body;
 
       const domain = await database.getDomainById(domainId);
       if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
@@ -2072,17 +2075,23 @@ export async function domainRoutes(fastify, options) {
 
       await database.execute(
         `UPDATE domains SET
-          ddos_protection_enabled = $1,
-          ddos_req_per_second = $2,
+          ddos_protection_enabled     = $1,
+          ddos_req_per_second         = $2,
           ddos_connections_per_minute = $3,
-          ddos_ban_duration_sec = $4,
+          ddos_ban_duration_sec       = $4,
+          ddos_max_connections_per_ip = $5,
+          ddos_challenge_mode         = $6,
+          ddos_ban_on_4xx_rate        = $7,
           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5`,
+         WHERE id = $8`,
         [
           enabled !== undefined ? enabled : domain.ddos_protection_enabled,
-          reqPerSecond || domain.ddos_req_per_second || 100,
-          connectionsPerMinute || domain.ddos_connections_per_minute || 60,
-          banDurationSec || domain.ddos_ban_duration_sec || 3600,
+          reqPerSecond             ?? domain.ddos_req_per_second           ?? 100,
+          connectionsPerMinute     ?? domain.ddos_connections_per_minute   ?? 60,
+          banDurationSec           ?? domain.ddos_ban_duration_sec         ?? 3600,
+          maxConnectionsPerIp      ?? domain.ddos_max_connections_per_ip   ?? 50,
+          challengeMode            ?? domain.ddos_challenge_mode           ?? false,
+          banOn4xxRate             ?? domain.ddos_ban_on_4xx_rate          ?? false,
           domainId
         ]
       );

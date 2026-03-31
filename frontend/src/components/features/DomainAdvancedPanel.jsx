@@ -198,10 +198,13 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
 
   // Anti-DDoS protection
   const [ddos, setDdos] = useState({
-    enabled: domain?.ddos_protection_enabled || false,
-    reqPerSecond: domain?.ddos_req_per_second || 100,
+    enabled:              domain?.ddos_protection_enabled     || false,
+    reqPerSecond:         domain?.ddos_req_per_second         || 100,
     connectionsPerMinute: domain?.ddos_connections_per_minute || 60,
-    banDurationSec: domain?.ddos_ban_duration_sec || 3600
+    banDurationSec:       domain?.ddos_ban_duration_sec       || 3600,
+    maxConnectionsPerIp:  domain?.ddos_max_connections_per_ip || 50,
+    challengeMode:        domain?.ddos_challenge_mode         || false,
+    banOn4xxRate:         domain?.ddos_ban_on_4xx_rate        || false,
   });
 
   // Sync when parent domain changes
@@ -221,10 +224,13 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
     setProxyProtocol(domain.proxy_protocol || false);
     setGeyserProxyProtocol(domain.geyser_proxy_protocol || false);
     setDdos({
-      enabled: domain.ddos_protection_enabled || false,
-      reqPerSecond: domain.ddos_req_per_second || 100,
+      enabled:              domain.ddos_protection_enabled     || false,
+      reqPerSecond:         domain.ddos_req_per_second         || 100,
       connectionsPerMinute: domain.ddos_connections_per_minute || 60,
-      banDurationSec: domain.ddos_ban_duration_sec || 3600
+      banDurationSec:       domain.ddos_ban_duration_sec       || 3600,
+      maxConnectionsPerIp:  domain.ddos_max_connections_per_ip || 50,
+      challengeMode:        domain.ddos_challenge_mode         || false,
+      banOn4xxRate:         domain.ddos_ban_on_4xx_rate        || false,
     });
   }, [domain]);
 
@@ -518,14 +524,38 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
                 onChange={e => setDdos(d => ({ ...d, banDurationSec: parseInt(e.target.value) || 3600 }))}
               />
             </Field>
+            <Field label="Connexions simultanées max / IP" hint="TCP & Minecraft uniquement">
+              <input
+                type="number" min="1" max="1000" className={INPUT}
+                value={ddos.maxConnectionsPerIp}
+                onChange={e => setDdos(d => ({ ...d, maxConnectionsPerIp: parseInt(e.target.value) || 50 }))}
+              />
+            </Field>
+          </div>
+          <div className="flex flex-col gap-3 mt-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={ddos.challengeMode}
+                onChange={e => setDdos(d => ({ ...d, challengeMode: e.target.checked }))}
+                className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
+              <span className="text-sm text-white/70">Mode Challenge (HTTP uniquement) — JS proof-of-work avant d'accéder au site</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={ddos.banOn4xxRate}
+                onChange={e => setDdos(d => ({ ...d, banOn4xxRate: e.target.checked }))}
+                className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
+              <span className="text-sm text-white/70">Ban automatique sur taux élevé d'erreurs 4xx (scanners, fuzzers)</span>
+            </label>
           </div>
         )}
         <Msg skey="ddos" />
         <SaveBtn skey="ddos" onClick={() => save('ddos', domainAPI.setDdosProtection, {
-          enabled: ddos.enabled,
-          reqPerSecond: ddos.reqPerSecond,
+          enabled:              ddos.enabled,
+          reqPerSecond:         ddos.reqPerSecond,
           connectionsPerMinute: ddos.connectionsPerMinute,
-          banDurationSec: ddos.banDurationSec
+          banDurationSec:       ddos.banDurationSec,
+          maxConnectionsPerIp:  ddos.maxConnectionsPerIp,
+          challengeMode:        ddos.challengeMode,
+          banOn4xxRate:         ddos.banOn4xxRate,
         })} />
       </Section>
 

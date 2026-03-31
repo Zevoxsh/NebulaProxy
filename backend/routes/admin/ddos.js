@@ -1,75 +1,128 @@
 import { ddosProtectionService } from '../../services/ddosProtectionService.js';
 
-export async function ddosAdminRoutes(fastify, options) {
-  // GET /api/admin/ddos/bans
-  fastify.get('/bans', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
+export async function ddosAdminRoutes(fastify) {
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+
+  fastify.get('/stats', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
     try {
-      const { ip, domainId, limit = 50, offset = 0 } = request.query;
+      const stats = await ddosProtectionService.getBanStats();
+      return reply.send(stats);
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // ── Active bans ───────────────────────────────────────────────────────────
+
+  fastify.get('/bans', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      const { ip, domainId, limit = 100, offset = 0 } = req.query;
       const bans = await ddosProtectionService.getActiveBans({
         ip,
         domainId: domainId ? parseInt(domainId) : undefined,
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: Math.min(parseInt(limit) || 100, 500),
+        offset: parseInt(offset) || 0
       });
       return reply.send({ bans });
-    } catch (error) {
-      fastify.log.error({ error }, 'Failed to get DDoS bans');
-      return reply.code(500).send({ error: 'Internal Server Error', message: error.message });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
     }
   });
 
-  // POST /api/admin/ddos/bans
-  fastify.post('/bans', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
+  fastify.post('/bans', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
     try {
-      const { ip, domainId, reason = 'manual-ban', durationSec } = request.body;
-      if (!ip) return reply.code(400).send({ error: 'Bad Request', message: 'ip is required' });
-      await ddosProtectionService.banIp(ip, domainId || null, reason, 'admin', durationSec || null);
-      return reply.send({ success: true, message: `IP ${ip} banned` });
-    } catch (error) {
-      fastify.log.error({ error }, 'Failed to create DDoS ban');
-      return reply.code(500).send({ error: 'Internal Server Error', message: error.message });
+      const { ip, reason = 'manual-ban', durationSec = 3600, domainId } = req.body || {};
+      if (!ip) return reply.code(400).send({ error: 'ip is required' });
+      await ddosProtectionService.banIp(ip, domainId || null, reason, 'admin', durationSec);
+      return reply.send({ success: true });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
     }
   });
 
-  // DELETE /api/admin/ddos/bans/:id
-  fastify.delete('/bans/:id', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
+  fastify.delete('/bans/:id', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
     try {
-      const id = parseInt(request.params.id);
-      await ddosProtectionService.unbanIp(id);
-      return reply.send({ success: true, message: 'IP unbanned' });
-    } catch (error) {
-      fastify.log.error({ error }, 'Failed to unban IP');
-      return reply.code(500).send({ error: 'Internal Server Error', message: error.message });
+      await ddosProtectionService.unbanIp(parseInt(req.params.id));
+      return reply.send({ success: true });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
     }
   });
 
-  // GET /api/admin/ddos/stats
-  fastify.get('/stats', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
-    try {
-      const stats = await ddosProtectionService.getBanStats();
-      const blocklistSize = ddosProtectionService._blocklistCache.size;
-      return reply.send({ ...stats, blocklist_ips: blocklistSize });
-    } catch (error) {
-      return reply.code(500).send({ error: 'Internal Server Error', message: error.message });
-    }
-  });
+  // ── Blocklists ────────────────────────────────────────────────────────────
 
-  // GET /api/admin/ddos/blocklists
-  fastify.get('/blocklists', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
+  fastify.get('/blocklists', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
     try {
       const meta = await ddosProtectionService.getBlocklistMeta();
       return reply.send({ blocklists: meta });
-    } catch (error) {
-      return reply.code(500).send({ error: 'Internal Server Error', message: error.message });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
     }
   });
 
-  // POST /api/admin/ddos/blocklists/sync
-  fastify.post('/blocklists/sync', { preHandler: fastify.authorize(['admin']) }, async (request, reply) => {
-    // Async - return 202 immediately
-    reply.code(202).send({ message: 'Blocklist sync started' });
+  fastify.post('/blocklists/sync', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    reply.code(202).send({ message: 'Sync started' });
     ddosProtectionService.syncAllBlocklists().catch(err =>
       fastify.log.error({ error: err }, 'Manual blocklist sync failed')
     );
+  });
+
+  // ── Whitelist ─────────────────────────────────────────────────────────────
+
+  fastify.get('/whitelist', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      const entries = await ddosProtectionService.getWhitelist();
+      return reply.send({ whitelist: entries });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  fastify.post('/whitelist', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      const { cidr, description } = req.body || {};
+      if (!cidr) return reply.code(400).send({ error: 'cidr is required' });
+      const valid = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(cidr.trim());
+      if (!valid) return reply.code(400).send({ error: 'Invalid IP or CIDR (IPv4 only)' });
+      await ddosProtectionService.addWhitelist(cidr.trim(), description || '');
+      return reply.code(201).send({ success: true });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  fastify.delete('/whitelist/:id', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      await ddosProtectionService.removeWhitelist(parseInt(req.params.id));
+      return reply.send({ success: true });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // ── Attack events ─────────────────────────────────────────────────────────
+
+  fastify.get('/events', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      const { limit = 100, domainId, attackType } = req.query;
+      const events = await ddosProtectionService.getAttackEvents({
+        limit: Math.min(parseInt(limit) || 100, 500),
+        domainId: domainId ? parseInt(domainId) : undefined,
+        attackType
+      });
+      return reply.send({ events });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  fastify.get('/events/stats', { preHandler: fastify.authorize(['admin']) }, async (req, reply) => {
+    try {
+      const stats = await ddosProtectionService.getAttackStats();
+      return reply.send({ stats });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
   });
 }

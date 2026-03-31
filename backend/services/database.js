@@ -51,7 +51,9 @@ class DatabaseService {
       'domain_backends',
       'backend_health_status',
       'ddos_ip_bans',
-      'ddos_blocklist_meta'
+      'ddos_blocklist_meta',
+      'ddos_whitelist',
+      'ddos_attack_events'
     ];
 
     const result = await this.pgPool.query(

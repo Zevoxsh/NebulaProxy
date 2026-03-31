@@ -603,6 +603,31 @@ fastify.get('/health', async () => {
   };
 });
 
+// ── DDoS Challenge endpoints (served by the proxy itself for challenge mode) ──
+// These are hit on the proxied domain, not on the panel port.
+// The proxyManager intercepts /__ddos_challenge/* before forwarding to the backend.
+// These Fastify routes handle the panel-port fallback only.
+fastify.get('/__ddos_challenge', async (request, reply) => {
+  const { ddosProtectionService } = await import('./services/ddosProtectionService.js');
+  const ip  = request.headers['x-real-ip'] || request.ip;
+  const ret = request.query.return || '/';
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return reply.send(ddosProtectionService.generateChallengePage(ip, ret));
+});
+
+fastify.post('/__ddos_challenge/verify', async (request, reply) => {
+  const { ddosProtectionService } = await import('./services/ddosProtectionService.js');
+  const ip    = request.headers['x-real-ip'] || request.ip;
+  const { token, nonce, return: ret = '/' } = request.body || {};
+  if (!token || nonce === undefined) return reply.code(400).send({ error: 'Invalid' });
+  if (!ddosProtectionService.verifyChallengeToken(ip, token)) {
+    return reply.code(403).send({ error: 'Challenge failed' });
+  }
+  const cookie = ddosProtectionService.generateVerifiedCookie(ip);
+  reply.header('Set-Cookie', `__ddos_bypass=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`);
+  return reply.send({ ok: true, return: ret });
+});
+
 // Config status endpoint (for setup redirect)
 fastify.get('/api/config-status', async (request, reply) => {
   return {

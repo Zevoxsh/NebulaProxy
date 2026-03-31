@@ -380,8 +380,10 @@ import { redisService } from './redis.js';
         if (domain?.ddos_protection_enabled) {
           try {
             const { ddosProtectionService } = await import('./ddosProtectionService.js');
+            ddosProtectionService.trackConnectionOpen(clientIp, domain.id);
             const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
             if (ddosResult.blocked) {
+              ddosProtectionService.trackConnectionClose(clientIp, domain.id);
               clientSocket.destroy();
               return;
             }
@@ -414,6 +416,13 @@ import { redisService } from './redis.js';
           if (connectTimeout) {
             clearTimeout(connectTimeout);
             connectTimeout = null;
+          }
+
+          // DDoS connection tracking cleanup
+          if (domain?.ddos_protection_enabled) {
+            import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
+              ddosProtectionService.trackConnectionClose(clientIp, domain.id);
+            }).catch(() => {});
           }
 
           try {
@@ -889,6 +898,13 @@ import { redisService } from './redis.js';
             handshakeTimeout = null;
           }
 
+          // DDoS connection tracking cleanup
+          if (domain?.ddos_protection_enabled) {
+            import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
+              ddosProtectionService.trackConnectionClose(clientIp, domain.id);
+            }).catch(() => {});
+          }
+
           // Unpipe if connected
           try {
             if (targetSocket) {
@@ -1016,8 +1032,10 @@ import { redisService } from './redis.js';
           if (domain?.ddos_protection_enabled) {
             try {
               const { ddosProtectionService } = await import('./ddosProtectionService.js');
+              ddosProtectionService.trackConnectionOpen(clientIp, domain.id);
               const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
               if (ddosResult.blocked) {
+                ddosProtectionService.trackConnectionClose(clientIp, domain.id);
                 clientSocket.destroy();
                 return;
               }
@@ -1640,6 +1658,22 @@ import { redisService } from './redis.js';
     if (domain?.ddos_protection_enabled) {
       try {
         const { ddosProtectionService } = await import('./ddosProtectionService.js');
+
+        // Challenge mode: check for bypass cookie before heavy checks
+        if (domain.ddos_challenge_mode) {
+          const cookieHeader = req.headers['cookie'] || '';
+          const bypassMatch  = cookieHeader.match(/__ddos_bypass=([^;]+)/);
+          const bypassToken  = bypassMatch?.[1];
+
+          if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken)) {
+            // Serve challenge page
+            const challengeUrl = `/__ddos_challenge?return=${encodeURIComponent(req.url || '/')}`;
+            res.writeHead(302, { 'Location': challengeUrl, 'X-Blocked-By': 'DDoS-Challenge' });
+            res.end();
+            return;
+          }
+        }
+
         const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
         if (ddosResult.blocked) {
           res.writeHead(429, {
@@ -1785,6 +1819,13 @@ import { redisService } from './redis.js';
       if (statusCode >= 500) logLevel = 'error';
       else if (statusCode >= 400) logLevel = 'warning';
       else if (statusCode >= 300) logLevel = 'info';
+
+      // DDoS: track 4xx responses for behavioral analysis
+      if (statusCode >= 400 && statusCode < 500 && domain?.ddos_ban_on_4xx_rate) {
+        import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
+          ddosProtectionService.track4xx(clientIp, domain.id);
+        }).catch(() => {});
+      }
 
       // Log the request
       proxyRes.on('end', () => {
