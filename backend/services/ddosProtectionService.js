@@ -67,6 +67,42 @@ function parseIpList(text) {
 
 // ── Challenge utilities ─────────────────────────────────────────────────────
 
+// Generate a math challenge question + token (token encodes the expected answer)
+function generateMathChallenge(ip) {
+  const ops  = ['+', '-', '×'];
+  const op   = ops[Math.floor(Math.random() * ops.length)];
+  let a, b, answer;
+
+  if (op === '+') { a = randInt(10, 99); b = randInt(10, 99); answer = a + b; }
+  else if (op === '-') { a = randInt(20, 99); b = randInt(1, a - 1); answer = a - b; }
+  else { a = randInt(2, 12); b = randInt(2, 12); answer = a * b; }
+
+  const expires = Math.floor(Date.now() / 1000) + 600; // 10 min to solve
+  const data    = `${ip}:${answer}:${expires}`;
+  const sig     = crypto.createHmac('sha256', CHALLENGE_SECRET).update(data).digest('hex').slice(0, 20);
+  const token   = `${answer}.${expires}.${sig}`;
+
+  return { question: `${a} ${op} ${b}`, token };
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Verify the math answer token (created by generateMathChallenge)
+function verifyMathToken(ip, token, userAnswer) {
+  if (!token || userAnswer === undefined || userAnswer === '') return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [expectedAnswer, expiresStr, sig] = parts;
+  const expires = parseInt(expiresStr, 10);
+  if (isNaN(expires) || expires < Math.floor(Date.now() / 1000)) return false;
+  if (parseInt(userAnswer, 10) !== parseInt(expectedAnswer, 10)) return false;
+  const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${expectedAnswer}:${expires}`).digest('hex').slice(0, 20);
+  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
+
+// Bypass cookie token (set after challenge is solved, valid 1h)
 function generateChallengeToken(ip) {
   const expires = Math.floor(Date.now() / 1000) + 3600;
   const data    = `${ip}:${expires}`;
@@ -81,7 +117,7 @@ function verifyChallengeToken(ip, token) {
   const expires = parseInt(expiresStr, 10);
   if (isNaN(expires) || expires < Math.floor(Date.now() / 1000)) return false;
   const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${expires}`).digest('hex').slice(0, 16);
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
 }
 
 // ── Fetch helper ────────────────────────────────────────────────────────────
@@ -412,75 +448,187 @@ class DdosProtectionService {
   // ── Challenge mode (HTTP) ─────────────────────────────────────────────────
 
   generateChallengePage(ip, returnUrl) {
-    const token = generateChallengeToken(ip);
+    const { question, token } = generateMathChallenge(ip);
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vérification de sécurité</title>
+  <title>Vérification de sécurité — NebulaProxy</title>
   <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0f;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:2.5rem;max-width:420px;width:90%;text-align:center}
-    .shield{font-size:3rem;margin-bottom:1rem}
-    h1{font-size:1.25rem;font-weight:600;margin-bottom:.5rem}
-    p{color:#6b7280;font-size:.9rem;line-height:1.5;margin-bottom:1.5rem}
-    .progress{background:#1f2937;border-radius:8px;height:6px;overflow:hidden;margin-bottom:1rem}
-    .bar{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:8px;width:0%;transition:width .3s ease}
-    .status{font-size:.8rem;color:#4b5563}
-    .error{color:#ef4444}
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: #0B0C0F;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    .wrap {
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      margin-bottom: 2rem;
+      opacity: .6;
+      font-size: .8rem;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+    .logo svg { width: 18px; height: 18px; }
+    .card {
+      background: #111318;
+      border: 1px solid #1e2028;
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+    }
+    .icon-wrap {
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, #1d4ed8 0%, #4f46e5 100%);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.25rem;
+      box-shadow: 0 0 24px rgba(59,130,246,.25);
+    }
+    .icon-wrap svg { width: 28px; height: 28px; color: #fff; }
+    h1 { font-size: 1.15rem; font-weight: 700; margin-bottom: .4rem; color: #f1f5f9; }
+    .sub { color: #6b7280; font-size: .875rem; line-height: 1.55; margin-bottom: 2rem; }
+    .question-box {
+      background: #0d0e12;
+      border: 1px solid #1e2028;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .question-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em; color: #4b5563; margin-bottom: .6rem; }
+    .question { font-size: 2rem; font-weight: 800; color: #f1f5f9; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+    .question span { color: #3b82f6; }
+    .input-row { display: flex; gap: .75rem; margin-bottom: 1rem; }
+    input[type=number] {
+      flex: 1;
+      background: #0d0e12;
+      border: 1.5px solid #1e2028;
+      border-radius: 10px;
+      color: #f1f5f9;
+      font-size: 1.1rem;
+      font-weight: 600;
+      padding: .7rem 1rem;
+      outline: none;
+      -moz-appearance: textfield;
+      text-align: center;
+      transition: border-color .2s;
+    }
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type=number]:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+    button {
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      cursor: pointer;
+      font-size: .95rem;
+      font-weight: 600;
+      padding: .72rem 1.4rem;
+      transition: opacity .15s, transform .1s;
+      white-space: nowrap;
+    }
+    button:hover { opacity: .92; transform: translateY(-1px); }
+    button:active { transform: translateY(0); opacity: 1; }
+    button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .msg { font-size: .82rem; min-height: 1.2rem; margin-top: .25rem; }
+    .msg.ok  { color: #22c55e; }
+    .msg.err { color: #ef4444; }
+    .footer { margin-top: 1.75rem; font-size: .75rem; color: #374151; }
+    .footer a { color: #374151; text-decoration: none; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+    .shake { animation: shake .35s ease; }
   </style>
 </head>
 <body>
-<div class="card">
-  <div class="shield">🛡️</div>
-  <h1>Vérification en cours</h1>
-  <p>Protection DDoS active. Votre navigateur est en train d'être vérifié.</p>
-  <div class="progress"><div class="bar" id="bar"></div></div>
-  <div class="status" id="status">Initialisation...</div>
+<div class="wrap">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    NebulaProxy
+  </div>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <h1>Vérification de sécurité</h1>
+    <p class="sub">Résolvez ce calcul pour confirmer que vous n'êtes pas un robot.</p>
+    <div class="question-box">
+      <div class="question-label">Combien font</div>
+      <div class="question" id="q">${question} <span>=</span> ?</div>
+    </div>
+    <form id="form" autocomplete="off">
+      <div class="input-row">
+        <input type="number" id="ans" placeholder="Votre réponse" autofocus required>
+        <button type="submit" id="btn">Valider</button>
+      </div>
+    </form>
+    <div class="msg" id="msg"></div>
+  </div>
+  <div class="footer">Protégé par NebulaProxy Shield &bull; <a href="/">Retour à l'accueil</a></div>
 </div>
 <script>
 (function(){
-  const TOKEN=${JSON.stringify(token)};
-  const RETURN=${JSON.stringify(returnUrl||'/')};
-  const bar=document.getElementById('bar');
-  const status=document.getElementById('status');
+  var TOKEN=${JSON.stringify(token)};
+  var RETURN=${JSON.stringify(returnUrl||'/')};
+  var form=document.getElementById('form');
+  var btn=document.getElementById('btn');
+  var msg=document.getElementById('msg');
+  var ansEl=document.getElementById('ans');
 
-  async function sha256(msg){
-    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));
-    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  }
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    var answer=ansEl.value.trim();
+    if(!answer){return;}
+    btn.disabled=true;
+    btn.textContent='Vérification...';
+    msg.className='msg';
+    msg.textContent='';
 
-  async function solve(){
-    status.textContent='Résolution du challenge...';
-    const difficulty='000'; // 3 leading zeros
-    for(let n=0;n<5000000;n++){
-      if(n%5000===0){
-        const pct=Math.min(95,Math.floor(n/50000));
-        bar.style.width=pct+'%';
-        status.textContent='Vérification... ('+pct+'%)';
-        await new Promise(r=>setTimeout(r,0));
+    fetch('/__ddos_challenge/verify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:TOKEN,answer:answer,return:RETURN})
+    })
+    .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
+    .then(function(res){
+      if(res.ok && res.data.ok){
+        msg.className='msg ok';
+        msg.textContent='Réponse correcte, redirection...';
+        window.location.href=res.data.return||RETURN;
+      } else {
+        msg.className='msg err';
+        msg.textContent='Réponse incorrecte. Réessayez.';
+        ansEl.value='';
+        ansEl.focus();
+        var card=document.querySelector('.question-box');
+        card.classList.remove('shake');
+        void card.offsetWidth;
+        card.classList.add('shake');
+        btn.disabled=false;
+        btn.textContent='Valider';
       }
-      const h=await sha256(TOKEN+':'+n);
-      if(h.startsWith(difficulty)){
-        bar.style.width='100%';
-        status.textContent='Challenge résolu, redirection...';
-        const r=await fetch('/__ddos_challenge/verify',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({token:TOKEN,nonce:n,return:RETURN})
-        });
-        if(r.ok){window.location.href=RETURN;}
-        else{status.className='status error';status.textContent='Vérification échouée. Rechargez la page.';}
-        return;
-      }
-    }
-    status.className='status error';
-    status.textContent='Impossible de résoudre le challenge. Rechargez la page.';
-  }
-
-  solve();
+    })
+    .catch(function(){
+      msg.className='msg err';
+      msg.textContent='Erreur réseau. Réessayez.';
+      btn.disabled=false;
+      btn.textContent='Valider';
+    });
+  });
 })();
 </script>
 </body>
@@ -489,6 +637,10 @@ class DdosProtectionService {
 
   verifyChallengeToken(ip, token) {
     return verifyChallengeToken(ip, token);
+  }
+
+  verifyMathToken(ip, token, answer) {
+    return verifyMathToken(ip, token, answer);
   }
 
   generateVerifiedCookie(ip) {

@@ -1670,8 +1670,8 @@ import { redisService } from './redis.js';
             req.on('data', c => { body += c; });
             req.on('end', () => {
               try {
-                const { token, nonce, return: ret = '/' } = JSON.parse(body);
-                if (token && nonce !== undefined && ddosProtectionService.verifyChallengeToken(clientIp, token)) {
+                const { token, answer, return: ret = '/' } = JSON.parse(body);
+                if (token && answer !== undefined && ddosProtectionService.verifyMathToken(clientIp, token, answer)) {
                   const cookie = ddosProtectionService.generateVerifiedCookie(clientIp);
                   res.writeHead(200, {
                     'Content-Type': 'application/json',

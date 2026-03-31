@@ -618,9 +618,9 @@ fastify.get('/__ddos_challenge', async (request, reply) => {
 fastify.post('/__ddos_challenge/verify', async (request, reply) => {
   const { ddosProtectionService } = await import('./services/ddosProtectionService.js');
   const ip    = request.headers['x-real-ip'] || request.ip;
-  const { token, nonce, return: ret = '/' } = request.body || {};
-  if (!token || nonce === undefined) return reply.code(400).send({ error: 'Invalid' });
-  if (!ddosProtectionService.verifyChallengeToken(ip, token)) {
+  const { token, answer, return: ret = '/' } = request.body || {};
+  if (!token || answer === undefined) return reply.code(400).send({ error: 'Invalid' });
+  if (!ddosProtectionService.verifyMathToken(ip, token, answer)) {
     return reply.code(403).send({ error: 'Challenge failed' });
   }
   const cookie = ddosProtectionService.generateVerifiedCookie(ip);
