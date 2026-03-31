@@ -503,50 +503,58 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
         />
         {ddos.enabled && (
           <div className="space-y-3 mt-1">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Requêtes / seconde" hint="Seuil avant ban automatique (HTTP)">
-              <input
-                type="number" min="1" max="10000" className={INPUT}
-                value={ddos.reqPerSecond}
-                onChange={e => setDdos(d => ({ ...d, reqPerSecond: parseInt(e.target.value) || 100 }))}
-              />
-            </Field>
-            <Field label="Connexions / minute" hint="Seuil avant ban (TCP/UDP/Minecraft)">
-              <input
-                type="number" min="1" max="10000" className={INPUT}
-                value={ddos.connectionsPerMinute}
-                onChange={e => setDdos(d => ({ ...d, connectionsPerMinute: parseInt(e.target.value) || 60 }))}
-              />
-            </Field>
-            <Field label="Durée du ban (secondes)" hint="0 = permanent">
-              <input
-                type="number" min="0" max="86400" className={INPUT}
-                value={ddos.banDurationSec}
-                onChange={e => setDdos(d => ({ ...d, banDurationSec: parseInt(e.target.value) || 3600 }))}
-              />
-            </Field>
-            <Field label="Connexions simultanées max / IP" hint="TCP & Minecraft uniquement">
-              <input
-                type="number" min="1" max="1000" className={INPUT}
-                value={ddos.maxConnectionsPerIp}
-                onChange={e => setDdos(d => ({ ...d, maxConnectionsPerIp: parseInt(e.target.value) || 50 }))}
-              />
-            </Field>
-          </div>
-          <div className="flex flex-col gap-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={ddos.challengeMode}
-                onChange={e => setDdos(d => ({ ...d, challengeMode: e.target.checked }))}
-                className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
-              <span className="text-sm text-white/70">Mode Challenge (HTTP uniquement) — JS proof-of-work avant d'accéder au site</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={ddos.banOn4xxRate}
-                onChange={e => setDdos(d => ({ ...d, banOn4xxRate: e.target.checked }))}
-                className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
-              <span className="text-sm text-white/70">Ban automatique sur taux élevé d'erreurs 4xx (scanners, fuzzers)</span>
-            </label>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {domain.proxy_type === 'http' && (
+                <Field label="Requêtes / seconde" hint="Seuil avant ban automatique">
+                  <input
+                    type="number" min="1" max="10000" className={INPUT}
+                    value={ddos.reqPerSecond}
+                    onChange={e => setDdos(d => ({ ...d, reqPerSecond: parseInt(e.target.value) || 100 }))}
+                  />
+                </Field>
+              )}
+              {domain.proxy_type !== 'http' && (
+                <Field label="Connexions / minute" hint="Seuil avant ban automatique">
+                  <input
+                    type="number" min="1" max="10000" className={INPUT}
+                    value={ddos.connectionsPerMinute}
+                    onChange={e => setDdos(d => ({ ...d, connectionsPerMinute: parseInt(e.target.value) || 60 }))}
+                  />
+                </Field>
+              )}
+              <Field label="Durée du ban (secondes)" hint="0 = permanent">
+                <input
+                  type="number" min="0" max="86400" className={INPUT}
+                  value={ddos.banDurationSec}
+                  onChange={e => setDdos(d => ({ ...d, banDurationSec: parseInt(e.target.value) || 3600 }))}
+                />
+              </Field>
+              {(domain.proxy_type === 'http' || domain.proxy_type === 'tcp' || domain.proxy_type === 'minecraft') && (
+                <Field label="Connexions simultanées max / IP">
+                  <input
+                    type="number" min="1" max="1000" className={INPUT}
+                    value={ddos.maxConnectionsPerIp}
+                    onChange={e => setDdos(d => ({ ...d, maxConnectionsPerIp: parseInt(e.target.value) || 50 }))}
+                  />
+                </Field>
+              )}
+            </div>
+            {domain.proxy_type === 'http' && (
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={ddos.challengeMode}
+                    onChange={e => setDdos(d => ({ ...d, challengeMode: e.target.checked }))}
+                    className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
+                  <span className="text-sm text-white/70">Mode Challenge — présente un CAPTCHA avant l'accès au site</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={ddos.banOn4xxRate}
+                    onChange={e => setDdos(d => ({ ...d, banOn4xxRate: e.target.checked }))}
+                    className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
+                  <span className="text-sm text-white/70">Ban automatique sur taux élevé d'erreurs 4xx (scanners, fuzzers)</span>
+                </label>
+              </div>
+            )}
           </div>
         )}
         <Msg skey="ddos" />
