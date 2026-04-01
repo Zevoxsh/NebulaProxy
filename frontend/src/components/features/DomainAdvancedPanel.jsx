@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Wrench, Shield, Globe, Zap, GitBranch, Cookie, AlertTriangle,
   RefreshCw, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
-  Clock, Code, Gauge, FlipHorizontal, Gamepad2, ShieldAlert
+  Clock, Code, Gauge, FlipHorizontal, Gamepad2
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
@@ -196,16 +196,8 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
   // Geyser PROXY Protocol v2 (UDP only)
   const [geyserProxyProtocol, setGeyserProxyProtocol] = useState(domain?.geyser_proxy_protocol || false);
 
-  // Anti-DDoS protection
-  const [ddos, setDdos] = useState({
-    enabled:              domain?.ddos_protection_enabled     || false,
-    reqPerSecond:         domain?.ddos_req_per_second         || 100,
-    connectionsPerMinute: domain?.ddos_connections_per_minute || 60,
-    banDurationSec:       domain?.ddos_ban_duration_sec       || 3600,
-    maxConnectionsPerIp:  domain?.ddos_max_connections_per_ip || 50,
-    challengeMode:        domain?.ddos_challenge_mode         || false,
-    banOn4xxRate:         domain?.ddos_ban_on_4xx_rate        || false,
-  });
+  // Challenge mode
+  const [challengeMode, setChallengeMode] = useState(domain?.ddos_challenge_mode || false);
 
   // Sync when parent domain changes
   useEffect(() => {
@@ -223,15 +215,7 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
     setSticky({ enabled: domain.sticky_sessions_enabled || false, ttl: domain.sticky_sessions_ttl || 3600 });
     setProxyProtocol(domain.proxy_protocol || false);
     setGeyserProxyProtocol(domain.geyser_proxy_protocol || false);
-    setDdos({
-      enabled:              domain.ddos_protection_enabled     || false,
-      reqPerSecond:         domain.ddos_req_per_second         || 100,
-      connectionsPerMinute: domain.ddos_connections_per_minute || 60,
-      banDurationSec:       domain.ddos_ban_duration_sec       || 3600,
-      maxConnectionsPerIp:  domain.ddos_max_connections_per_ip || 50,
-      challengeMode:        domain.ddos_challenge_mode         || false,
-      banOn4xxRate:         domain.ddos_ban_on_4xx_rate        || false,
-    });
+    setChallengeMode(domain.ddos_challenge_mode || false);
   }, [domain]);
 
   const flash = (key, msg, isError = false) => {
@@ -491,83 +475,21 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
         </Section>
       )}
 
-      {/* ── Anti-DDoS Protection (all proxy types) ──────────────────────── */}
-      <Section icon={ShieldAlert} title="Protection Anti-DDoS" description="Bloque les IPs malveillantes via rate limiting et listes de menaces (blocklist.de, Emerging Threats, CI Badguys)" color="#EF4444">
-        <ToggleRow
-          label="Activer la protection Anti-DDoS"
-          description="Analyse le trafic et bannit automatiquement les IPs qui dépassent les seuils configurés"
-          checked={ddos.enabled}
-          onCheckedChange={v => setDdos(d => ({ ...d, enabled: v }))}
-          icon={ShieldAlert}
-          color="#EF4444"
-        />
-        {ddos.enabled && (
-          <div className="space-y-3 mt-1">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {domain.proxy_type === 'http' && (
-                <Field label="Requêtes / seconde" hint="Seuil avant ban automatique">
-                  <input
-                    type="number" min="1" max="10000" className={INPUT}
-                    value={ddos.reqPerSecond}
-                    onChange={e => setDdos(d => ({ ...d, reqPerSecond: parseInt(e.target.value) || 100 }))}
-                  />
-                </Field>
-              )}
-              {domain.proxy_type !== 'http' && (
-                <Field label="Connexions / minute" hint="Seuil avant ban automatique">
-                  <input
-                    type="number" min="1" max="10000" className={INPUT}
-                    value={ddos.connectionsPerMinute}
-                    onChange={e => setDdos(d => ({ ...d, connectionsPerMinute: parseInt(e.target.value) || 60 }))}
-                  />
-                </Field>
-              )}
-              <Field label="Durée du ban (secondes)" hint="0 = permanent">
-                <input
-                  type="number" min="0" max="86400" className={INPUT}
-                  value={ddos.banDurationSec}
-                  onChange={e => setDdos(d => ({ ...d, banDurationSec: parseInt(e.target.value) || 3600 }))}
-                />
-              </Field>
-              {(domain.proxy_type === 'http' || domain.proxy_type === 'tcp' || domain.proxy_type === 'minecraft') && (
-                <Field label="Connexions simultanées max / IP">
-                  <input
-                    type="number" min="1" max="1000" className={INPUT}
-                    value={ddos.maxConnectionsPerIp}
-                    onChange={e => setDdos(d => ({ ...d, maxConnectionsPerIp: parseInt(e.target.value) || 50 }))}
-                  />
-                </Field>
-              )}
-            </div>
-            {domain.proxy_type === 'http' && (
-              <div className="flex flex-col gap-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={ddos.challengeMode}
-                    onChange={e => setDdos(d => ({ ...d, challengeMode: e.target.checked }))}
-                    className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
-                  <span className="text-sm text-white/70">Mode Challenge — présente un CAPTCHA avant l'accès au site</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={ddos.banOn4xxRate}
-                    onChange={e => setDdos(d => ({ ...d, banOn4xxRate: e.target.checked }))}
-                    className="rounded border-white/20 bg-white/5 text-[#3B82F6] focus:ring-0" />
-                  <span className="text-sm text-white/70">Ban automatique sur taux élevé d'erreurs 4xx (scanners, fuzzers)</span>
-                </label>
-              </div>
-            )}
-          </div>
-        )}
-        <Msg skey="ddos" />
-        <SaveBtn skey="ddos" onClick={() => save('ddos', domainAPI.setDdosProtection, {
-          enabled:              ddos.enabled,
-          reqPerSecond:         ddos.reqPerSecond,
-          connectionsPerMinute: ddos.connectionsPerMinute,
-          banDurationSec:       ddos.banDurationSec,
-          maxConnectionsPerIp:  ddos.maxConnectionsPerIp,
-          challengeMode:        ddos.challengeMode,
-          banOn4xxRate:         ddos.banOn4xxRate,
-        })} />
-      </Section>
+      {/* ── Challenge (HTTP only) ────────────────────────────────────────── */}
+      {domain.proxy_type === 'http' && (
+        <Section icon={Zap} title="Challenge" description="Présente un challenge aux visiteurs avant l'accès au site" color="#3B82F6">
+          <ToggleRow
+            label="Activer le mode Challenge"
+            description="Chaque nouveau visiteur doit résoudre un challenge avant d'accéder au site"
+            checked={challengeMode}
+            onCheckedChange={v => setChallengeMode(v)}
+            icon={Zap}
+            color="#3B82F6"
+          />
+          <Msg skey="challenge" />
+          <SaveBtn skey="challenge" onClick={() => save('challenge', domainAPI.setDdosProtection, { challengeMode })} />
+        </Section>
+      )}
 
     </div>
   );
