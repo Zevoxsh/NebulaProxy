@@ -14,18 +14,7 @@ export const adminAPI = {
   updateDomain: (id, data) => api.put(`/admin/domains/${id}`, data),
   deleteDomain: (id) => api.delete(`/admin/domains/${id}`),
 
-  // DDoS protection
-  getDdosBans: (params) => api.get('/admin/ddos/bans', { params }),
-  createDdosBan: (data) => api.post('/admin/ddos/bans', data),
-  deleteDdosBan: (id) => api.delete(`/admin/ddos/bans/${id}`),
-  getDdosStats: () => api.get('/admin/ddos/stats'),
-  getDdosBlocklists: () => api.get('/admin/ddos/blocklists'),
-  syncDdosBlocklists: () => api.post('/admin/ddos/blocklists/sync'),
-  getDdosWhitelist: () => api.get('/admin/ddos/whitelist'),
-  createDdosWhitelist: (data) => api.post('/admin/ddos/whitelist', data),
-  deleteDdosWhitelist: (id) => api.delete(`/admin/ddos/whitelist/${id}`),
-  getDdosEvents: (params) => api.get('/admin/ddos/events', { params }),
-  getDdosEventStats: () => api.get('/admin/ddos/events/stats'),
+  // Challenge types
   getChallengeTypes: () => api.get('/admin/ddos/challenge-types'),
   setChallengeTypes: (enabledIds) => api.put('/admin/ddos/challenge-types', { enabledIds }),
 

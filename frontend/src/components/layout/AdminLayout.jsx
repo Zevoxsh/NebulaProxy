@@ -201,7 +201,7 @@ export function AdminLayout() {
         { path: '/admin/teams', icon: Shield, label: 'Teams' },
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
-        { path: '/admin/ddos', icon: Shield, label: 'DDoS Protection' },
+        { path: '/admin/ddos', icon: Shield, label: 'Challenge' },
         { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }
       ]
     },
@@ -218,7 +218,7 @@ export function AdminLayout() {
     {
       title: 'Security',
       items: [
-        { path: '/admin/ddos', icon: ShieldAlert, label: 'DDoS Protection' },
+        { path: '/admin/ddos', icon: ShieldAlert, label: 'Challenge' },
         { path: '/admin/updates', icon: Sparkles, label: 'Updates' },
         { path: '/admin/audit', icon: FileText, label: 'Audit Trail' }
       ]

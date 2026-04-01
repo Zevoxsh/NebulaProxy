@@ -78,7 +78,7 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/smtp'], title: 'Admin SMTP Setup', description: 'Configure SMTP transport for email notifications.' },
   { patterns: ['/admin/smtp-proxy'], title: 'Admin SMTP Proxy', description: 'Configure and monitor SMTP proxy settings.' },
   { patterns: ['/admin/backups'], title: 'Admin Backups', description: 'Create, export, and reimport database backups.' },
-  { patterns: ['/admin/ddos'], title: 'Admin DDoS Protection', description: 'Manage IP bans and threat intelligence blocklists.' },
+  { patterns: ['/admin/ddos'], title: 'Challenge', description: 'Configure HTTP challenge types.' },
   { patterns: ['/admin/traffic'], title: 'Admin Live Traffic', description: 'Monitor live connections across all domains.' },
   { patterns: ['/domains/:id/traffic'], title: 'Domain Live Traffic', description: 'Monitor live connections for this domain.' },
   { patterns: ['/admin/updates'], title: 'Admin Updates', description: 'Manage system updates and release status.' },
