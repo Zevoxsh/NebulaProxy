@@ -716,13 +716,20 @@ const lts = () => {
           console.error(`[UDP Proxy ${domain.id}] Network policy check failed:`, err.message);
         }
 
-        // DDoS protection (new connections only)
-        if (!upstreamEntry && domain?.ddos_protection_enabled) {
+        // DDoS protection — new clients only (track + check)
+        if (domain?.ddos_protection_enabled) {
           try {
             const { ddosProtectionService } = await import('./ddosProtectionService.js');
+            ddosProtectionService.trackConnectionOpen(rinfo.address, domain.id);
             const ddosResult = await ddosProtectionService.check(rinfo.address, domain.id, domain);
-            if (ddosResult.blocked) return; // silently drop
-          } catch (_) {}
+            if (ddosResult.blocked) {
+              console.warn(`[DDoS UDP] BLOCKED ${rinfo.address} on domain ${domain.id}: ${ddosResult.reason}`);
+              ddosProtectionService.trackConnectionClose(rinfo.address, domain.id);
+              return; // silently drop
+            }
+          } catch (ddosErr) {
+            console.error(`[DDoS UDP] Error:`, ddosErr.message);
+          }
         }
 
         // New client: select backend via load balancing and create dedicated upstream socket
@@ -808,6 +815,11 @@ const lts = () => {
               // Ignore
             }
             upstreams.delete(clientKey);
+            if (domain?.ddos_protection_enabled) {
+              import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
+                ddosProtectionService.trackConnectionClose(upstreamEntry.clientIp, domain.id);
+              }).catch(() => {});
+            }
             console.log(`[UDP Proxy ${domain.id}] Client ${clientKey} timed out after ${this.UDP_CLIENT_TIMEOUT / 1000}s`);
           }, this.UDP_CLIENT_TIMEOUT);
         }
@@ -1058,11 +1070,16 @@ const lts = () => {
               ddosProtectionService.trackConnectionOpen(clientIp, domain.id);
               const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
               if (ddosResult.blocked) {
+                console.warn(`[DDoS Minecraft] BLOCKED ${clientIp} on domain ${domain.id}: ${ddosResult.reason}`);
                 ddosProtectionService.trackConnectionClose(clientIp, domain.id);
                 clientSocket.destroy();
                 return;
               }
-            } catch (_) {}
+              // Register socket so banIp can kill it immediately if this IP gets banned mid-connection
+              ddosProtectionService.registerSocket(clientIp, domain.id, clientSocket);
+            } catch (ddosErr) {
+              console.error(`[DDoS Minecraft] Error in DDoS check for ${clientIp}:`, ddosErr.message);
+            }
           }
 
           // Select backend (with load balancing if enabled)
@@ -1732,6 +1749,7 @@ const lts = () => {
 
         const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
         if (ddosResult.blocked) {
+          console.warn(`[DDoS HTTP] BLOCKED ${clientIp} on domain ${domain.id}: ${ddosResult.reason}`);
           res.writeHead(429, {
             'Content-Type': 'application/json',
             'Retry-After': String(domain.ddos_ban_duration_sec || 3600),
@@ -1739,6 +1757,13 @@ const lts = () => {
           });
           res.end(JSON.stringify({ error: 'Too Many Requests', message: 'Blocked by DDoS protection' }));
           return;
+        }
+        // Register the underlying TCP socket so banIp can kill it immediately if this IP is banned
+        if (req.socket && !req.socket.destroyed) {
+          ddosProtectionService.registerSocket(clientIp, domain.id, req.socket);
+          req.socket.once('close', () => {
+            ddosProtectionService.unregisterSocket(clientIp, domain.id, req.socket);
+          });
         }
       } catch (ddosErr) {
         // Fail open - don't block if service errors
