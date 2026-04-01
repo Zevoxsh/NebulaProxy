@@ -415,6 +415,13 @@ class DdosProtectionService {
     // Used to immediately destroy existing connections when an IP is banned
     this._socketRegistry = new Map();
 
+    // In-memory ban set: "domainId:ip" or "global:ip"
+    // Written synchronously in banIp() so registerSocket() can kill late-arriving sockets
+    // even after _killSockets() has already run (handles async race conditions).
+    // Entries auto-expire via _localBanTimers.
+    this._localBans = new Set();
+    this._localBanTimers = new Map();
+
     // Deferred event queue (batch inserts to avoid DB hammering)
     this._eventQueue = [];
     this._eventFlushTimer = null;
@@ -623,6 +630,12 @@ class DdosProtectionService {
       return { blocked: true, reason: 'blocklist' };
     }
 
+    // 1.5. In-memory ban check (synchronous — catches connections racing through check()
+    //      while the Redis ban key is still being written)
+    if (this._localBans.has(`${domainId}:${cleanIp}`) || this._localBans.has(`global:${cleanIp}`)) {
+      return { blocked: true, reason: 'banned (local)' };
+    }
+
     // 2. Redis ban check (global + domain)
     try {
       if (this.redis) {
@@ -753,6 +766,12 @@ class DdosProtectionService {
     if (!ip || !domainId || !socket) return;
     const clean = ip.replace(/^::ffff:/, '');
     const key   = `${domainId}:${clean}`;
+    // If this IP was banned while its connection was in-flight through check(),
+    // destroy it immediately instead of registering it.
+    if (this._localBans.has(key) || this._localBans.has(`global:${clean}`)) {
+      try { socket.destroy(); } catch (_) {}
+      return;
+    }
     if (!this._socketRegistry.has(key)) this._socketRegistry.set(key, new Set());
     this._socketRegistry.get(key).add(socket);
   }
@@ -779,6 +798,7 @@ class DdosProtectionService {
     const destroy = (key) => {
       const set = this._socketRegistry.get(key);
       if (!set) return;
+      console.log(`[DDoS] _killSockets: destroying ${set.size} socket(s) for key=${key}`);
       for (const sock of set) {
         try { sock.destroy(); } catch (_) {}
       }
@@ -1398,6 +1418,20 @@ class DdosProtectionService {
     const expiresAt = durationSec ? new Date(Date.now() + durationSec * 1000) : null;
     console.log(`[DDoS] BANNING ${clean} domain=${domainId} reason="${reason}" by=${bannedBy} duration=${durationSec}s`);
 
+    // Register ban in-memory SYNCHRONOUSLY so registerSocket() can reject late-arriving
+    // sockets that slipped through check() before the ban was set in Redis.
+    const localKey = domainId ? `${domainId}:${clean}` : `global:${clean}`;
+    this._localBans.add(localKey);
+    // Auto-expire the local ban after the same duration (+30s buffer)
+    const prevTimer = this._localBanTimers.get(localKey);
+    if (prevTimer) clearTimeout(prevTimer);
+    if (durationSec > 0) {
+      this._localBanTimers.set(localKey, setTimeout(() => {
+        this._localBans.delete(localKey);
+        this._localBanTimers.delete(localKey);
+      }, (durationSec + 30) * 1000));
+    }
+
     try {
       if (this.redis) {
         const key = domainId
@@ -1410,6 +1444,7 @@ class DdosProtectionService {
 
     // Immediately kill all open TCP sockets for this IP — don't wait for them to reconnect
     this._killSockets(clean, domainId);
+    console.log(`[DDoS] _killSockets done for ${clean} domain=${domainId}, registry size=${this._socketRegistry.size}`);
 
     try {
       await database.execute(
@@ -1431,6 +1466,13 @@ class DdosProtectionService {
     );
     const ban = r?.rows?.[0];
     if (!ban) return;
+    // Remove from in-memory ban set
+    const localKey = ban.domain_id
+      ? `${ban.domain_id}:${ban.ip_address}`
+      : `global:${ban.ip_address}`;
+    this._localBans.delete(localKey);
+    const timer = this._localBanTimers.get(localKey);
+    if (timer) { clearTimeout(timer); this._localBanTimers.delete(localKey); }
     try {
       if (this.redis) {
         const key = ban.domain_id
