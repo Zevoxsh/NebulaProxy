@@ -411,6 +411,10 @@ class DdosProtectionService {
     // Per-IP concurrent connection tracking (domainId:ip -> count)
     this._connectionCount = new Map();
 
+    // Socket registry: "domainId:ip" -> Set of net.Socket
+    // Used to immediately destroy existing connections when an IP is banned
+    this._socketRegistry = new Map();
+
     // Deferred event queue (batch inserts to avoid DB hammering)
     this._eventQueue = [];
     this._eventFlushTimer = null;
@@ -736,6 +740,56 @@ class DdosProtectionService {
     const n     = (this._connectionCount.get(key) || 1) - 1;
     if (n <= 0) this._connectionCount.delete(key);
     else        this._connectionCount.set(key, n);
+  }
+
+  /**
+   * Register an open socket so it can be killed immediately on ban.
+   * Call this right after the DDoS check passes for a TCP connection.
+   */
+  registerSocket(ip, domainId, socket) {
+    if (!ip || !domainId || !socket) return;
+    const clean = ip.replace(/^::ffff:/, '');
+    const key   = `${domainId}:${clean}`;
+    if (!this._socketRegistry.has(key)) this._socketRegistry.set(key, new Set());
+    this._socketRegistry.get(key).add(socket);
+  }
+
+  /**
+   * Unregister a socket when it closes normally.
+   */
+  unregisterSocket(ip, domainId, socket) {
+    if (!ip || !domainId || !socket) return;
+    const clean = ip.replace(/^::ffff:/, '');
+    const key   = `${domainId}:${clean}`;
+    const set   = this._socketRegistry.get(key);
+    if (set) {
+      set.delete(socket);
+      if (set.size === 0) this._socketRegistry.delete(key);
+    }
+  }
+
+  /**
+   * Immediately destroy all open sockets for a given IP (+ optionally a specific domain).
+   * Called internally by banIp.
+   */
+  _killSockets(cleanIp, domainId) {
+    const destroy = (key) => {
+      const set = this._socketRegistry.get(key);
+      if (!set) return;
+      for (const sock of set) {
+        try { sock.destroy(); } catch (_) {}
+      }
+      this._socketRegistry.delete(key);
+    };
+
+    if (domainId) {
+      destroy(`${domainId}:${cleanIp}`);
+    } else {
+      // Global ban — kill sockets on all domains
+      for (const key of this._socketRegistry.keys()) {
+        if (key.endsWith(`:${cleanIp}`)) destroy(key);
+      }
+    }
   }
 
   // ── 4xx tracking (call from HTTP proxy on 4xx responses) ──────────────────
@@ -1349,6 +1403,9 @@ class DdosProtectionService {
         else                  await this.redis.set(key, reason);
       }
     } catch (_) {}
+
+    // Immediately kill all open TCP sockets for this IP — don't wait for them to reconnect
+    this._killSockets(clean, domainId);
 
     try {
       await database.execute(

@@ -20,11 +20,11 @@ import { redisService } from './services/redis.js';
 import { geoIpService } from './services/geoIpService.js';
 import { ddosProtectionService } from './services/ddosProtectionService.js';
 import { testPostgresConnection, closePool } from './config/database.js';
-import { authRoutes } from './routes/auth.js';
+import { authRoutes } from './routes/auth/index.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { userRoutes } from './routes/user.js';
 import { domainRoutes } from './routes/domains.js';
-import { adminRoutes } from './routes/admin.js';
+import { adminRoutes } from './routes/admin/index.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { logsRoutes } from './routes/logs.js';
 import { monitoringRoutes } from './routes/monitoring.js';
@@ -36,15 +36,11 @@ import { redirectionRoutes } from './routes/redirections.js';
 import { domainGroupRoutes } from './routes/domainGroups.js';
 import { apiKeysRoutes } from './routes/apiKeys.js';
 import { updateRoutes } from './routes/updates.js';
-import notificationRoutes from './routes/admin/notifications.js';
-import { ddosAdminRoutes } from './routes/admin/ddos.js';
-import { trafficAdminRoutes } from './routes/admin/traffic.js';
 import { liveTrafficService } from './services/liveTrafficService.js';
 import { notificationRoutes as userNotificationRoutes } from './routes/notifications.js';
 import { notificationPreferencesRoutes } from './routes/notificationPreferences.js';
 import urlBlockingRoutes from './routes/urlBlockingRules.js';
 import { smtpProxyRoutes } from './routes/smtpProxy.js';
-import { backupRoutes } from './routes/admin/backups.js';
 import BackupScheduler from './services/backupScheduler.js';
 import { proxyManager } from './services/proxyManager.js';
 import { acmeManager } from './services/acmeManager.js';
@@ -659,18 +655,6 @@ await fastify.register(proxyRoutes, { prefix: '/proxy' });
 
 // Update system routes (admin only)
 await fastify.register(updateRoutes, { prefix: '/api/admin/updates' });
-
-// New admin routes - Notifications (audit-logs already in admin.js)
-await fastify.register(notificationRoutes, { prefix: '/api/admin/notifications' });
-
-// Backup management + S3 cloud backup routes
-await fastify.register(backupRoutes, { prefix: '/api/admin/backups' });
-
-// DDoS protection admin routes
-await fastify.register(ddosAdminRoutes, { prefix: '/api/admin/ddos' });
-
-// Live traffic admin routes
-await fastify.register(trafficAdminRoutes, { prefix: '/api/admin/traffic' });
 
 // URL blocking rules routes
 await fastify.register(urlBlockingRoutes, { prefix: '/api/url-blocking' });

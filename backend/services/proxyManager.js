@@ -398,6 +398,8 @@ const lts = () => {
               clientSocket.destroy();
               return;
             }
+            // Register socket so banIp can kill it immediately if this IP gets banned mid-connection
+            ddosProtectionService.registerSocket(clientIp, domain.id, clientSocket);
           } catch (_) {}
         }
 
@@ -436,6 +438,7 @@ const lts = () => {
           if (domain?.ddos_protection_enabled) {
             import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
               ddosProtectionService.trackConnectionClose(clientIp, domain.id);
+              ddosProtectionService.unregisterSocket(clientIp, domain.id, clientSocket);
             }).catch(() => {});
           }
 
@@ -918,6 +921,7 @@ const lts = () => {
           if (domain?.ddos_protection_enabled) {
             import('./ddosProtectionService.js').then(({ ddosProtectionService }) => {
               ddosProtectionService.trackConnectionClose(clientIp, domain.id);
+              ddosProtectionService.unregisterSocket(clientIp, domain.id, clientSocket);
             }).catch(() => {});
           }
 

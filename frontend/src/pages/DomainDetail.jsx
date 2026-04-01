@@ -388,6 +388,14 @@ export default function DomainDetail() {
     return date.toLocaleString();
   };
 
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const HH = String(date.getHours()).padStart(2, '0');
+    const MM = String(date.getMinutes()).padStart(2, '0');
+    const SS = String(date.getSeconds()).padStart(2, '0');
+    return `${HH}:${MM}:${SS}`;
+  };
+
   const handleSaveDomain = async () => {
     setSaving(true);
     setError('');
@@ -945,8 +953,9 @@ export default function DomainDetail() {
                 ) : (
                   logs.map((log) => (
                     <tr key={log.id} className="hover:bg-white/[0.02] transition-colors duration-200">
-                      <td className="px-4 py-3 text-xs text-white/70 font-light whitespace-nowrap">
-                        {formatDate(log.timestamp)}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs text-white/90 font-mono">{formatTime(log.timestamp)}</span>
+                        <p className="text-[10px] text-white/35 font-light">{formatDate(log.timestamp)}</p>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-xs font-medium ${getMethodColor(log.method)}`}>
