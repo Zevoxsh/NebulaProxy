@@ -608,7 +608,10 @@ class DdosProtectionService {
 
     const cleanIp = ip.replace(/^::ffff:/, '');
 
-    if (isPrivateIp(cleanIp)) return { blocked: false };
+    if (isPrivateIp(cleanIp)) {
+      // Private/loopback IPs are never subject to DDoS protection
+      return { blocked: false };
+    }
 
     // 0. Whitelist (highest priority — always allow)
     if (this._isWhitelisted(cleanIp)) return { blocked: false };
@@ -1393,6 +1396,7 @@ class DdosProtectionService {
   async banIp(ip, domainId, reason, bannedBy, durationSec) {
     const clean     = ip.replace(/^::ffff:/, '');
     const expiresAt = durationSec ? new Date(Date.now() + durationSec * 1000) : null;
+    console.log(`[DDoS] BANNING ${clean} domain=${domainId} reason="${reason}" by=${bannedBy} duration=${durationSec}s`);
 
     try {
       if (this.redis) {

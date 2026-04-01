@@ -394,13 +394,16 @@ const lts = () => {
             ddosProtectionService.trackConnectionOpen(clientIp, domain.id);
             const ddosResult = await ddosProtectionService.check(clientIp, domain.id, domain);
             if (ddosResult.blocked) {
+              console.warn(`[DDoS TCP] BLOCKED ${clientIp} on domain ${domain.id}: ${ddosResult.reason}`);
               ddosProtectionService.trackConnectionClose(clientIp, domain.id);
               clientSocket.destroy();
               return;
             }
             // Register socket so banIp can kill it immediately if this IP gets banned mid-connection
             ddosProtectionService.registerSocket(clientIp, domain.id, clientSocket);
-          } catch (_) {}
+          } catch (ddosErr) {
+            console.error(`[DDoS TCP] Error in DDoS check for ${clientIp}:`, ddosErr.message);
+          }
         }
 
         // Load balancing: select backend
