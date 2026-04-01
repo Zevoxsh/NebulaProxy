@@ -1,6 +1,7 @@
 import https from 'https';
 import http from 'http';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
 import { database } from './database.js';
 
 // ── Blocklist sources ───────────────────────────────────────────────────────
@@ -395,6 +396,43 @@ function fetchUrl(url) {
   });
 }
 
+// ── iptables helpers ─────────────────────────────────────────────────────────
+// Drop/restore packets at the kernel level — orders of magnitude faster than
+// application-level blocking for high-volume floods.
+
+function iptablesRun(args) {
+  return new Promise((resolve) => {
+    execFile('iptables', args, { timeout: 3000 }, (err) => {
+      if (err) console.error(`[DDoS] iptables ${args.join(' ')} failed:`, err.message);
+      resolve();
+    });
+  });
+}
+
+// Build the iptables match args for a given IP + optional port/protocol.
+// When port is provided, only traffic to that specific port is dropped —
+// the attacker's IP is not globally blocked.
+function iptablesMatchArgs(ip, port, protocol) {
+  const proto = (protocol === 'udp') ? 'udp' : 'tcp'; // minecraft/http → tcp
+  if (port) {
+    return ['-s', ip, '-p', proto, '--dport', String(port)];
+  }
+  return ['-s', ip]; // global block (no port known)
+}
+
+async function iptablesBanIp(ip, port, protocol) {
+  const match = iptablesMatchArgs(ip, port, protocol);
+  // Remove stale rule first (idempotent), then insert at top of INPUT chain.
+  await iptablesRun(['-D', 'INPUT', ...match, '-j', 'DROP']);
+  await iptablesRun(['-I', 'INPUT', '1', ...match, '-j', 'DROP']);
+  console.log(`[DDoS] iptables DROP added: ${ip}${port ? `:${port}/${protocol}` : ' (global)'}`);
+}
+
+async function iptablesUnbanIp(ip, port, protocol) {
+  const match = iptablesMatchArgs(ip, port, protocol);
+  await iptablesRun(['-D', 'INPUT', ...match, '-j', 'DROP']);
+}
+
 // ── Service ─────────────────────────────────────────────────────────────────
 
 class DdosProtectionService {
@@ -648,12 +686,15 @@ class DdosProtectionService {
       }
     } catch (_) {}
 
+    const port     = domain.external_port || null;
+    const protocol = domain.proxy_type    || null;
+
     // 3. Concurrent connections per IP
     const maxConns = domain.ddos_max_connections_per_ip || 50;
     const currentConns = this._connectionCount.get(`${domainId}:${cleanIp}`) || 0;
     if (currentConns > maxConns) {
       const reason = `too-many-connections (${currentConns}/${maxConns})`;
-      await this.banIp(cleanIp, domainId, reason, 'auto', domain.ddos_ban_duration_sec || 3600);
+      await this.banIp(cleanIp, domainId, reason, 'auto', domain.ddos_ban_duration_sec || 3600, port, protocol);
       this._queueEvent(cleanIp, domainId, 'too-many-connections', { count: currentConns, limit: maxConns });
       return { blocked: true, reason };
     }
@@ -661,17 +702,17 @@ class DdosProtectionService {
     // 4. Connections per minute
     const cpmLimit = domain.ddos_connections_per_minute || 0;
     if (cpmLimit > 0 && this.redis) {
-      const r = await this._checkCpm(cleanIp, domainId, cpmLimit, domain.ddos_ban_duration_sec || 3600);
+      const r = await this._checkCpm(cleanIp, domainId, cpmLimit, domain.ddos_ban_duration_sec || 3600, port, protocol);
       if (r.blocked) return r;
     }
 
     // 5. Requests per second (sliding window)
-    const rpsResult = await this._checkRps(cleanIp, domainId, domain);
+    const rpsResult = await this._checkRps(cleanIp, domainId, domain, port, protocol);
     if (rpsResult.blocked) return rpsResult;
 
     // 6. Behavioral: 4xx error rate
     if (domain.ddos_ban_on_4xx_rate && this.redis) {
-      const b = await this._checkBehavioral4xx(cleanIp, domainId, domain);
+      const b = await this._checkBehavioral4xx(cleanIp, domainId, domain, port, protocol);
       if (b.blocked) return b;
     }
 
@@ -680,7 +721,7 @@ class DdosProtectionService {
 
   // ── Rate limiters ─────────────────────────────────────────────────────────
 
-  async _checkCpm(ip, domainId, limit, banDuration) {
+  async _checkCpm(ip, domainId, limit, banDuration, port, protocol) {
     const slot  = Math.floor(Date.now() / 60000);
     const k1    = `ddos:cpm:${domainId}:${ip}:${slot}`;
     const k2    = `ddos:cpm:${domainId}:${ip}:${slot - 1}`;
@@ -693,7 +734,7 @@ class DdosProtectionService {
       const total = (parseInt(res[0][1]) || 0) + (parseInt(res[2][1]) || 0);
       if (total > limit) {
         const reason = `connections-per-minute (${total}/${limit})`;
-        await this.banIp(ip, domainId, reason, 'auto', banDuration);
+        await this.banIp(ip, domainId, reason, 'auto', banDuration, port, protocol);
         this._queueEvent(ip, domainId, 'connections-per-minute', { count: total, limit });
         return { blocked: true, reason };
       }
@@ -701,7 +742,7 @@ class DdosProtectionService {
     return { blocked: false };
   }
 
-  async _checkRps(ip, domainId, domain) {
+  async _checkRps(ip, domainId, domain, port, protocol) {
     if (!this.redis || !domainId) return { blocked: false };
     const threshold   = domain.ddos_req_per_second   || 100;
     const banDuration = domain.ddos_ban_duration_sec  || 3600;
@@ -717,7 +758,7 @@ class DdosProtectionService {
       const total = (parseInt(res[0][1]) || 0) + (parseInt(res[2][1]) || 0);
       if (total > threshold) {
         const reason = `rate-limit (${total} req/s > ${threshold})`;
-        await this.banIp(ip, domainId, reason, 'auto', banDuration);
+        await this.banIp(ip, domainId, reason, 'auto', banDuration, port, protocol);
         this._queueEvent(ip, domainId, 'rate-limit', { rps: total, threshold });
         return { blocked: true, reason };
       }
@@ -725,14 +766,14 @@ class DdosProtectionService {
     return { blocked: false };
   }
 
-  async _checkBehavioral4xx(ip, domainId, domain) {
+  async _checkBehavioral4xx(ip, domainId, domain, port, protocol) {
     const key = `ddos:4xx:${domainId}:${ip}`;
     try {
       const count = parseInt(await this.redis.get(key) || 0);
       const limit = 50; // 50 errors in 5-minute window
       if (count > limit) {
         const reason = `behavioral-4xx (${count} errors in 5min)`;
-        await this.banIp(ip, domainId, reason, 'auto', domain.ddos_ban_duration_sec || 3600);
+        await this.banIp(ip, domainId, reason, 'auto', domain.ddos_ban_duration_sec || 3600, port, protocol);
         this._queueEvent(ip, domainId, 'behavioral-4xx', { count, limit });
         return { blocked: true, reason };
       }
@@ -1413,7 +1454,9 @@ class DdosProtectionService {
 
   // ── Ban / Unban ───────────────────────────────────────────────────────────
 
-  async banIp(ip, domainId, reason, bannedBy, durationSec) {
+  // port and protocol are optional — used to build a port-specific iptables rule.
+  // Pass domain.external_port and domain.proxy_type from the DDoS check call site.
+  async banIp(ip, domainId, reason, bannedBy, durationSec, port = null, protocol = null) {
     const clean     = ip.replace(/^::ffff:/, '');
     const expiresAt = durationSec ? new Date(Date.now() + durationSec * 1000) : null;
     console.log(`[DDoS] BANNING ${clean} domain=${domainId} reason="${reason}" by=${bannedBy} duration=${durationSec}s`);
@@ -1446,11 +1489,20 @@ class DdosProtectionService {
     this._killSockets(clean, domainId);
     console.log(`[DDoS] _killSockets done for ${clean} domain=${domainId}, registry size=${this._socketRegistry.size}`);
 
+    // Block at the kernel level so flood packets never reach Node.js.
+    // Port-specific rule when port is known, global block otherwise.
+    if (!isPrivateIp(clean)) {
+      iptablesBanIp(clean, port, protocol).catch(() => {});
+      if (durationSec > 0) {
+        setTimeout(() => iptablesUnbanIp(clean, port, protocol).catch(() => {}), durationSec * 1000);
+      }
+    }
+
     try {
       await database.execute(
-        `INSERT INTO ddos_ip_bans (ip_address, domain_id, reason, banned_by, expires_at)
-         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
-        [clean, domainId || null, reason, bannedBy, expiresAt]
+        `INSERT INTO ddos_ip_bans (ip_address, domain_id, reason, banned_by, expires_at, listen_port, proxy_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
+        [clean, domainId || null, reason, bannedBy, expiresAt, port || null, protocol || null]
       );
     } catch (_) {}
   }
@@ -1473,6 +1525,8 @@ class DdosProtectionService {
     this._localBans.delete(localKey);
     const timer = this._localBanTimers.get(localKey);
     if (timer) { clearTimeout(timer); this._localBanTimers.delete(localKey); }
+    // Remove iptables rule (port-specific if stored, else global)
+    iptablesUnbanIp(ban.ip_address, ban.listen_port || null, ban.proxy_type || null).catch(() => {});
     try {
       if (this.redis) {
         const key = ban.domain_id
