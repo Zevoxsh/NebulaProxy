@@ -167,6 +167,9 @@ export const config = {
     // SECURITY: Max HTTP request body size in bytes (default 100MB)
     get maxRequestBodySize() {
       return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
+    },
+    get requestTimeoutMs() {
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '4000'), 10);
     }
   },
 

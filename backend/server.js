@@ -267,8 +267,8 @@ const startFrontendServer = async () => {
 // SECURITY FIX: Reduced timeouts to prevent resource exhaustion
 const proxy = httpProxy.createProxyServer({
   changeOrigin: true,
-  proxyTimeout: 10000, // Reduced from 30s to 10s
-  timeout: 10000        // Reduced from 30s to 10s
+  proxyTimeout: 4000,
+  timeout: 4000
 });
 
 // Error handling for proxy

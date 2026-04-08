@@ -1943,6 +1943,7 @@ const lts = () => {
     }
 
     const protocol = backendProtocol === 'https:' ? https : http;
+    const upstreamTimeoutMs = config.proxy.requestTimeoutMs || 4000;
 
     const proxyReq = protocol.request(options, (proxyRes) => {
       const responseTime = Date.now() - startTime;
@@ -2040,6 +2041,12 @@ const lts = () => {
       if (domain.mirror_enabled && domain.mirror_backend_url) {
         this._fireMirrorRequest(req, domain.mirror_backend_url).catch(() => {});
       }
+    });
+
+    proxyReq.setTimeout(upstreamTimeoutMs, () => {
+      const timeoutError = new Error(`Upstream request timeout after ${upstreamTimeoutMs}ms`);
+      timeoutError.code = 'ETIMEDOUT';
+      proxyReq.destroy(timeoutError);
     });
 
     proxyReq.on('error', (error) => {
