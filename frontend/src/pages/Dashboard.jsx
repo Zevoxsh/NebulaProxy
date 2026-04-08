@@ -56,9 +56,21 @@ export default function Dashboard() {
 
   return (
     <div data-admin-theme className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold text-admin-text mb-2">Dashboard</h1>
-        <p className="text-admin-text-muted">System overview and key metrics</p>
+      <div className="overflow-hidden rounded-2xl border border-admin-border bg-gradient-to-r from-admin-surface via-admin-surface-2 to-admin-bg-secondary p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] md:p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-admin-text-muted">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#C77DFF] shadow-[0_0_12px_rgba(199,125,255,0.75)]" />
+              NebulaProxy Control Center
+            </div>
+            <h1 className="text-3xl font-semibold text-admin-text mb-2">Dashboard</h1>
+            <p className="text-admin-text-muted">System overview and key metrics for {appName}</p>
+          </div>
+          <div className="hidden md:flex items-center gap-2 rounded-xl border border-admin-border bg-white/5 px-3 py-2 text-xs text-admin-text-muted">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.6)]" />
+            Live panel
+          </div>
+        </div>
       </div>
 
       <div>
