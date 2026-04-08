@@ -938,6 +938,16 @@ const start = async () => {
         logStep('Notifications', 'OK', 'email/webhook/websocket');
       }
 
+      try {
+        await notificationService.sendProxyLifecycleNotification('started', {
+          host: config.host,
+          port: config.port,
+          source: 'startup'
+        });
+      } catch (error) {
+        fastify.log.warn({ error }, 'Failed to send proxy startup notification');
+      }
+
       // Initialize Log Broadcast Service
       logBroadcastService.setWebSocketManager(websocketManager);
       fastify.log.info('Log broadcast service initialized');
@@ -1026,6 +1036,15 @@ process.on('SIGTERM', async () => {
   fastify.log.info('SIGTERM received, shutting down gracefully');
 
   try {
+    if (global.notificationService) {
+      await global.notificationService.sendProxyLifecycleNotification('stopping', {
+        signal: 'SIGTERM',
+        source: 'shutdown'
+      }).catch((error) => {
+        fastify.log.warn({ error }, 'Failed to send proxy shutdown notification');
+      });
+    }
+
     // Stop DDoS protection service
     ddosProtectionService.destroy();
 
@@ -1096,6 +1115,15 @@ process.on('SIGINT', async () => {
   fastify.log.info('SIGINT received, shutting down gracefully');
 
   try {
+    if (global.notificationService) {
+      await global.notificationService.sendProxyLifecycleNotification('stopping', {
+        signal: 'SIGINT',
+        source: 'shutdown'
+      }).catch((error) => {
+        fastify.log.warn({ error }, 'Failed to send proxy shutdown notification');
+      });
+    }
+
     if (config.queue.enabled) {
       await retryWorker.stop();
     }

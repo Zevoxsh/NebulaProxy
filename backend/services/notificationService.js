@@ -51,7 +51,106 @@ class NotificationService {
       promises.push(this.sendEmail(title, message, severity));
     }
 
+    if (this.config?.webhook?.enabled && this.config?.webhook?.url) {
+      promises.push(this.sendWebhook(notification));
+    }
+
     await Promise.allSettled(promises);
+  }
+
+  isDiscordWebhookUrl(url) {
+    return typeof url === 'string'
+      && (url.includes('discord.com/api/webhooks/') || url.includes('discordapp.com/api/webhooks/'));
+  }
+
+  buildWebhookPayload(notification) {
+    const { title, message, severity = 'info', event = 'general', metadata = {} } = notification;
+    const webhookUrl = this.config?.webhook?.url || '';
+    const isDiscord = this.isDiscordWebhookUrl(webhookUrl);
+
+    if (isDiscord) {
+      const colors = {
+        error: 0xef4444,
+        warning: 0xf59e0b,
+        success: 0x10b981,
+        info: 0x3b82f6
+      };
+
+      const fields = [
+        { name: 'Event', value: event || 'general', inline: true },
+        { name: 'Severity', value: severity, inline: true }
+      ];
+
+      if (metadata && typeof metadata === 'object') {
+        for (const [key, value] of Object.entries(metadata)) {
+          fields.push({
+            name: String(key).slice(0, 256),
+            value: String(value).slice(0, 1024),
+            inline: true
+          });
+        }
+      }
+
+      return {
+        embeds: [{
+          title,
+          description: message,
+          color: colors[severity] || colors.info,
+          fields,
+          footer: { text: 'NebulaProxy' },
+          timestamp: new Date().toISOString()
+        }]
+      };
+    }
+
+    return {
+      event,
+      title,
+      message,
+      severity,
+      metadata,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  async sendWebhook(notification) {
+    try {
+      const webhookConfig = this.config?.webhook;
+      if (!webhookConfig?.enabled || !webhookConfig?.url) {
+        return;
+      }
+
+      const payload = this.buildWebhookPayload(notification);
+      const headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'NebulaProxy-Webhook/1.0'
+      };
+
+      const isDiscord = this.isDiscordWebhookUrl(webhookConfig.url);
+
+      if (webhookConfig.secret && !isDiscord) {
+        const crypto = await import('crypto');
+        headers['X-Nebula-Signature'] = crypto
+          .createHmac('sha256', webhookConfig.secret)
+          .update(JSON.stringify(payload))
+          .digest('hex');
+      }
+
+      const response = await fetch(webhookConfig.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook returned ${response.status}`);
+      }
+
+      this.logger.info('Webhook notification sent');
+    } catch (error) {
+      this.logger.error('Failed to send webhook notification:', error);
+    }
   }
 
   /**
@@ -162,6 +261,56 @@ class NotificationService {
       event: 'resource_alert',
       metadata: { type, value, threshold }
     });
+  }
+
+  /**
+   * Send proxy lifecycle notification (startup, shutdown, maintenance)
+   */
+  async sendProxyLifecycleNotification(state, metadata = {}) {
+    const normalizedState = String(state || '').toLowerCase();
+
+    if (normalizedState === 'started' || normalizedState === 'startup' || normalizedState === 'online') {
+      await this.send({
+        title: 'Proxy redémarré',
+        message: 'Le proxy est de nouveau en ligne après redémarrage ou maintenance.',
+        severity: 'success',
+        event: 'proxy_startup',
+        metadata
+      });
+      return;
+    }
+
+    if (normalizedState === 'stopping' || normalizedState === 'stopped' || normalizedState === 'shutdown') {
+      await this.send({
+        title: 'Proxy arrêté / mise en maintenance',
+        message: 'Le proxy passe hors ligne pour un arrêt, un redémarrage ou une maintenance planifiée.',
+        severity: 'warning',
+        event: 'proxy_shutdown',
+        metadata
+      });
+      return;
+    }
+
+    if (normalizedState === 'maintenance-start' || normalizedState === 'maintenance_started') {
+      await this.send({
+        title: 'Maintenance du proxy démarrée',
+        message: 'Le proxy passe en mode maintenance pour les tests ou interventions planifiées.',
+        severity: 'warning',
+        event: 'proxy_maintenance',
+        metadata: { ...metadata, phase: 'start' }
+      });
+      return;
+    }
+
+    if (normalizedState === 'maintenance-end' || normalizedState === 'maintenance_ended') {
+      await this.send({
+        title: 'Maintenance du proxy terminée',
+        message: 'Le proxy est à nouveau disponible après la maintenance.',
+        severity: 'success',
+        event: 'proxy_maintenance',
+        metadata: { ...metadata, phase: 'end' }
+      });
+    }
   }
 }
 
