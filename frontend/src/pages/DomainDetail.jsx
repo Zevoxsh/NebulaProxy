@@ -468,6 +468,25 @@ export default function DomainDetail() {
     <div className="page-shell" onKeyDown={(e) => e.key === 'Escape' && e.preventDefault()}>
       <div className="page-header">
         <div className="page-header-inner">
+          <div className="mb-5 overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-r from-[#18181B]/95 via-[#1A1B28]/90 to-[#111113]/95 p-4 md:p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#9D4EDD]/25 bg-[#9D4EDD]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#C77DFF]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#C77DFF] shadow-[0_0_12px_rgba(199,125,255,0.8)]" />
+                  NebulaProxy Control Center
+                </div>
+                <h2 className="text-xl md:text-2xl font-light text-white tracking-tight">Console web de supervision</h2>
+                <p className="mt-1 text-sm text-white/55 font-light max-w-2xl">
+                  Vue temps réel du trafic, des logs et des statuts, avec la même identité visuelle que l’admin panel.
+                </p>
+              </div>
+              <div className="hidden md:flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-white/55">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.6)]" />
+                Live console
+              </div>
+            </div>
+          </div>
+
           {/* Header */}
           <div className="flex items-center gap-4 flex-wrap">
               <button
