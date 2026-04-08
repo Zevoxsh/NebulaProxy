@@ -28,11 +28,6 @@ export async function notificationRoutes(fastify, options) {
           from_email: '',
           to_emails: ''
         },
-        webhook: {
-          enabled: false,
-          url: '',
-          secret: ''
-        },
         alerts: {
           certificate_expiry_days: 7,
           domain_down_enabled: true,
@@ -47,7 +42,18 @@ export async function notificationRoutes(fastify, options) {
         ? JSON.parse(result.rows[0].value)
         : defaultConfig;
 
-      reply.send({ config });
+      const sanitizedConfig = {
+        email: {
+          ...defaultConfig.email,
+          ...(config.email || {})
+        },
+        alerts: {
+          ...defaultConfig.alerts,
+          ...(config.alerts || {})
+        }
+      };
+
+      reply.send({ config: sanitizedConfig });
     } catch (error) {
       request.log.error(error);
       reply.status(500).send({
@@ -62,7 +68,28 @@ export async function notificationRoutes(fastify, options) {
     preHandler: [fastify.authenticate, fastify.requireAdmin]
   }, async (request, reply) => {
     try {
-      const config = request.body;
+      const config = request.body || {};
+
+      // Admin webhook is deprecated: keep only email + alerts in admin notification config.
+      const sanitizedConfig = {
+        email: config.email || {
+          enabled: false,
+          smtp_host: '',
+          smtp_port: 587,
+          smtp_user: '',
+          smtp_password: '',
+          from_email: '',
+          to_emails: ''
+        },
+        alerts: config.alerts || {
+          certificate_expiry_days: 7,
+          domain_down_enabled: true,
+          high_cpu_threshold: 80,
+          high_memory_threshold: 85,
+          disk_space_threshold: 90,
+          failed_backup_enabled: true
+        }
+      };
 
       // Upsert configuration
       await pool.query(
@@ -70,7 +97,7 @@ export async function notificationRoutes(fastify, options) {
          VALUES ($1, $2, NOW())
          ON CONFLICT (key)
          DO UPDATE SET value = $2, updated_at = NOW()`,
-        ['notification_config', JSON.stringify(config)]
+        ['notification_config', JSON.stringify(sanitizedConfig)]
       );
 
       // Audit log
@@ -197,97 +224,6 @@ export async function notificationRoutes(fastify, options) {
     }
   });
 
-  // Test webhook notification
-  fastify.post('/test/webhook', {
-    preHandler: [fastify.authenticate, fastify.requireAdmin]
-  }, async (request, reply) => {
-    try {
-      // Get webhook config
-      const result = await pool.query(
-        'SELECT value FROM system_config WHERE key = $1',
-        ['notification_config']
-      );
-
-      if (result.rows.length === 0) {
-        return reply.status(400).send({ message: 'Webhook not configured' });
-      }
-
-      const config = JSON.parse(result.rows[0].value);
-      const webhookConfig = config.webhook;
-
-      if (!webhookConfig.enabled || !webhookConfig.url) {
-        return reply.status(400).send({ message: 'Webhook not configured' });
-      }
-
-      // Check if it's a Discord webhook
-      const isDiscord = webhookConfig.url.includes('discord.com') || webhookConfig.url.includes('discordapp.com');
-
-      let payload;
-      if (isDiscord) {
-        // Discord-specific format with embeds
-        payload = {
-          embeds: [{
-            title: '✅ Test Webhook Successful',
-            description: 'Your Discord webhook is configured correctly and working!',
-            color: 0x9D4EDD, // Purple accent color
-            fields: [
-              {
-                name: '🌌 NebulaProxy',
-                value: 'Admin notifications are now active.',
-                inline: false
-              }
-            ],
-            footer: {
-              text: 'NebulaProxy Admin Panel'
-            },
-            timestamp: new Date().toISOString()
-          }]
-        };
-      } else {
-        // Generic webhook format
-        payload = {
-          event: 'test',
-          title: 'Test Webhook',
-          message: 'This is a test webhook from NebulaProxy',
-          severity: 'info',
-          timestamp: new Date().toISOString()
-        };
-      }
-
-      const headers = {
-        'Content-Type': 'application/json',
-        'User-Agent': 'NebulaProxy-Webhook/1.0'
-      };
-
-      // Add signature if secret is configured (not for Discord)
-      if (webhookConfig.secret && !isDiscord) {
-        const crypto = await import('crypto');
-        const signature = crypto
-          .createHmac('sha256', webhookConfig.secret)
-          .update(JSON.stringify(payload))
-          .digest('hex');
-        headers['X-Nebula-Signature'] = signature;
-      }
-
-      const response = await fetch(webhookConfig.url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}`);
-      }
-
-      reply.send({ success: true, message: 'Test webhook sent successfully' });
-    } catch (error) {
-      request.log.error(error);
-      reply.status(500).send({
-        message: 'Failed to send test webhook',
-        error: error.message
-      });
-    }
-  });
 }
 
 export default notificationRoutes;

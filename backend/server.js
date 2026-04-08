@@ -935,7 +935,7 @@ const start = async () => {
       fastify.notificationService = notificationService;
       fastify.log.info('Notification service initialized');
       if (config.logging.startupSummary) {
-        logStep('Notifications', 'OK', 'email/webhook/websocket');
+        logStep('Notifications', 'OK', 'email/client-webhooks/websocket');
       }
 
       try {

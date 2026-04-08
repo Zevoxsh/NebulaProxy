@@ -58,8 +58,8 @@ class NotificationService {
       promises.push(this.sendEmail(title, message, severity));
     }
 
-    if ((!channelSet || channelSet.has('webhook')) && this.config?.webhook?.enabled && this.config?.webhook?.url) {
-      promises.push(this.sendWebhook(notification));
+    if (!channelSet || channelSet.has('webhook')) {
+      promises.push(this.sendClientWebhooks(notification));
     }
 
     await Promise.allSettled(promises);
@@ -120,11 +120,10 @@ class NotificationService {
     };
   }
 
-  async sendWebhook(notification, options = {}) {
+  async sendWebhookToTarget(url, secret, notification, options = {}) {
     try {
       const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 10000;
-      const webhookConfig = this.config?.webhook;
-      if (!webhookConfig?.enabled || !webhookConfig?.url) {
+      if (!url) {
         return;
       }
 
@@ -134,17 +133,17 @@ class NotificationService {
         'User-Agent': 'NebulaProxy-Webhook/1.0'
       };
 
-      const isDiscord = this.isDiscordWebhookUrl(webhookConfig.url);
+      const isDiscord = this.isDiscordWebhookUrl(url);
 
-      if (webhookConfig.secret && !isDiscord) {
+      if (secret && !isDiscord) {
         const crypto = await import('crypto');
         headers['X-Nebula-Signature'] = crypto
-          .createHmac('sha256', webhookConfig.secret)
+          .createHmac('sha256', secret)
           .update(JSON.stringify(payload))
           .digest('hex');
       }
 
-      const response = await fetch(webhookConfig.url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -159,6 +158,77 @@ class NotificationService {
     } catch (error) {
       this.logger.error('Failed to send webhook notification:', error);
     }
+  }
+
+  async getEnabledClientWebhooks() {
+    try {
+      const columnsResult = await pool.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'user_notification_preferences'`
+      );
+
+      const columns = new Set(columnsResult.rows.map((row) => row.column_name));
+
+      if (columns.has('webhook_enabled') && columns.has('webhook_url')) {
+        const result = await pool.query(
+          `SELECT user_id, webhook_url, webhook_secret
+           FROM user_notification_preferences
+           WHERE webhook_enabled = true
+             AND webhook_url IS NOT NULL
+             AND webhook_url <> ''`
+        );
+        return result.rows.map((row) => ({
+          user_id: row.user_id,
+          webhook_url: row.webhook_url,
+          webhook_secret: row.webhook_secret || ''
+        }));
+      }
+
+      if (columns.has('preferences')) {
+        const result = await pool.query(
+          `SELECT user_id, preferences
+           FROM user_notification_preferences
+           WHERE preferences IS NOT NULL`
+        );
+
+        return result.rows
+          .map((row) => {
+            const prefs = row.preferences || {};
+            return {
+              user_id: row.user_id,
+              webhook_url: prefs.webhook_url || '',
+              webhook_secret: prefs.webhook_secret || '',
+              webhook_enabled: prefs.webhook_enabled === true
+            };
+          })
+          .filter((row) => row.webhook_enabled && row.webhook_url);
+      }
+
+      return [];
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to load client webhook list');
+      return [];
+    }
+  }
+
+  async sendClientWebhooks(notification, options = {}) {
+    const webhookTargets = await this.getEnabledClientWebhooks();
+    if (!webhookTargets.length) {
+      return;
+    }
+
+    await Promise.allSettled(
+      webhookTargets.map((target) =>
+        this.sendWebhookToTarget(target.webhook_url, target.webhook_secret, {
+          ...notification,
+          metadata: {
+            ...(notification.metadata || {}),
+            target_user_id: target.user_id
+          }
+        }, options)
+      )
+    );
   }
 
   /**
