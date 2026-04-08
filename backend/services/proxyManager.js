@@ -2017,13 +2017,163 @@ const lts = () => {
     return `<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Maintenance — ${safeHost}</title>
-<style>:root{color-scheme:dark;--bg:#0b0c0f;--panel:rgba(22,23,34,0.9);--border:rgba(255,255,255,0.08);--text:#e6e7ef;--muted:rgba(255,255,255,0.55);--accent:#f59e0b}
-*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(800px 400px at 50% 10%,rgba(245,158,11,0.12),transparent),#0b0c0f;color:var(--text);min-height:100vh;display:grid;place-items:center;padding:32px 16px}
-.card{width:min(520px,100%);background:var(--panel);border:1px solid var(--border);border-radius:24px;padding:40px;text-align:center}
-h1{font-size:3rem;margin:0 0 8px}h2{font-size:1.4rem;margin:0 0 16px;color:var(--accent)}
-p{color:var(--muted);margin:0 0 12px}.eta{color:var(--text)}</style></head>
-<body><div class="card"><h1>🔧</h1><h2>Maintenance en cours</h2>
-<p>${safeMsg}</p>${endInfo}</div></body></html>`;
+<style>
+  :root {
+    color-scheme: dark;
+    --background: #09090b;
+    --surface: #18181b;
+    --surface-2: #1f1f23;
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --text: #fafafa;
+    --muted: #a1a1aa;
+    --subtle: #71717a;
+    --accent: #f59e0b;
+    --accent-strong: #fbbf24;
+    --info: #22d3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+    color: var(--text);
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
+      radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
+      var(--background);
+  }
+  .card {
+    width: min(760px, 100%);
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    padding: 24px;
+  }
+  .header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--accent-strong);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+  }
+  .subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 62ch;
+  }
+  .content {
+    padding-top: 18px;
+    display: grid;
+    gap: 16px;
+  }
+  .message {
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 18px;
+  }
+  .message p {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .tile {
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    padding: 16px;
+  }
+  .tile span {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--subtle);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .tile strong {
+    display: block;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .button {
+    appearance: none;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 11px 16px;
+    border-radius: 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+  .button:hover {
+    transform: translateY(-1px);
+    border-color: #52525b;
+    background: #27272a;
+  }
+  .button.primary {
+    border-color: rgba(34, 211, 238, 0.35);
+    background: rgba(34, 211, 238, 0.08);
+    color: #a5f3fc;
+  }
+  .button.primary:hover {
+    border-color: rgba(34, 211, 238, 0.5);
+    background: rgba(34, 211, 238, 0.14);
+  }
+  footer {
+    margin-top: 18px;
+    color: var(--subtle);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  @media (max-width: 640px) {
+    .card { padding: 18px; border-radius: 20px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style></head>
+<body><div class="card"><div class="header"><div class="badge">Maintenance</div><h1>Service temporairement indisponible</h1><p class="subtitle">Le domaine est en maintenance ou le service est en cours de redémarrage. L’apparence suit le thème admin pour rester cohérente avec le panneau de gestion.</p></div><div class="content"><div class="message"><p>${safeMsg}</p>${endInfo}</div><div class="grid"><div class="tile"><span>Domaine</span><strong>${safeHost}</strong></div><div class="tile"><span>Plateforme</span><strong>NebulaProxy</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">Rafraîchir</button><button class="button" onclick="history.back()">Retour</button></div></div><footer>Si le service reste indisponible, contactez l’administrateur. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
   }
 
   /**
@@ -2094,25 +2244,162 @@ p{color:var(--muted);margin:0 0 12px}.eta{color:var(--text)}</style></head>
     const safeHost = hostname || 'unknown-host';
     // SECURITY: Generic error message - don't leak backend details
     const safeError = 'The backend server is temporarily unavailable';
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Bad Gateway</title><style>
-      :root { color-scheme: dark; --bg: #090b10; --panel: rgba(22, 23, 34, 0.88); --border: rgba(255, 255, 255, 0.08); --text: #e6e7ef; --muted: rgba(255, 255, 255, 0.55); }
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Bad Gateway</title><style>
+      :root {
+        color-scheme: dark;
+        --background: #09090b;
+        --surface: #18181b;
+        --surface-2: #1f1f23;
+        --border: #27272a;
+        --border-strong: #3f3f46;
+        --text: #fafafa;
+        --muted: #a1a1aa;
+        --subtle: #71717a;
+        --accent: #ef4444;
+        --accent-strong: #f87171;
+        --info: #22d3ee;
+      }
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; color: var(--text); font-family: "Segoe UI", Tahoma, sans-serif; background: radial-gradient(900px 500px at 15% 10%, rgba(34, 211, 238, 0.14), transparent 60%), radial-gradient(900px 500px at 85% 20%, rgba(199, 125, 255, 0.14), transparent 60%), linear-gradient(180deg, #090b10 0%, #0b0c13 100%); }
-      .card { width: min(760px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 28px; padding: 28px; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42); backdrop-filter: blur(22px); }
-      .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
-      h1 { margin: 18px 0 8px; font-size: clamp(28px, 4vw, 40px); font-weight: 650; letter-spacing: -0.03em; }
-      p { margin: 0 0 16px; color: var(--muted); font-size: 15px; line-height: 1.7; }
-      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
-      .tile { border: 1px solid var(--border); border-radius: 18px; padding: 16px; background: rgba(255, 255, 255, 0.03); }
-      .tile span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); margin-bottom: 8px; }
-      .tile strong { display: block; font-size: 14px; line-height: 1.5; color: var(--text); word-break: break-word; }
-      .actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 12px; }
-      .button { appearance: none; border: 1px solid rgba(34, 211, 238, 0.35); background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.08)); color: #9ee7f5; padding: 11px 16px; border-radius: 14px; font-size: 13px; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
-      .button.secondary { border-color: rgba(245, 158, 11, 0.35); color: #fbbf24; background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.08)); }
-      .button:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22); }
-      footer { margin-top: 26px; font-size: 11px; color: rgba(255, 255, 255, 0.35); }
-      @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .card { padding: 22px; border-radius: 24px; } }
-    </style></head><body><div class="card"><div class="badge">502 Bad Gateway</div><h1>Upstream service unavailable</h1><p>The proxy cannot reach the backend for this domain right now. This usually happens when the service is offline, the upstream port is closed, or the backend is temporarily restarting.</p><div class="grid"><div class="tile"><span>Domain</span><strong>${safeHost}</strong></div><div class="tile"><span>Proxy</span><strong>NebulaProxy</strong></div><div class="tile"><span>Hint</span><strong>${safeError}</strong></div><div class="tile"><span>Status</span><strong>Backend not reachable</strong></div></div><div class="actions"><button class="button" onclick="location.reload()">Retry</button><button class="button secondary" onclick="history.back()">Go back</button></div><footer>Contact your administrator if this persists. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 16px;
+        color: var(--text);
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background:
+          radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
+          radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
+          var(--background);
+      }
+      .card {
+        width: min(760px, 100%);
+        border-radius: 24px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        padding: 24px;
+      }
+      .header {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .badge {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        background: rgba(239, 68, 68, 0.12);
+        color: var(--accent-strong);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 42px);
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+        max-width: 68ch;
+      }
+      .content {
+        padding-top: 18px;
+        display: grid;
+        gap: 16px;
+      }
+      .message {
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 18px;
+      }
+      .message p {
+        margin: 0;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .tile {
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        padding: 16px;
+      }
+      .tile span {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--subtle);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .tile strong {
+        display: block;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .button {
+        appearance: none;
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
+        color: var(--text);
+        padding: 11px 16px;
+        border-radius: 14px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      }
+      .button:hover {
+        transform: translateY(-1px);
+        border-color: #52525b;
+        background: #27272a;
+      }
+      .button.primary {
+        border-color: rgba(34, 211, 238, 0.35);
+        background: rgba(34, 211, 238, 0.08);
+        color: #a5f3fc;
+      }
+      .button.primary:hover {
+        border-color: rgba(34, 211, 238, 0.5);
+        background: rgba(34, 211, 238, 0.14);
+      }
+      footer {
+        margin-top: 18px;
+        color: var(--subtle);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      @media (max-width: 640px) {
+        .card { padding: 18px; border-radius: 20px; }
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style></head><body><div class="card"><div class="header"><div class="badge">Bad Gateway</div><h1>Service amont indisponible</h1><p class="subtitle">Le proxy ne peut pas joindre le backend pour ce domaine. L’écran suit le même thème que l’interface admin afin de garder une expérience cohérente.</p></div><div class="content"><div class="message"><p>${safeError}</p></div><div class="grid"><div class="tile"><span>Domaine</span><strong>${safeHost}</strong></div><div class="tile"><span>Proxy</span><strong>NebulaProxy</strong></div><div class="tile"><span>Cause</span><strong>Backend not reachable</strong></div><div class="tile"><span>Statut</span><strong>502 Service Unavailable</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">Réessayer</button><button class="button" onclick="history.back()">Retour</button></div></div><footer>Contactez l’administrateur si le problème persiste. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
   }
 
   _renderBlockedPage(message, statusCode = 403) {
