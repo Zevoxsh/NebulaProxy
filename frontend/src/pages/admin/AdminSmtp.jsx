@@ -77,12 +77,7 @@ export default function AdminSmtp() {
       setSaving(true);
       setError('');
       await adminAPI.updateNotificationConfig({
-        ...config,
-        webhook: {
-          enabled: false,
-          url: '',
-          secret: ''
-        }
+        ...config
       });
       toast({
         title: 'SMTP Saved',

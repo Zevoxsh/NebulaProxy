@@ -14,6 +14,7 @@ import TeamDetail from './pages/TeamDetail';
 import SSLCertificates from './pages/SSLCertificates';
 import CertificateDetail from './pages/CertificateDetail';
 import AccountSettings from './pages/AccountSettings';
+import NotificationSettings from './pages/NotificationSettings';
 import Analytics from './pages/Analytics';
 import RealtimeTraffic from './pages/RealtimeTraffic';
 import CurrentTraffic from './pages/CurrentTraffic';
@@ -255,7 +256,7 @@ function App() {
           <Route path="/account" element={<AccountSettings />} />
           <Route path="/account/profile" element={<AccountSettings />} />
           <Route path="/account/security" element={<AccountSettings />} />
-          <Route path="/account/notifications" element={<AccountSettings />} />
+          <Route path="/account/notifications" element={<NotificationSettings />} />
           <Route path="/account/api-keys" element={<AccountSettings />} />
         </Route>
 
