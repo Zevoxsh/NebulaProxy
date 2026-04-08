@@ -1786,13 +1786,22 @@ const lts = () => {
       options.headers.host = req.headers.host;
     }
 
+    const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+    if (acceptsHtml) {
+      options.headers['accept-encoding'] = 'identity';
+    }
+
     const protocol = backendProtocol === 'https:' ? https : http;
     const upstreamTimeoutMs = config.proxy.requestTimeoutMs || 4000;
+    const consoleMessage = `console.info('%cNebulaProxy','color:#C77DFF;font-size:18px;font-weight:700;');console.info('%cThis site is being proxied through NebulaProxy','color:#a1a1aa;font-size:12px;');`;
+    const consoleScript = `<script>(function(){try{${consoleMessage}}catch(e){}})();</script>`;
 
     const proxyReq = protocol.request(options, (proxyRes) => {
       const responseTime = Date.now() - startTime;
       const statusCode = proxyRes.statusCode;
       let responseSize = 0;
+      const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
+      const isHtmlResponse = contentType.includes('text/html');
 
       // Circuit breaker: success
       circuitBreaker.onSuccess(cbKey);
@@ -1869,6 +1878,13 @@ const lts = () => {
       // Build response headers (copy from backend)
       const responseHeaders = { ...proxyRes.headers };
 
+      if (isHtmlResponse) {
+        delete responseHeaders['content-length'];
+        delete responseHeaders['content-encoding'];
+        delete responseHeaders['transfer-encoding'];
+        responseHeaders['content-type'] = responseHeaders['content-type'] || 'text/html; charset=utf-8';
+      }
+
       // Sticky session: set cookie if enabled and we know the backend id
       if (domain.sticky_sessions_enabled && backendId) {
         const ttl = domain.sticky_sessions_ttl || 3600;
@@ -1879,7 +1895,22 @@ const lts = () => {
       }
 
       res.writeHead(proxyRes.statusCode, responseHeaders);
-      proxyRes.pipe(res);
+
+      if (isHtmlResponse) {
+        const chunks = [];
+        proxyRes.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        proxyRes.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          const injected = body.includes('</body>')
+            ? body.replace('</body>', `${consoleScript}</body>`)
+            : `${body}${consoleScript}`;
+          res.end(injected);
+        });
+      } else {
+        proxyRes.pipe(res);
+      }
 
       // ── 7. TRAFFIC MIRRORING (fire-and-forget) ───────────────────────────
       if (domain.mirror_enabled && domain.mirror_backend_url) {
