@@ -1,0 +1,3 @@
+NebulaProxy update test marker
+created=2026-04-08
+purpose=force frontend change detection during update tests
