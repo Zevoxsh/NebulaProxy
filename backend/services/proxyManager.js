@@ -120,16 +120,168 @@ const lts = () => {
           await this._startTcpProxy(domain);
           break;
         case 'udp':
-          await this._startUdpProxy(domain);
-          break;
-        case 'http':
-          await this._startHttpProxy(domain);
-          break;
-        case 'minecraft':
-          if (domain.minecraft_edition === 'bedrock') {
-            await this._startUdpProxy(domain);
-          } else {
-            await this._startMinecraftProxy(domain);
+        return `<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Maintenance — ${safeHost}</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090b10;
+        --panel: rgba(22, 23, 34, 0.88);
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #e6e7ef;
+        --muted: rgba(255, 255, 255, 0.58);
+        --accent: #f59e0b;
+        --accent-2: #22d3ee;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 16px;
+        color: var(--text);
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background:
+          radial-gradient(900px 500px at 15% 10%, rgba(34, 211, 238, 0.14), transparent 60%),
+          radial-gradient(900px 500px at 85% 20%, rgba(245, 158, 11, 0.14), transparent 60%),
+          linear-gradient(180deg, #090b10 0%, #0b0c13 100%);
+      }
+      .card {
+        width: min(760px, 100%);
+        position: relative;
+        overflow: hidden;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        padding: 28px;
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(22px);
+      }
+      .card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.08), transparent 35%, rgba(245, 158, 11, 0.08));
+        pointer-events: none;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: #fbbf24;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        position: relative;
+        z-index: 1;
+      }
+      h1 {
+        margin: 18px 0 8px;
+        font-size: clamp(28px, 4vw, 40px);
+        font-weight: 650;
+        letter-spacing: -0.03em;
+        position: relative;
+        z-index: 1;
+      }
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.7;
+        position: relative;
+        z-index: 1;
+      }
+      .message {
+        margin-top: 18px;
+        padding: 18px;
+        border-radius: 20px;
+        border: 1px solid rgba(245, 158, 11, 0.22);
+        background: rgba(245, 158, 11, 0.08);
+        position: relative;
+        z-index: 1;
+      }
+      .eta { color: var(--text); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+        position: relative;
+        z-index: 1;
+      }
+      .tile {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .tile span {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .tile strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--text);
+        word-break: break-word;
+      }
+      .actions {
+        margin-top: 22px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        position: relative;
+        z-index: 1;
+      }
+      .button {
+        appearance: none;
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.08));
+        color: #9ee7f5;
+        padding: 11px 16px;
+        border-radius: 14px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .button.secondary {
+        border-color: rgba(245, 158, 11, 0.35);
+        color: #fbbf24;
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.08));
+      }
+      .button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+      }
+      footer {
+        margin-top: 26px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.35);
+        position: relative;
+        z-index: 1;
+      }
+      @media (max-width: 640px) {
+        .grid { grid-template-columns: 1fr; }
+        .card { padding: 22px; border-radius: 24px; }
+      }
+    </style></head>
+    <body><div class="card"><div class="badge">503 Service Unavailable</div><h1>Maintenance en cours</h1>
+    <p>Le domaine est temporairement indisponible pendant une maintenance, un redémarrage ou une intervention planifiée.</p>
+    <div class="message"><p>${safeMsg}</p>${endInfo}</div>
+    <div class="grid"><div class="tile"><span>Domaine</span><strong>${safeHost}</strong></div><div class="tile"><span>Plateforme</span><strong>NebulaProxy</strong></div></div>
+    <div class="actions"><button class="button" onclick="location.reload()">Rafraîchir</button><button class="button secondary" onclick="history.back()">Retour</button></div>
+    <footer>Votre administrateur sera notifié si le service reste indisponible. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
           }
           break;
         default:
@@ -2091,161 +2243,25 @@ p{color:var(--muted);margin:0 0 12px}.eta{color:var(--text)}</style></head>
     const safeHost = hostname || 'unknown-host';
     // SECURITY: Generic error message - don't leak backend details
     const safeError = 'The backend server is temporarily unavailable';
-    return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bad Gateway</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b0c0f;
-        --panel: rgba(22, 23, 34, 0.9);
-        --border: rgba(255, 255, 255, 0.08);
-        --text: #e6e7ef;
-        --muted: rgba(255, 255, 255, 0.55);
-        --accent: #c77dff;
-        --accent-2: #22d3ee;
-        --danger: #ef4444;
-      }
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Bad Gateway</title><style>
+      :root { color-scheme: dark; --bg: #090b10; --panel: rgba(22, 23, 34, 0.88); --border: rgba(255, 255, 255, 0.08); --text: #e6e7ef; --muted: rgba(255, 255, 255, 0.55); }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Segoe UI", Tahoma, sans-serif;
-        background: radial-gradient(1200px 500px at 10% 10%, rgba(157, 78, 221, 0.15), transparent),
-                    radial-gradient(900px 500px at 90% 20%, rgba(34, 211, 238, 0.12), transparent),
-                    var(--bg);
-        color: var(--text);
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 32px 16px;
-      }
-      .card {
-        width: min(720px, 100%);
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        padding: 28px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-      }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
-        border-radius: 999px;
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #f87171;
-        font-size: 12px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-      h1 {
-        margin: 18px 0 8px;
-        font-weight: 300;
-        font-size: 28px;
-      }
-      p {
-        margin: 0 0 16px;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-top: 18px;
-      }
-      .tile {
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 14px;
-        background: rgba(255, 255, 255, 0.02);
-      }
-      .tile span {
-        display: block;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-      .tile strong {
-        font-size: 14px;
-        color: var(--text);
-        word-break: break-word;
-      }
-      .actions {
-        margin-top: 22px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-      .button {
-        appearance: none;
-        border: 1px solid rgba(157, 78, 221, 0.4);
-        background: linear-gradient(135deg, rgba(157, 78, 221, 0.2), rgba(123, 44, 191, 0.15));
-        color: #c77dff;
-        padding: 10px 16px;
-        border-radius: 12px;
-        font-size: 13px;
-        cursor: pointer;
-        transition: 0.2s ease;
-      }
-      .button.secondary {
-        border-color: rgba(34, 211, 238, 0.4);
-        color: #22d3ee;
-        background: linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(6, 182, 212, 0.1));
-      }
-      .button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
-      }
-      footer {
-        margin-top: 26px;
-        font-size: 11px;
-        color: rgba(255, 255, 255, 0.35);
-      }
-      @media (max-width: 640px) {
-        .grid { grid-template-columns: 1fr; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="badge">502 Bad Gateway</div>
-      <h1>Upstream service unavailable</h1>
-      <p>The proxy cannot reach the backend for this domain right now. This usually happens when the service is offline, the upstream port is closed, or the backend is temporarily restarting.</p>
-      <div class="grid">
-        <div class="tile">
-          <span>Domain</span>
-          <strong>${safeHost}</strong>
-        </div>
-        <div class="tile">
-          <span>Proxy</span>
-          <strong>NebulaProxy</strong>
-        </div>
-        <div class="tile">
-          <span>Hint</span>
-          <strong>${safeError}</strong>
-        </div>
-        <div class="tile">
-          <span>Status</span>
-          <strong>Backend not reachable</strong>
-        </div>
-      </div>
-      <div class="actions">
-        <button class="button" onclick="location.reload()">Retry</button>
-        <button class="button secondary" onclick="history.back()">Go back</button>
-      </div>
-      <footer>Contact your administrator if this persists. Timestamp: ${new Date().toISOString()}</footer>
-    </div>
-  </body>
-</html>`;
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; color: var(--text); font-family: "Segoe UI", Tahoma, sans-serif; background: radial-gradient(900px 500px at 15% 10%, rgba(34, 211, 238, 0.14), transparent 60%), radial-gradient(900px 500px at 85% 20%, rgba(199, 125, 255, 0.14), transparent 60%), linear-gradient(180deg, #090b10 0%, #0b0c13 100%); }
+      .card { width: min(760px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 28px; padding: 28px; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42); backdrop-filter: blur(22px); }
+      .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+      h1 { margin: 18px 0 8px; font-size: clamp(28px, 4vw, 40px); font-weight: 650; letter-spacing: -0.03em; }
+      p { margin: 0 0 16px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+      .tile { border: 1px solid var(--border); border-radius: 18px; padding: 16px; background: rgba(255, 255, 255, 0.03); }
+      .tile span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); margin-bottom: 8px; }
+      .tile strong { display: block; font-size: 14px; line-height: 1.5; color: var(--text); word-break: break-word; }
+      .actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 12px; }
+      .button { appearance: none; border: 1px solid rgba(34, 211, 238, 0.35); background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.08)); color: #9ee7f5; padding: 11px 16px; border-radius: 14px; font-size: 13px; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+      .button.secondary { border-color: rgba(245, 158, 11, 0.35); color: #fbbf24; background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.08)); }
+      .button:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22); }
+      footer { margin-top: 26px; font-size: 11px; color: rgba(255, 255, 255, 0.35); }
+      @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .card { padding: 22px; border-radius: 24px; } }
+    </style></head><body><div class="card"><div class="badge">502 Bad Gateway</div><h1>Upstream service unavailable</h1><p>The proxy cannot reach the backend for this domain right now. This usually happens when the service is offline, the upstream port is closed, or the backend is temporarily restarting.</p><div class="grid"><div class="tile"><span>Domain</span><strong>${safeHost}</strong></div><div class="tile"><span>Proxy</span><strong>NebulaProxy</strong></div><div class="tile"><span>Hint</span><strong>${safeError}</strong></div><div class="tile"><span>Status</span><strong>Backend not reachable</strong></div></div><div class="actions"><button class="button" onclick="location.reload()">Retry</button><button class="button secondary" onclick="history.back()">Go back</button></div><footer>Contact your administrator if this persists. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
   }
 
   _renderBlockedPage(message, statusCode = 403) {
