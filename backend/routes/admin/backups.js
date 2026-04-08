@@ -58,6 +58,32 @@ function createS3Job() {
 }
 
 export async function backupRoutes(fastify, options) {
+  const normalizeSchedule = (raw) => {
+    const defaultItem = {
+      enabled: false,
+      frequency: 'daily',
+      time: '02:00'
+    };
+
+    // Backward compatibility: old flat schedule format.
+    if (!raw || typeof raw !== 'object' || (!raw.local && !raw.s3)) {
+      const legacy = {
+        enabled: Boolean(raw?.enabled),
+        frequency: raw?.frequency || 'daily',
+        time: raw?.time || '02:00'
+      };
+      return {
+        local: { ...defaultItem, ...legacy },
+        s3: { ...defaultItem, ...legacy }
+      };
+    }
+
+    return {
+      local: { ...defaultItem, ...(raw.local || {}) },
+      s3: { ...defaultItem, ...(raw.s3 || {}) }
+    };
+  };
+
   // Get backup schedule configuration
   fastify.get('/schedule', {
     preHandler: [fastify.authenticate, fastify.requireAdmin]
@@ -68,16 +94,9 @@ export async function backupRoutes(fastify, options) {
         ['backup_schedule']
       );
 
-      const defaultSchedule = {
-        enabled: false,
-        frequency: 'daily',
-        time: '02:00',
-        retention_days: 30
-      };
-
       const schedule = result.rows.length > 0
-        ? JSON.parse(result.rows[0].value)
-        : defaultSchedule;
+        ? normalizeSchedule(JSON.parse(result.rows[0].value))
+        : normalizeSchedule(null);
 
       reply.send({ schedule });
     } catch (error) {
@@ -94,19 +113,33 @@ export async function backupRoutes(fastify, options) {
     preHandler: [fastify.authenticate, fastify.requireAdmin]
   }, async (request, reply) => {
     try {
-      const schedule = request.body;
+      const schedule = normalizeSchedule(request.body || {});
 
-      // Validate schedule
-      if (!['hourly', 'daily', 'weekly', 'monthly'].includes(schedule.frequency)) {
-        return reply.status(400).send({
-          message: 'Invalid frequency. Must be: hourly, daily, weekly, or monthly'
-        });
+      const validateItem = (item, label) => {
+        if (!['hourly', 'daily', 'weekly', 'monthly'].includes(item.frequency)) {
+          return `${label}: invalid frequency. Must be hourly, daily, weekly, or monthly`;
+        }
+
+        if (!/^\d{2}:\d{2}$/.test(item.time)) {
+          return `${label}: invalid time format. Expected HH:MM`;
+        }
+
+        const [h, m] = item.time.split(':').map(Number);
+        if (h < 0 || h > 23 || m < 0 || m > 59) {
+          return `${label}: time out of range`;
+        }
+
+        return null;
+      };
+
+      const localError = validateItem(schedule.local, 'local');
+      if (localError) {
+        return reply.status(400).send({ message: localError });
       }
 
-      if (schedule.retention_days < 1 || schedule.retention_days > 365) {
-        return reply.status(400).send({
-          message: 'Retention days must be between 1 and 365'
-        });
+      const s3Error = validateItem(schedule.s3, 's3');
+      if (s3Error) {
+        return reply.status(400).send({ message: s3Error });
       }
 
       // Upsert configuration
@@ -127,7 +160,7 @@ export async function backupRoutes(fastify, options) {
           'update_backup_schedule',
           'system_config',
           null,
-          `Updated backup schedule: ${schedule.frequency} at ${schedule.time}`,
+          `Updated backup schedule: local=${schedule.local.frequency}@${schedule.local.time} s3=${schedule.s3.frequency}@${schedule.s3.time}`,
           request.ip
         ]
       );
@@ -137,7 +170,7 @@ export async function backupRoutes(fastify, options) {
         await fastify.backupScheduler.restart(schedule);
       }
 
-      reply.send({ success: true });
+      reply.send({ success: true, schedule });
     } catch (error) {
       request.log.error(error);
       reply.status(500).send({

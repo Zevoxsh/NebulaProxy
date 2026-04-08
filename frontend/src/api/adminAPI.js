@@ -71,6 +71,10 @@ export const adminAPI = {
     return api.delete(`/admin/backups/s3/${encoded}`);
   },
 
+  // Backup schedules (local / S3)
+  getBackupSchedule: () => api.get('/admin/backups/schedule'),
+  updateBackupSchedule: (schedule) => api.put('/admin/backups/schedule', schedule),
+
   // Admin services (Docker)
   listContainers: () => api.get('/admin/services/containers'),
   startContainer: (name) => api.post(`/admin/services/containers/${name}/start`),

@@ -8,8 +8,35 @@ const LOCAL_BACKUP_LIMIT = 3;
 class BackupScheduler {
   constructor(logger) {
     this.logger = logger;
-    this.cronJob = null;
+    this.localCronJob = null;
+    this.s3CronJob = null;
     this.schedule = null;
+  }
+
+  normalizeSchedule(raw) {
+    const defaultItem = {
+      enabled: false,
+      frequency: 'daily',
+      time: '02:00'
+    };
+
+    if (!raw || typeof raw !== 'object' || (!raw.local && !raw.s3)) {
+      const legacy = {
+        enabled: Boolean(raw?.enabled),
+        frequency: raw?.frequency || 'daily',
+        time: raw?.time || '02:00'
+      };
+
+      return {
+        local: { ...defaultItem, ...legacy },
+        s3: { ...defaultItem, ...legacy }
+      };
+    }
+
+    return {
+      local: { ...defaultItem, ...(raw.local || {}) },
+      s3: { ...defaultItem, ...(raw.s3 || {}) }
+    };
   }
 
   async initialize() {
@@ -23,8 +50,8 @@ class BackupScheduler {
       );
 
       if (result.rows.length > 0) {
-        this.schedule = JSON.parse(result.rows[0].value);
-        if (this.schedule.enabled) {
+        this.schedule = this.normalizeSchedule(JSON.parse(result.rows[0].value));
+        if (this.schedule.local.enabled || this.schedule.s3.enabled) {
           this.start();
         }
       }
@@ -36,44 +63,59 @@ class BackupScheduler {
   }
 
   start() {
-    if (!this.schedule || !this.schedule.enabled) {
+    if (!this.schedule) {
       return;
     }
 
     // Stop existing job
-    if (this.cronJob) {
-      this.cronJob.stop();
+    this.stop();
+
+    if (this.schedule.local.enabled) {
+      const localCron = this.getCronExpression(this.schedule.local);
+      if (!localCron) {
+        this.logger.error('Invalid local backup cron expression');
+      } else {
+        this.logger.info(`Starting LOCAL backup scheduler: ${localCron}`);
+        this.localCronJob = cron.schedule(localCron, async () => {
+          this.logger.info('Running scheduled local backup...');
+          await this.runLocalBackup();
+        });
+      }
     }
 
-    // Convert schedule to cron expression
-    const cronExpression = this.getCronExpression();
-
-    if (!cronExpression) {
-      this.logger.error('Invalid cron expression');
-      return;
+    if (this.schedule.s3.enabled) {
+      const s3Cron = this.getCronExpression(this.schedule.s3);
+      if (!s3Cron) {
+        this.logger.error('Invalid S3 backup cron expression');
+      } else {
+        this.logger.info(`Starting S3 backup scheduler: ${s3Cron}`);
+        this.s3CronJob = cron.schedule(s3Cron, async () => {
+          this.logger.info('Running scheduled S3 backup...');
+          await this.runS3Backup();
+        });
+      }
     }
-
-    this.logger.info(`Starting backup scheduler: ${cronExpression}`);
-
-    this.cronJob = cron.schedule(cronExpression, async () => {
-      this.logger.info('Running scheduled backup...');
-      await this.runBackup();
-    });
   }
 
   stop() {
-    if (this.cronJob) {
-      this.cronJob.stop();
-      this.cronJob = null;
-      this.logger.info('Backup scheduler stopped');
+    if (this.localCronJob) {
+      this.localCronJob.stop();
+      this.localCronJob = null;
     }
+
+    if (this.s3CronJob) {
+      this.s3CronJob.stop();
+      this.s3CronJob = null;
+    }
+
+    this.logger.info('Backup scheduler stopped');
   }
 
   async restart(newSchedule) {
-    this.schedule = newSchedule;
+    this.schedule = this.normalizeSchedule(newSchedule);
     this.stop();
     await this.enforceLimitsNow();
-    if (newSchedule.enabled) {
+    if (this.schedule.local.enabled || this.schedule.s3.enabled) {
       this.start();
     }
   }
@@ -101,8 +143,8 @@ class BackupScheduler {
     }
   }
 
-  getCronExpression() {
-    const { frequency, time } = this.schedule;
+  getCronExpression(schedulePart) {
+    const { frequency, time } = schedulePart;
     const [hour, minute] = time.split(':');
 
     switch (frequency) {
@@ -119,43 +161,50 @@ class BackupScheduler {
     }
   }
 
-  async runBackup() {
+  async runLocalBackup() {
     try {
       // Delegate backup creation to databaseBackupService (handles pg_dump,
       // Docker fallback, JSON fallback, and large-file streaming correctly)
       const backup = await databaseBackupService.createBackup();
-      const { filename, filepath, size } = backup;
+      const { filename, size } = backup;
 
-      this.logger.info(`Automatic backup created: ${filename} (${size} bytes)`);
-
-      // ── Upload to S3 (MinIO) if configured ─────────────────────────────────
-      try {
-        await s3BackupService.loadConfig();
-        if (s3BackupService.isConfigured()) {
-          this.logger.info(`Uploading backup to S3: ${filename}`);
-          const s3Result = await s3BackupService.uploadBackup(filepath, filename);
-
-          this.logger.info(`Backup uploaded to S3: ${s3Result.key} in bucket ${s3Result.bucket}`);
-
-          // Prune old S3 backups according to retention_count
-          const { deleted } = await s3BackupService.cleanOldBackups();
-          if (deleted > 0) {
-            this.logger.info(`Removed ${deleted} old backup(s) from S3`);
-          }
-        }
-      } catch (s3Error) {
-        // Log but don't fail the overall backup job — local copy still exists
-        this.logger.error({ err: s3Error }, 'S3 upload failed (local backup is intact)');
-      }
+      this.logger.info(`Automatic local backup created: ${filename} (${size} bytes)`);
 
       // Clean old local backups
       await this.cleanOldBackups();
 
-      // Send notification
       await this.sendNotification('success', filename);
 
     } catch (error) {
-      this.logger.error('Backup failed:', error);
+      this.logger.error('Local backup failed:', error);
+      await this.sendNotification('error', null, error.message);
+    }
+  }
+
+  async runS3Backup() {
+    try {
+      const backup = await databaseBackupService.createBackup();
+      const { filename, filepath, size } = backup;
+      this.logger.info(`Automatic backup for S3 created locally: ${filename} (${size} bytes)`);
+
+      await s3BackupService.loadConfig();
+      if (!s3BackupService.isConfigured()) {
+        throw new Error('S3 backup is not configured');
+      }
+
+      const s3Result = await s3BackupService.uploadBackup(filepath, filename);
+      this.logger.info(`Backup uploaded to S3: ${s3Result.key} in bucket ${s3Result.bucket}`);
+
+      await this.cleanOldBackups();
+
+      const { deleted } = await s3BackupService.cleanOldBackups();
+      if (deleted > 0) {
+        this.logger.info(`Removed ${deleted} old backup(s) from S3`);
+      }
+
+      await this.sendNotification('success', `${filename} (S3)`);
+    } catch (error) {
+      this.logger.error('S3 backup failed:', error);
       await this.sendNotification('error', null, error.message);
     }
   }
