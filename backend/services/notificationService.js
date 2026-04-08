@@ -70,9 +70,8 @@ class NotificationService {
       && (url.includes('discord.com/api/webhooks/') || url.includes('discordapp.com/api/webhooks/'));
   }
 
-  buildWebhookPayload(notification) {
+  buildWebhookPayload(notification, webhookUrl = '') {
     const { title, message, severity = 'info', event = 'general', metadata = {} } = notification;
-    const webhookUrl = this.config?.webhook?.url || '';
     const isDiscord = this.isDiscordWebhookUrl(webhookUrl);
 
     if (isDiscord) {
@@ -127,7 +126,7 @@ class NotificationService {
         return;
       }
 
-      const payload = this.buildWebhookPayload(notification);
+      const payload = this.buildWebhookPayload(notification, url);
       const headers = {
         'Content-Type': 'application/json',
         'User-Agent': 'NebulaProxy-Webhook/1.0'
