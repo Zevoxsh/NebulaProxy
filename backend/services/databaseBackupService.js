@@ -5,6 +5,8 @@ import path from 'path';
 import { pool } from '../config/database.js';
 import { config } from '../config/config.js';
 
+const LOCAL_BACKUP_LIMIT = 3;
+
 /**
  * Execute command with spawn (prevents command injection)
  * @param {string} command - Command to execute
@@ -269,6 +271,8 @@ export class DatabaseBackupService {
 
     const stats = await fs.stat(filepath);
 
+    await this.enforceBackupLimit(LOCAL_BACKUP_LIMIT);
+
     return {
       filename,
       filepath,
@@ -361,6 +365,8 @@ export class DatabaseBackupService {
       // Get file stats
       const stats = await fs.stat(filepath);
 
+      await this.enforceBackupLimit(LOCAL_BACKUP_LIMIT);
+
       return {
         filename,
         filepath,
@@ -383,6 +389,35 @@ export class DatabaseBackupService {
         await fs.unlink(filepath);
       } catch {}
       throw new Error(`Backup failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Keep only the most recent local backups to prevent disk overuse.
+   */
+  async enforceBackupLimit(maxBackups = LOCAL_BACKUP_LIMIT) {
+    try {
+      const backups = await this.listBackups();
+      if (backups.length <= maxBackups) {
+        return { deleted: 0 };
+      }
+
+      const toDelete = backups.slice(maxBackups);
+      let deleted = 0;
+
+      for (const backup of toDelete) {
+        try {
+          await this.deleteBackup(backup.filename);
+          deleted += 1;
+        } catch (error) {
+          console.warn(`[DatabaseBackupService] Failed to prune old backup ${backup.filename}: ${error.message}`);
+        }
+      }
+
+      return { deleted };
+    } catch (error) {
+      console.warn(`[DatabaseBackupService] Failed to enforce backup retention: ${error.message}`);
+      return { deleted: 0 };
     }
   }
 

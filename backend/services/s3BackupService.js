@@ -11,6 +11,7 @@ import fs from 'fs';
 import { pool } from '../config/database.js';
 
 const CONFIG_KEY = 's3_backup_config';
+const S3_BACKUP_LIMIT = 5;
 
 /**
  * S3-compatible backup service (MinIO / AWS S3)
@@ -33,7 +34,7 @@ export class S3BackupService {
       secret_key: '',
       bucket: 'nebula',
       prefix: 'backups/',
-      retention_count: 7,
+      retention_count: S3_BACKUP_LIMIT,
       force_path_style: true // mandatory for MinIO / most S3-compatible providers
     };
   }
@@ -47,6 +48,8 @@ export class S3BackupService {
       this._config = result.rows.length > 0
         ? { ...this.defaultConfig(), ...JSON.parse(result.rows[0].value) }
         : this.defaultConfig();
+      // Enforce fixed retention policy for cloud backups.
+      this._config.retention_count = S3_BACKUP_LIMIT;
     } catch {
       this._config = this.defaultConfig();
     }
@@ -62,6 +65,8 @@ export class S3BackupService {
   async saveConfig(newConfig) {
     // Merge with defaults so partial updates still work
     const merged = { ...this.defaultConfig(), ...newConfig };
+    // Always keep only the 5 most recent cloud backups.
+    merged.retention_count = S3_BACKUP_LIMIT;
 
     await pool.query(
       `INSERT INTO system_config (key, value, updated_at)
@@ -210,7 +215,7 @@ export class S3BackupService {
    */
   async cleanOldBackups() {
     const cfg = await this.getConfig();
-    const keep = cfg.retention_count || 7;
+    const keep = cfg.retention_count || S3_BACKUP_LIMIT;
 
     const backups = await this.listBackups();
     if (backups.length <= keep) return { deleted: 0 };

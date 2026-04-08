@@ -311,8 +311,9 @@ class UpdateService {
    */
   async applyUpdate(options = {}) {
     const { skipWait = false } = options;
+    let keepLockForWatchdog = false;
 
-    if (this.updateInProgress) {
+    if (this.updateInProgress || await this.hasActiveUpdate()) {
       throw new Error('Update already in progress');
     }
 
@@ -399,35 +400,23 @@ class UpdateService {
         await this.dockerComposeRestart();
       }
 
-      // Perform health check
-      const healthCheckPassed = await this.performHealthCheck();
-
-      if (!healthCheckPassed) {
-        throw new Error('Health check failed after update');
-      }
-
-      // Update successful
-      const endTime = Date.now();
-      const downtimeSeconds = Math.round((endTime - startTime) / 1000);
-
+      // At this point, restart/rebuild is delegated to watchdog. The current
+      // backend process may restart before local post-checks can run reliably.
+      // Keep update in "in_progress" and let startup reconciliation mark final state.
       await this.pool.query(
         `UPDATE update_history
-         SET update_status = $1, completed_at = CURRENT_TIMESTAMP, downtime_seconds = $2,
-             migrations_applied = $3, frontend_rebuilt = $4, backend_rebuilt = $5,
-             health_check_passed = $6
-         WHERE id = $7`,
-        ['success', downtimeSeconds, migrationsApplied, analysis.needsFrontendRebuild, analysis.needsBackendRebuild, true, updateId]
+         SET migrations_applied = $1, frontend_rebuilt = $2, backend_rebuilt = $3
+         WHERE id = $4`,
+        [migrationsApplied, analysis.needsFrontendRebuild, analysis.needsBackendRebuild, updateId]
       );
 
-      this.logger.info(`[UpdateService] Update #${updateId} completed successfully in ${downtimeSeconds}s`);
-
-      // Send success notification
-      await this.sendSuccessNotification(updateId, currentCommit, remoteCommit, downtimeSeconds);
+      this.logger.info(`[UpdateService] Update #${updateId} handed off to watchdog; awaiting restart confirmation`);
+      keepLockForWatchdog = true;
 
       return {
         success: true,
         updateId,
-        downtimeSeconds,
+        pendingRestart: true,
         fromCommit: currentCommit,
         toCommit: remoteCommit
       };
@@ -443,7 +432,9 @@ class UpdateService {
       throw error;
 
     } finally {
-      await this.releaseLock();
+      if (!keepLockForWatchdog) {
+        await this.releaseLock();
+      }
       this.updateInProgress = false;
     }
   }
@@ -572,13 +563,8 @@ class UpdateService {
    * Uses Docker socket to control host Docker daemon
    */
   async dockerComposeRestart() {
-    const projectName = this.getDockerProjectName();
-    this.logger.info(`[UpdateService] Running: docker compose -p ${projectName} restart backend`);
-
-    await execCommand('docker', ['compose', '-p', projectName, 'restart', 'backend'], {
-      cwd: REPO_ROOT,
-      timeout: 30000
-    });
+    this.logger.info('[UpdateService] Delegating fast restart to watchdog queue');
+    await this.dockerComposeRebuild(true, false);
   }
 
   /**
@@ -786,23 +772,56 @@ Please investigate the issue before attempting another update.
    */
   async acquireLock() {
     try {
+      await this.cleanExpiredLocks();
+
       const expiresAt = new Date(Date.now() + 3600000); // 1 hour
-      await this.pool.query(
+      const insertResult = await this.pool.query(
         `INSERT INTO update_locks (lock_type, acquired_by, expires_at)
          VALUES ($1, $2, $3)
-         ON CONFLICT (lock_type) DO NOTHING`,
+         ON CONFLICT (lock_type) DO NOTHING
+         RETURNING id`,
         ['update_in_progress', 'updateService', expiresAt]
       );
 
-      const result = await this.pool.query(
-        'SELECT COUNT(*) as count FROM update_locks WHERE lock_type = $1',
-        ['update_in_progress']
-      );
-
-      return parseInt(result.rows[0].count) > 0;
+      return insertResult.rows.length === 1;
     } catch (error) {
       this.logger.error(`[UpdateService] Failed to acquire lock: ${error.message}`);
       return false;
+    }
+  }
+
+  /**
+   * Check if an update is currently active in DB state.
+   * @returns {Promise<boolean>}
+   */
+  async hasActiveUpdate() {
+    try {
+      await this.cleanExpiredLocks();
+
+      const lockResult = await this.pool.query(
+        `SELECT 1
+         FROM update_locks
+         WHERE lock_type = $1
+           AND expires_at > CURRENT_TIMESTAMP
+         LIMIT 1`,
+        ['update_in_progress']
+      );
+
+      if (lockResult.rows.length > 0) {
+        return true;
+      }
+
+      const historyResult = await this.pool.query(
+        `SELECT 1
+         FROM update_history
+         WHERE update_status = 'in_progress'
+         LIMIT 1`
+      );
+
+      return historyResult.rows.length > 0;
+    } catch (error) {
+      this.logger.error(`[UpdateService] Failed to check active update state: ${error.message}`);
+      return true;
     }
   }
 
@@ -913,6 +932,16 @@ Please investigate the issue before attempting another update.
         }
       }
 
+      const stillRunning = await this.pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM update_history
+         WHERE update_status = 'in_progress'`
+      );
+
+      if ((stillRunning.rows[0]?.count || 0) === 0) {
+        await this.releaseLock();
+      }
+
     } catch (error) {
       this.logger.error(`[UpdateService] Failed to check pending updates: ${error.message}`);
     }
@@ -949,6 +978,7 @@ Please investigate the issue before attempting another update.
 
         // Reset updateInProgress flag
         this.updateInProgress = false;
+        await this.releaseLock();
       }
 
       return result.rows.length;
@@ -974,22 +1004,35 @@ Please investigate the issue before attempting another update.
       const targetCommit = flagContent.trim();
       this.logger.info(`[UpdateService] Found watchdog success flag for commit: ${targetCommit}`);
 
-      // Find the most recent in_progress update
+      // Find the matching in_progress update for this commit (fallback: most recent)
       const result = await this.pool.query(
         `SELECT id, from_commit, to_commit, started_at
          FROM update_history
          WHERE update_status = 'in_progress'
+           AND to_commit = $1
          ORDER BY started_at DESC
-         LIMIT 1`
+         LIMIT 1`,
+        [targetCommit]
       );
 
-      if (result.rows.length === 0) {
+      let update = result.rows[0];
+
+      if (!update) {
+        const fallback = await this.pool.query(
+          `SELECT id, from_commit, to_commit, started_at
+           FROM update_history
+           WHERE update_status = 'in_progress'
+           ORDER BY started_at DESC
+           LIMIT 1`
+        );
+        update = fallback.rows[0];
+      }
+
+      if (!update) {
         this.logger.info('[UpdateService] No in_progress update found, removing Redis flag');
         await redisService.getClient().del('nebulaproxy:update:success').catch(() => {});
         return;
       }
-
-      const update = result.rows[0];
       const startTime = new Date(update.started_at).getTime();
       const endTime = Date.now();
       const downtimeSeconds = Math.round((endTime - startTime) / 1000);
@@ -1009,6 +1052,7 @@ Please investigate the issue before attempting another update.
 
       // Reset updateInProgress flag
       this.updateInProgress = false;
+      await this.releaseLock();
 
       // Remove the Redis success flag
       await redisService.getClient().del('nebulaproxy:update:success').catch(() => {});

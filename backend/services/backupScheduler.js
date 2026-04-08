@@ -1,8 +1,9 @@
 import cron from 'node-cron';
 import { pool } from '../config/database.js';
-import fs from 'fs/promises';
 import { databaseBackupService } from './databaseBackupService.js';
 import { s3BackupService } from './s3BackupService.js';
+
+const LOCAL_BACKUP_LIMIT = 3;
 
 class BackupScheduler {
   constructor(logger) {
@@ -13,6 +14,8 @@ class BackupScheduler {
 
   async initialize() {
     try {
+      await this.enforceLimitsNow();
+
       // Load schedule from database
       const result = await pool.query(
         'SELECT value FROM system_config WHERE key = $1',
@@ -69,8 +72,32 @@ class BackupScheduler {
   async restart(newSchedule) {
     this.schedule = newSchedule;
     this.stop();
+    await this.enforceLimitsNow();
     if (newSchedule.enabled) {
       this.start();
+    }
+  }
+
+  async enforceLimitsNow() {
+    try {
+      const local = await databaseBackupService.enforceBackupLimit(LOCAL_BACKUP_LIMIT);
+      if (local.deleted > 0) {
+        this.logger.info(`Startup cleanup: removed ${local.deleted} local backup(s), keeping ${LOCAL_BACKUP_LIMIT}`);
+      }
+    } catch (error) {
+      this.logger.error('Failed immediate local backup cleanup:', error);
+    }
+
+    try {
+      await s3BackupService.loadConfig();
+      if (s3BackupService.isConfigured()) {
+        const cloud = await s3BackupService.cleanOldBackups();
+        if (cloud.deleted > 0) {
+          this.logger.info(`Startup cleanup: removed ${cloud.deleted} S3 backup(s), keeping 5`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Failed immediate S3 backup cleanup:', error);
     }
   }
 
@@ -135,34 +162,10 @@ class BackupScheduler {
 
   async cleanOldBackups() {
     try {
-      const retentionDays = this.schedule.retention_days || 30;
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-
-      // Get old backups
-      const result = await pool.query(
-        `SELECT filename, filepath FROM backups
-         WHERE type = 'auto' AND created_at < $1`,
-        [cutoffDate]
-      );
-
-      // Delete files and records
-      for (const backup of result.rows) {
-        try {
-          await fs.unlink(backup.filepath);
-          this.logger.info(`Deleted old backup: ${backup.filename}`);
-        } catch (err) {
-          this.logger.error(`Failed to delete backup file: ${backup.filename}`, err);
-        }
+      const { deleted } = await databaseBackupService.enforceBackupLimit(LOCAL_BACKUP_LIMIT);
+      if (deleted > 0) {
+        this.logger.info(`Removed ${deleted} old local backup(s), keeping ${LOCAL_BACKUP_LIMIT}`);
       }
-
-      // Delete records from database
-      await pool.query(
-        `DELETE FROM backups WHERE type = 'auto' AND created_at < $1`,
-        [cutoffDate]
-      );
-
-      this.logger.info(`Cleaned up backups older than ${retentionDays} days`);
     } catch (error) {
       this.logger.error('Failed to clean old backups:', error);
     }

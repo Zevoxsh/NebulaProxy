@@ -436,6 +436,11 @@ export async function backupRoutes(fastify, options) {
       }
 
       const saved = await s3BackupService.saveConfig(body);
+      let cleaned = 0;
+      if (saved.enabled) {
+        const cleanupResult = await s3BackupService.cleanOldBackups();
+        cleaned = cleanupResult.deleted;
+      }
 
       // Audit log
       await pool.query(
@@ -445,7 +450,7 @@ export async function backupRoutes(fastify, options) {
           `S3 backup config updated (enabled=${saved.enabled}, endpoint=${saved.endpoint})`, request.ip]
       );
 
-      reply.send({ success: true, config: { ...saved, secret_key: '••••••••' } });
+      reply.send({ success: true, config: { ...saved, secret_key: '••••••••' }, cleaned });
     } catch (error) {
       request.log.error(error);
       reply.status(500).send({ message: 'Failed to save S3 config', error: error.message });
@@ -526,6 +531,7 @@ export async function backupRoutes(fastify, options) {
     (async () => {
       try {
         const s3Result = await s3BackupService.uploadBackup(filepath, safe);
+        const cleanupResult = await s3BackupService.cleanOldBackups();
 
         // Mark record in DB if it exists
         await pool.query(
@@ -539,7 +545,7 @@ export async function backupRoutes(fastify, options) {
         );
 
         job.status = 'completed';
-        job.result = s3Result;
+        job.result = { ...s3Result, cleaned: cleanupResult.deleted };
       } catch (error) {
         fastify.log.error({ error }, 'S3 upload job failed');
         job.status = 'failed';

@@ -75,7 +75,7 @@ export function updateRoutes(fastify, opts, done) {
   fastify.post('/apply', async (request, reply) => {
     try {
       // Check if update is already in progress
-      if (updateService.updateInProgress) {
+      if (updateService.updateInProgress || await updateService.hasActiveUpdate()) {
         return reply.code(409).send({
           success: false,
           error: 'Update already in progress'
