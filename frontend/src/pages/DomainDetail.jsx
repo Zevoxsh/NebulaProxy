@@ -862,6 +862,10 @@ export default function DomainDetail() {
                   <BarChart3 className="w-5 h-5 text-[#C77DFF]" strokeWidth={1.5} />
                 </div>
                 <div>
+                  <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/55">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#C77DFF] shadow-[0_0_12px_rgba(199,125,255,0.8)]" />
+                    NebulaProxy Web Console
+                  </div>
                   <h2 className="text-lg font-light text-white tracking-tight">Request Logs</h2>
                   <p className="text-xs text-white/50 font-light">Real-time HTTP request monitoring</p>
                 </div>
