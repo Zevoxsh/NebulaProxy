@@ -407,6 +407,134 @@ function S3ConfigPanel() {
   );
 }
 
+function CloudBackupsPanel() {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [backups, setBackups] = useState([]);
+  const [error, setError] = useState('');
+
+  const loadCloudBackups = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      setError('');
+      const configResponse = await adminAPI.getS3BackupConfig();
+      const isEnabled = Boolean(configResponse.data?.config?.enabled);
+      setEnabled(isEnabled);
+
+      if (!isEnabled) {
+        setBackups([]);
+        return;
+      }
+
+      const backupsResponse = await adminAPI.listS3Backups();
+      setBackups(backupsResponse.data?.backups || []);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Impossible de charger les backups cloud.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCloudBackups();
+  }, [loadCloudBackups]);
+
+  const handleDeleteS3 = async (key) => {
+    if (!window.confirm(`Supprimer ce backup S3 ?\n\n${key}`)) {
+      return;
+    }
+
+    try {
+      await adminAPI.deleteS3Backup(key);
+      await loadCloudBackups();
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Impossible de supprimer le backup cloud.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-admin-border bg-admin-bg p-6 text-sm text-admin-text-muted">
+        Chargement des backups cloud...
+      </div>
+    );
+  }
+
+  return (
+    <AdminCard>
+      <AdminCardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Cloud className="w-5 h-5 text-admin-primary" />
+            <div>
+              <AdminCardTitle>Backups cloud S3 / MinIO</AdminCardTitle>
+              <p className="mt-1 text-sm text-admin-text-muted">Vue des backups stockés dans le bucket cloud.</p>
+            </div>
+          </div>
+          <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${enabled ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-admin-text-muted'}`}>
+            {enabled ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+            {enabled ? 'Actif' : 'Inactif'}
+          </div>
+        </div>
+      </AdminCardHeader>
+      <AdminCardContent className="pt-0 space-y-4">
+        <div className="flex flex-wrap gap-3">
+          <AdminButton variant="secondary" onClick={loadCloudBackups} disabled={refreshing}>
+            {refreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" strokeWidth={1.8} />}
+            {refreshing ? 'Chargement...' : 'Rafraîchir'}
+          </AdminButton>
+        </div>
+
+        {error && (
+          <AdminAlert variant="danger">
+            <AdminAlertDescription>{error}</AdminAlertDescription>
+          </AdminAlert>
+        )}
+
+        {!enabled ? (
+          <div className="rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-5 text-sm text-admin-text-muted">
+            Le cloud est désactivé. Active-le dans l’onglet Configuration.
+          </div>
+        ) : backups.length === 0 ? (
+          <div className="rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-5 text-sm text-admin-text-muted">
+            Aucun backup cloud trouvé.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-admin-border">
+            <table className="w-full text-sm">
+              <thead className="bg-white/[0.03] text-xs uppercase tracking-[0.15em] text-admin-text-muted">
+                <tr>
+                  <th className="px-4 py-3 text-left">Fichier</th>
+                  <th className="px-4 py-3 text-left">Taille</th>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map((backup) => (
+                  <tr key={backup.key} className="border-t border-admin-border bg-admin-bg">
+                    <td className="px-4 py-3 font-mono text-xs text-admin-text">{backup.filename}</td>
+                    <td className="px-4 py-3 text-admin-text-muted">{backup.sizeFormatted || formatSize(backup.size)}</td>
+                    <td className="px-4 py-3 text-admin-text-muted">{formatDate(backup.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <AdminButton variant="secondary" onClick={() => handleDeleteS3(backup.key)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Supprimer
+                      </AdminButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </AdminCardContent>
+    </AdminCard>
+  );
+}
+
 export default function AdminBackups() {
   const [stats, setStats] = useState(null);
   const [backups, setBackups] = useState([]);
@@ -415,6 +543,7 @@ export default function AdminBackups() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [jobStatus, setJobStatus] = useState(null);
+  const [activeTab, setActiveTab] = useState('all');
 
   const sortedBackups = useMemo(
     () => [...backups].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
@@ -646,8 +775,34 @@ export default function AdminBackups() {
         <StatCard label="Backups locaux" value={backupCount} hint={`Rétention automatique: ${LOCAL_BACKUP_LIMIT} derniers fichiers`} icon={<HardDrive className="w-4 h-4" strokeWidth={1.8} />} accent="text-emerald-300" />
       </div>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <AdminCard>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          className={`rounded-xl border px-4 py-2 text-sm transition-colors ${
+            activeTab === 'all'
+              ? 'border-admin-primary bg-admin-surface text-admin-text'
+              : 'border-admin-border bg-admin-bg text-admin-text-muted hover:text-admin-text'
+          }`}
+        >
+          Toutes les sauvegardes
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('config')}
+          className={`rounded-xl border px-4 py-2 text-sm transition-colors ${
+            activeTab === 'config'
+              ? 'border-admin-primary bg-admin-surface text-admin-text'
+              : 'border-admin-border bg-admin-bg text-admin-text-muted hover:text-admin-text'
+          }`}
+        >
+          Configuration S3
+        </button>
+      </div>
+
+      {activeTab === 'all' && (
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <AdminCard>
           <AdminCardHeader>
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-admin-border bg-admin-surface text-admin-text">
@@ -731,40 +886,47 @@ export default function AdminBackups() {
               )}
             </div>
           </AdminCardContent>
-        </AdminCard>
-
-        <div className="space-y-6">
-          <S3ConfigPanel />
-
-          <AdminCard>
-            <AdminCardHeader>
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-admin-border bg-admin-surface text-admin-text">
-                  <ShieldAlert className="h-5 w-5" strokeWidth={1.7} />
-                </div>
-                <div>
-                  <AdminCardTitle>Point important</AdminCardTitle>
-                  <p className="mt-1 text-sm text-admin-text-muted">La restauration écrase la base actuelle. Vérifie toujours le dernier backup avant de lancer une importation.</p>
-                </div>
-              </div>
-            </AdminCardHeader>
-            <AdminCardContent className="pt-0 space-y-3 text-sm text-admin-text-muted">
-              <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
-                <Copy className="mt-0.5 h-4 w-4 text-admin-text-muted" />
-                <div>Le bouton <span className="text-admin-text">Export</span> télécharge le fichier local.</div>
-              </div>
-              <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
-                <Upload className="mt-0.5 h-4 w-4 text-admin-text-muted" />
-                <div>Le bouton <span className="text-admin-text">Restaurer</span> remplace les données actuelles.</div>
-              </div>
-              <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
-                <Cloud className="mt-0.5 h-4 w-4 text-admin-text-muted" />
-                <div>Le bouton <span className="text-admin-text">S3</span> envoie le backup dans le cloud avec purge automatique au-delà de {CLOUD_BACKUP_LIMIT} fichiers.</div>
-              </div>
-            </AdminCardContent>
           </AdminCard>
-        </div>
-      </section>
+
+          <div className="space-y-6">
+            <CloudBackupsPanel />
+
+            <AdminCard>
+              <AdminCardHeader>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-admin-border bg-admin-surface text-admin-text">
+                    <ShieldAlert className="h-5 w-5" strokeWidth={1.7} />
+                  </div>
+                  <div>
+                    <AdminCardTitle>Point important</AdminCardTitle>
+                    <p className="mt-1 text-sm text-admin-text-muted">La restauration écrase la base actuelle. Vérifie toujours le dernier backup avant de lancer une importation.</p>
+                  </div>
+                </div>
+              </AdminCardHeader>
+              <AdminCardContent className="pt-0 space-y-3 text-sm text-admin-text-muted">
+                <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
+                  <Copy className="mt-0.5 h-4 w-4 text-admin-text-muted" />
+                  <div>Le bouton <span className="text-admin-text">Export</span> télécharge le fichier local.</div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
+                  <Upload className="mt-0.5 h-4 w-4 text-admin-text-muted" />
+                  <div>Le bouton <span className="text-admin-text">Restaurer</span> remplace les données actuelles.</div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-admin-border bg-white/[0.03] px-4 py-3">
+                  <Cloud className="mt-0.5 h-4 w-4 text-admin-text-muted" />
+                  <div>Le bouton <span className="text-admin-text">S3</span> envoie le backup dans le cloud avec purge automatique au-delà de {CLOUD_BACKUP_LIMIT} fichiers.</div>
+                </div>
+              </AdminCardContent>
+            </AdminCard>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'config' && (
+        <section className="space-y-6">
+          <S3ConfigPanel />
+        </section>
+      )}
     </div>
   );
 }
