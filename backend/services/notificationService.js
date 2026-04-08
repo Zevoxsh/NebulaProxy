@@ -31,27 +31,34 @@ class NotificationService {
   /**
    * Send notification via all enabled channels
    */
-  async send(notification) {
+  async send(notification, options = {}) {
     const { title, message, severity = 'info', event = 'general' } = notification;
+    const {
+      channels = null,
+      reloadConfig = true
+    } = options;
 
     this.logger.info(`Sending notification: ${title} (${severity})`);
 
     // Reload config to get latest settings
-    await this.loadConfig();
+    if (reloadConfig) {
+      await this.loadConfig();
+    }
 
     const promises = [];
+    const channelSet = Array.isArray(channels) ? new Set(channels) : null;
 
     // Send via WebSocket (always)
-    if (this.websocketManager) {
+    if ((!channelSet || channelSet.has('websocket')) && this.websocketManager) {
       promises.push(this.sendWebSocket(notification));
     }
 
     // Send via Email
-    if (this.config?.email?.enabled) {
+    if ((!channelSet || channelSet.has('email')) && this.config?.email?.enabled) {
       promises.push(this.sendEmail(title, message, severity));
     }
 
-    if (this.config?.webhook?.enabled && this.config?.webhook?.url) {
+    if ((!channelSet || channelSet.has('webhook')) && this.config?.webhook?.enabled && this.config?.webhook?.url) {
       promises.push(this.sendWebhook(notification));
     }
 
@@ -113,8 +120,9 @@ class NotificationService {
     };
   }
 
-  async sendWebhook(notification) {
+  async sendWebhook(notification, options = {}) {
     try {
+      const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 10000;
       const webhookConfig = this.config?.webhook;
       if (!webhookConfig?.enabled || !webhookConfig?.url) {
         return;
@@ -140,7 +148,7 @@ class NotificationService {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
 
       if (!response.ok) {
@@ -266,11 +274,30 @@ class NotificationService {
   /**
    * Send proxy lifecycle notification (startup, shutdown, maintenance)
    */
-  async sendProxyLifecycleNotification(state, metadata = {}) {
+  async sendProxyLifecycleNotification(state, metadata = {}, options = {}) {
     const normalizedState = String(state || '').toLowerCase();
+    const isFastShutdown = options.fastShutdown === true;
+
+    const sendLifecycle = async (notificationPayload) => {
+      if (!isFastShutdown) {
+        await this.send(notificationPayload);
+        return;
+      }
+
+      await this.send({
+        ...notificationPayload,
+        metadata: {
+          ...(notificationPayload.metadata || {}),
+          fast_shutdown: true
+        }
+      }, {
+        channels: ['webhook'],
+        reloadConfig: false
+      });
+    };
 
     if (normalizedState === 'started' || normalizedState === 'startup' || normalizedState === 'online') {
-      await this.send({
+      await sendLifecycle({
         title: 'Proxy redémarré',
         message: 'Le proxy est de nouveau en ligne après redémarrage ou maintenance.',
         severity: 'success',
@@ -281,7 +308,7 @@ class NotificationService {
     }
 
     if (normalizedState === 'stopping' || normalizedState === 'stopped' || normalizedState === 'shutdown') {
-      await this.send({
+      await sendLifecycle({
         title: 'Proxy arrêté / mise en maintenance',
         message: 'Le proxy passe hors ligne pour un arrêt, un redémarrage ou une maintenance planifiée.',
         severity: 'warning',
@@ -292,7 +319,7 @@ class NotificationService {
     }
 
     if (normalizedState === 'maintenance-start' || normalizedState === 'maintenance_started') {
-      await this.send({
+      await sendLifecycle({
         title: 'Maintenance du proxy démarrée',
         message: 'Le proxy passe en mode maintenance pour les tests ou interventions planifiées.',
         severity: 'warning',
@@ -303,7 +330,7 @@ class NotificationService {
     }
 
     if (normalizedState === 'maintenance-end' || normalizedState === 'maintenance_ended') {
-      await this.send({
+      await sendLifecycle({
         title: 'Maintenance du proxy terminée',
         message: 'Le proxy est à nouveau disponible après la maintenance.',
         severity: 'success',

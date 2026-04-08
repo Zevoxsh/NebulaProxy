@@ -132,6 +132,8 @@ services:
     # host network = expose TOUS les ports dynamiquement (TCP/UDP domaines, 80, 443, 3000, 25565, SMTP...)
     # Aucun port n'a besoin d'être listé — tout ce que le backend écoute est accessible sur l'hôte.
     network_mode: host
+    stop_signal: SIGTERM
+    stop_grace_period: 45s
     restart: unless-stopped
     deploy:
       resources:

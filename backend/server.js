@@ -1040,6 +1040,8 @@ process.on('SIGTERM', async () => {
       await global.notificationService.sendProxyLifecycleNotification('stopping', {
         signal: 'SIGTERM',
         source: 'shutdown'
+      }, {
+        fastShutdown: true
       }).catch((error) => {
         fastify.log.warn({ error }, 'Failed to send proxy shutdown notification');
       });
@@ -1119,6 +1121,8 @@ process.on('SIGINT', async () => {
       await global.notificationService.sendProxyLifecycleNotification('stopping', {
         signal: 'SIGINT',
         source: 'shutdown'
+      }, {
+        fastShutdown: true
       }).catch((error) => {
         fastify.log.warn({ error }, 'Failed to send proxy shutdown notification');
       });
