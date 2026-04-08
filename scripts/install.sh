@@ -101,17 +101,17 @@ start_docker() {
 
 start_docker
 
-echo "[PKG] Déploiement NebulaProxyV3"
+echo "[PKG] Déploiement NebulaProxy"
 
 cd /etc
 
-if [ ! -d NebulaProxyV3 ]; then
-  git clone https://github.com/Zevoxsh/NebulaProxyV3.git
+if [ ! -d NebulaProxy ]; then
+  git clone https://github.com/Zevoxsh/NebulaProxy.git
 else
   echo "[INFO] Repo déjà présent"
 fi
 
-cd NebulaProxyV3
+cd NebulaProxy
 
 echo "[PKG] Installation Node"
 npm run install:all

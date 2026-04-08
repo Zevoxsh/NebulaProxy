@@ -214,7 +214,15 @@ class UpdateService {
       // Verify repository
       const verification = await gitService.verifyRepository();
       if (!verification.valid) {
-        throw new Error(`Repository validation failed: ${verification.errors.join(', ')}`);
+        const blockingErrors = verification.errors.filter(
+          (msg) => msg !== 'Repository has uncommitted changes'
+        );
+
+        if (blockingErrors.length > 0) {
+          throw new Error(`Repository validation failed: ${blockingErrors.join(', ')}`);
+        }
+
+        this.logger.warn('[UpdateService] Repository has local changes; update check will continue');
       }
 
       // Fetch latest changes

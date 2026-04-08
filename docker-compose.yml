@@ -100,7 +100,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/www/letsencrypt:/var/www/letsencrypt
-      - /etc/NebulaProxyV3:/repo
+      - /etc/NebulaProxy:/repo
       - backups:/app/backups
       - uploads:/app/uploads
       - redis-secret:/run/redis-secret:ro
@@ -175,7 +175,7 @@ services:
     container_name: nebulaproxy-watchdog
     restart: unless-stopped
     volumes:
-      - /etc/NebulaProxyV3:/repo
+      - /etc/NebulaProxy:/repo
       - watchdog-logs:/var/log
       - redis-secret:/run/redis-secret:ro
     environment:

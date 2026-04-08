@@ -9,7 +9,7 @@ Votre base de données PostgreSQL externe présente des erreurs de corruption:
 
 ### 1. Exécuter le script de diagnostic
 ```bash
-cd /home/zevox/Documents/NebulaProxyV3
+cd /home/zevox/Documents/NebulaProxy
 chmod +x scripts/diagnose-database.sh
 ./scripts/diagnose-database.sh
 ```

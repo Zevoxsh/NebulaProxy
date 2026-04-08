@@ -77,7 +77,7 @@ class GitService {
       console.log(`[GitService] Git directory: ${this.gitDir}`);
 
       // Check if git command exists
-      await execCommand('which', ['git'], { timeout: 5000 });
+      await execCommand('git', ['--version'], { timeout: 5000 });
 
       // Check if .git directory exists
       const fs = await import('fs/promises');
@@ -181,9 +181,32 @@ class GitService {
     if (!(await this.isAvailable())) {
       return 'unavailable';
     }
-    const branch = await this.getCurrentBranch();
+    const branch = await this.getUpdateBranch(remote);
     const { stdout } = await this.execGit(`git rev-parse ${remote}/${branch}`);
     return stdout;
+  }
+
+  /**
+   * Resolve branch used for update operations.
+   * Falls back to remote default branch when HEAD is detached.
+   */
+  async getUpdateBranch(remote = 'origin') {
+    const current = await this.getCurrentBranch();
+    if (current && current !== 'HEAD') {
+      return current;
+    }
+
+    try {
+      const { stdout } = await this.execGit(`git symbolic-ref --short refs/remotes/${remote}/HEAD`);
+      const resolved = stdout?.trim()?.replace(`${remote}/`, '');
+      if (resolved) {
+        return resolved;
+      }
+    } catch {
+      // Ignore and use fallback below.
+    }
+
+    return 'main';
   }
 
   /**
@@ -222,7 +245,7 @@ class GitService {
    * @returns {Promise<void>}
    */
   async pull(remote = 'origin') {
-    const branch = await this.getCurrentBranch();
+    const branch = await this.getUpdateBranch(remote);
     await this.execGit(`git pull ${remote} ${branch}`, 60000);
   }
 

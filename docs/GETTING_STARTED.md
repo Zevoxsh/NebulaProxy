@@ -12,7 +12,7 @@ Quick start guide for NebulaProxy V3.
 ## Production Installation (Linux)
 ### Option A - Automatic script
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Zevoxsh/NebulaProxyV3/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Zevoxsh/NebulaProxy/main/scripts/install.sh | sh
 ```
 
 This script must run as root.
@@ -20,8 +20,8 @@ This script must run as root.
 ### Option B - Manual installation
 ```bash
 cd /etc
-git clone https://github.com/Zevoxsh/NebulaProxyV3.git
-cd /etc/NebulaProxyV3
+git clone https://github.com/Zevoxsh/NebulaProxy.git
+cd /etc/NebulaProxy
 npm run install:all
 docker compose up -d --build
 ```

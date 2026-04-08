@@ -1,7 +1,7 @@
 # Project Structure
 
 ```text
-NebulaProxyV3/
+NebulaProxy/
 |-- backend/              # Fastify API, proxy manager, services, migrations
 |-- frontend/             # React/Vite UI
 |-- watchdog/             # Update/watchdog service

@@ -40,7 +40,7 @@ Used volumes:
 - `update-flags`: update coordination flags
 
 Important note:
-Compose mounts `/etc/NebulaProxyV3` into `backend` and `watchdog` for Git/update operations. In production, use this path to avoid mount mismatches.
+Compose mounts `/etc/NebulaProxy` into `backend` and `watchdog` for Git/update operations. In production, use this path to avoid mount mismatches.
 
 ## Prerequisites
 - Docker Engine
@@ -54,13 +54,13 @@ Compose mounts `/etc/NebulaProxyV3` into `backend` and `watchdog` for Git/update
 The script:
 - installs system dependencies
 - installs/enables Docker
-- clones repository into `/etc/NebulaProxyV3`
+- clones repository into `/etc/NebulaProxy`
 - runs `npm run install:all`
 - runs `docker compose up -d --build`
 
 Command:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Zevoxsh/NebulaProxyV3/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Zevoxsh/NebulaProxy/main/scripts/install.sh | sh
 ```
 
 The script must run as root.
@@ -68,8 +68,8 @@ The script must run as root.
 ### Option B - Linux manual install
 ```bash
 cd /etc
-git clone https://github.com/Zevoxsh/NebulaProxyV3.git
-cd /etc/NebulaProxyV3
+git clone https://github.com/Zevoxsh/NebulaProxy.git
+cd /etc/NebulaProxy
 npm run install:all
 docker compose up -d --build
 ```
