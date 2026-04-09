@@ -190,14 +190,30 @@ export default function AdminConfig() {
 
   const sectionLabelMap = {
     'Proxy + security': 'Proxy Security',
-    'ACME / Let\'s Encrypt': 'TLS Certificates'
+    'ACME / Let\'s Encrypt': 'TLS Certificates',
+    'Proxy 502 error page': '502 Error Page Texts'
   };
 
   const variableLabelMap = {
     ALLOWED_ORIGINS: 'Allowed Origins (CORS)',
     ALLOW_PRIVATE_BACKENDS: 'Allow Private Backends',
     ALLOW_PRIVATE_BACKEND: 'Allow Private Backends',
-    ACME_EMAIL: 'ACME Contact Email'
+    ACME_EMAIL: 'ACME Contact Email',
+    BAD_GATEWAY_HTML_TITLE: 'Browser tab title',
+    BAD_GATEWAY_BADGE: 'Badge text',
+    BAD_GATEWAY_TITLE: 'Main title',
+    BAD_GATEWAY_SUBTITLE: 'Subtitle',
+    BAD_GATEWAY_MESSAGE: 'Main message',
+    BAD_GATEWAY_DOMAIN_LABEL: 'Domain label',
+    BAD_GATEWAY_PROXY_LABEL: 'Proxy label',
+    BAD_GATEWAY_PROXY_VALUE: 'Proxy name/value',
+    BAD_GATEWAY_CAUSE_LABEL: 'Cause label',
+    BAD_GATEWAY_CAUSE_VALUE: 'Cause value',
+    BAD_GATEWAY_STATUS_LABEL: 'Status label',
+    BAD_GATEWAY_STATUS_VALUE: 'Status value',
+    BAD_GATEWAY_RETRY_BUTTON: 'Retry button text',
+    BAD_GATEWAY_BACK_BUTTON: 'Back button text',
+    BAD_GATEWAY_FOOTER_TEXT: 'Footer text (timestamp added automatically)'
   };
 
   // Check if a section has errors

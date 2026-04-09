@@ -36,6 +36,13 @@ const lts = () => {
   return _lts;
 };
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/\"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
   class ProxyManager extends EventEmitter {
     constructor() {
       super();
@@ -2277,10 +2284,25 @@ const lts = () => {
   }
 
   _renderBadGatewayPage(hostname) {
-    const safeHost = hostname || 'unknown-host';
-    // SECURITY: Generic error message - don't leak backend details
-    const safeError = 'The backend server is temporarily unavailable';
-    return `<!doctype html><html lang="fr"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Bad Gateway</title><style>
+    const copy = config.proxy.badGatewayPage || {};
+    const safeHost = escapeHtml(hostname || 'unknown-host');
+    const htmlTitle = escapeHtml(copy.htmlTitle || 'Bad Gateway');
+    const badge = escapeHtml(copy.badge || 'Bad Gateway');
+    const title = escapeHtml(copy.title || 'Service amont indisponible');
+    const subtitle = escapeHtml(copy.subtitle || "Le proxy ne peut pas joindre le backend pour ce domaine. L'ecran suit le meme theme que l'interface admin afin de garder une experience coherente.");
+    const message = escapeHtml(copy.message || 'The backend server is temporarily unavailable');
+    const domainLabel = escapeHtml(copy.domainLabel || 'Domaine');
+    const proxyLabel = escapeHtml(copy.proxyLabel || 'Proxy');
+    const proxyValue = escapeHtml(copy.proxyValue || 'NebulaProxy');
+    const causeLabel = escapeHtml(copy.causeLabel || 'Cause');
+    const causeValue = escapeHtml(copy.causeValue || 'Backend not reachable');
+    const statusLabel = escapeHtml(copy.statusLabel || 'Statut');
+    const statusValue = escapeHtml(copy.statusValue || '502 Service Unavailable');
+    const retryButton = escapeHtml(copy.retryButton || 'Reessayer');
+    const backButton = escapeHtml(copy.backButton || 'Retour');
+    const footerText = escapeHtml(copy.footerText || "Contactez l'administrateur si le probleme persiste.");
+
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${htmlTitle}</title><style>
       :root {
         color-scheme: dark;
         --background: #09090b;
@@ -2435,7 +2457,7 @@ const lts = () => {
         .card { padding: 18px; border-radius: 20px; }
         .grid { grid-template-columns: 1fr; }
       }
-    </style></head><body><div class="card"><div class="header"><div class="badge">Bad Gateway</div><h1>Service amont indisponible</h1><p class="subtitle">Le proxy ne peut pas joindre le backend pour ce domaine. L’écran suit le même thème que l’interface admin afin de garder une expérience cohérente.</p></div><div class="content"><div class="message"><p>${safeError}</p></div><div class="grid"><div class="tile"><span>Domaine</span><strong>${safeHost}</strong></div><div class="tile"><span>Proxy</span><strong>NebulaProxy</strong></div><div class="tile"><span>Cause</span><strong>Backend not reachable</strong></div><div class="tile"><span>Statut</span><strong>502 Service Unavailable</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">Réessayer</button><button class="button" onclick="history.back()">Retour</button></div></div><footer>Contactez l’administrateur si le problème persiste. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
+    </style></head><body><div class="card"><div class="header"><div class="badge">${badge}</div><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="content"><div class="message"><p>${message}</p></div><div class="grid"><div class="tile"><span>${domainLabel}</span><strong>${safeHost}</strong></div><div class="tile"><span>${proxyLabel}</span><strong>${proxyValue}</strong></div><div class="tile"><span>${causeLabel}</span><strong>${causeValue}</strong></div><div class="tile"><span>${statusLabel}</span><strong>${statusValue}</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">${retryButton}</button><button class="button" onclick="history.back()">${backButton}</button></div></div><footer>${footerText} Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
   }
 
   _renderBlockedPage(message, statusCode = 403) {

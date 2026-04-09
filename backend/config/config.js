@@ -170,6 +170,25 @@ export const config = {
     },
     get requestTimeoutMs() {
       return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '4000'), 10);
+    },
+    get badGatewayPage() {
+      return {
+        htmlTitle: getConfig('BAD_GATEWAY_HTML_TITLE', 'Bad Gateway'),
+        badge: getConfig('BAD_GATEWAY_BADGE', 'Bad Gateway'),
+        title: getConfig('BAD_GATEWAY_TITLE', 'Service amont indisponible'),
+        subtitle: getConfig('BAD_GATEWAY_SUBTITLE', "Le proxy ne peut pas joindre le backend pour ce domaine. L'ecran suit le meme theme que l'interface admin afin de garder une experience coherente."),
+        message: getConfig('BAD_GATEWAY_MESSAGE', 'The backend server is temporarily unavailable'),
+        domainLabel: getConfig('BAD_GATEWAY_DOMAIN_LABEL', 'Domaine'),
+        proxyLabel: getConfig('BAD_GATEWAY_PROXY_LABEL', 'Proxy'),
+        proxyValue: getConfig('BAD_GATEWAY_PROXY_VALUE', 'NebulaProxy'),
+        causeLabel: getConfig('BAD_GATEWAY_CAUSE_LABEL', 'Cause'),
+        causeValue: getConfig('BAD_GATEWAY_CAUSE_VALUE', 'Backend not reachable'),
+        statusLabel: getConfig('BAD_GATEWAY_STATUS_LABEL', 'Statut'),
+        statusValue: getConfig('BAD_GATEWAY_STATUS_VALUE', '502 Service Unavailable'),
+        retryButton: getConfig('BAD_GATEWAY_RETRY_BUTTON', 'Reessayer'),
+        backButton: getConfig('BAD_GATEWAY_BACK_BUTTON', 'Retour'),
+        footerText: getConfig('BAD_GATEWAY_FOOTER_TEXT', "Contactez l'administrateur si le probleme persiste.")
+      };
     }
   },
 
