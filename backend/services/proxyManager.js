@@ -1793,7 +1793,12 @@ const lts = () => {
 
     const protocol = backendProtocol === 'https:' ? https : http;
     const upstreamTimeoutMs = config.proxy.requestTimeoutMs || 4000;
-    const consoleMessage = `console.info('%cNebulaProxy','color:#C77DFF;font-size:18px;font-weight:700;');console.info('%cThis site is being proxied through NebulaProxy','color:#a1a1aa;font-size:12px;');`;
+    const consolePayload = {
+      host: String(domain.hostname || req.headers.host || 'unknown-host'),
+      path: String(req.url || '/'),
+      timestamp: new Date().toISOString()
+    };
+    const consoleMessage = `var np=${JSON.stringify(consolePayload)};console.groupCollapsed('%cNebulaProxy %c// live route','color:#C77DFF;font-size:16px;font-weight:800;letter-spacing:0.02em;','color:#8b5cf6;font-size:11px;font-weight:700;letter-spacing:0.08em;');console.log('%cDomain:%c '+np.host,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPath:%c '+np.path,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cTimestamp:%c '+np.timestamp,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPowered by NebulaProxy','color:#22d3ee;font-size:12px;font-weight:700;');console.groupEnd();`;
     const consoleScript = `<script>(function(){try{${consoleMessage}}catch(e){}})();</script>`;
 
     const proxyReq = protocol.request(options, (proxyRes) => {
