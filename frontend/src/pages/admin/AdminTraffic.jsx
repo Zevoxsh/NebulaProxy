@@ -11,6 +11,7 @@ import {
 } from '@/components/admin';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,8 @@ export default function AdminTraffic() {
   const [loading, setLoading]         = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [clearing, setClearing]       = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   // Filters
   const [filterDomain, setFilterDomain] = useState('');
@@ -108,6 +111,20 @@ export default function AdminTraffic() {
     if (filterIp     && !c.ip?.includes(filterIp))   return false;
     return true;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedConnections = filtered.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterDomain, filterProto, filterIp]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Per-protocol stats
   const protoCount = protos.reduce((acc, p) => {
@@ -200,7 +217,7 @@ export default function AdminTraffic() {
               {protos.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
             </select>
             {(filterIp || filterDomain || filterProto) && (
-              <AdminButton variant="ghost" size="sm" onClick={() => { setFilterIp(''); setFilterDomain(''); setFilterProto(''); }}>
+              <AdminButton variant="ghost" size="sm" onClick={() => { setFilterIp(''); setFilterDomain(''); setFilterProto(''); setCurrentPage(1); }}>
                 Réinitialiser
               </AdminButton>
             )}
@@ -250,7 +267,7 @@ export default function AdminTraffic() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c, i) => (
+                {paginatedConnections.map((c, i) => (
                   <TableRow key={`${c.ip}-${c.protocol}-${c.domainId}-${i}`} className="border-admin-border">
                     <TableCell className="font-mono text-sm text-admin-text">{c.ip}</TableCell>
                     <TableCell>
@@ -280,9 +297,20 @@ export default function AdminTraffic() {
         </AdminCardContent>
         {filtered.length > 0 && (
           <AdminCardFooter className="px-6 py-2">
-            <p className="text-xs text-admin-text-muted">
-              Les connexions sans activité depuis plus de 5 minutes disparaissent automatiquement.
-            </p>
+            <div className="w-full space-y-2">
+              <p className="text-xs text-admin-text-muted">
+                Les connexions sans activité depuis plus de 5 minutes disparaissent automatiquement.
+              </p>
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={filtered.length}
+                pageSize={itemsPerPage}
+                onPageChange={setCurrentPage}
+                label="connections"
+                className="mt-0"
+              />
+            </div>
           </AdminCardFooter>
         )}
       </AdminCard>
