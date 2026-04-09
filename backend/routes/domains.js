@@ -2072,6 +2072,11 @@ export async function domainRoutes(fastify, options) {
         return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this domain' });
       }
 
+      let nextEnabled = enabled !== undefined ? enabled : domain.ddos_protection_enabled;
+      if (challengeMode === true) {
+        nextEnabled = true;
+      }
+
       await database.execute(
         `UPDATE domains SET
           ddos_protection_enabled     = $1,
@@ -2085,7 +2090,7 @@ export async function domainRoutes(fastify, options) {
          WHERE id = $8`,
         [
           enabled !== undefined ? enabled : domain.ddos_protection_enabled,
-          reqPerSecond             ?? domain.ddos_req_per_second           ?? 100,
+          nextEnabled,
           connectionsPerMinute     ?? domain.ddos_connections_per_minute   ?? 60,
           banDurationSec           ?? domain.ddos_ban_duration_sec         ?? 3600,
           maxConnectionsPerIp      ?? domain.ddos_max_connections_per_ip   ?? 50,
