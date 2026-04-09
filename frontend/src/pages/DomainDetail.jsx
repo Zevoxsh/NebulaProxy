@@ -87,7 +87,7 @@ function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh
           <div className="p-12 text-center text-white/30 text-sm">
             <Wifi className="w-10 h-10 mx-auto mb-3 opacity-20" strokeWidth={1} />
             {connections.length === 0
-              ? 'Aucun trafic enregistré — les connexions apparaîtront ici (fenêtre 5 min)'
+              ? 'Aucun trafic enregistré — les connexions apparaîtront ici (rétention 30 jours)'
               : 'Aucun résultat pour ce filtre'}
           </div>
         ) : (
@@ -130,7 +130,7 @@ function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh
         )}
         <div className="px-4 py-2.5 border-t border-white/[0.04] bg-white/[0.01]">
           <p className="text-xs text-white/25">
-            Fenêtre glissante 5 min — les entrées inactives disparaissent automatiquement.
+            Rétention 30 jours — les entrées plus anciennes sont supprimées automatiquement.
           </p>
         </div>
       </div>

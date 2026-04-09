@@ -1,14 +1,17 @@
 /**
  * LiveTrafficService - Real-time connection/request tracking per domain
- * Stores hits in Redis hashes — no auto-expiry on individual entries.
+ * Stores hits in Redis hashes with a hard retention window.
  * Fire-and-forget design: errors are silently suppressed.
  */
 
 import { geoIpService } from './geoIpService.js';
 
-const HASH_TTL_SEC = 86400;       // 24h TTL on the whole domain hash (refreshed on each hit)
-const PREFIX       = 'live:traffic:';
-const ACTIVE_SET   = 'live:traffic:active';
+const RETENTION_DAYS = Math.max(1, parseInt(process.env.LIVE_TRAFFIC_RETENTION_DAYS || '30', 10) || 30);
+const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const HASH_TTL_SEC = RETENTION_DAYS * 24 * 60 * 60;
+const CLEANUP_INTERVAL_MS = Math.max(60_000, parseInt(process.env.LIVE_TRAFFIC_CLEANUP_INTERVAL_MS || '3600000', 10) || 3600000);
+const PREFIX = 'live:traffic:';
+const ACTIVE_SET = 'live:traffic:active';
 
 class LiveTrafficService {
   constructor() {
@@ -19,10 +22,17 @@ class LiveTrafficService {
     this._redis = redisClient;
     // Periodically enrich entries that are missing country codes
     setInterval(() => this._enrichMissingCountries(), 30_000);
+    // Hard retention: prune entries older than configured window
+    setInterval(() => this._cleanupExpiredEntries(), CLEANUP_INTERVAL_MS);
   }
 
   _key(domainId) {
     return `${PREFIX}${domainId}`;
+  }
+
+  _isExpired(entry, now = Date.now()) {
+    const lastSeen = Number(entry?.lastSeen || 0);
+    return !lastSeen || (now - lastSeen) > RETENTION_MS;
   }
 
   /**
@@ -40,14 +50,24 @@ class LiveTrafficService {
       const raw = await redis.hget(key, field);
       let entry;
       if (raw) {
-        entry          = JSON.parse(raw);
-        entry.reqCount += 1;
-        entry.bytes    += bytes;
-        entry.lastSeen  = now;
-        if (backend) entry.backend = backend;
-        // Retry country lookup if it was missing
-        if (!entry.country) {
-          try { entry.country = await geoIpService.getCountryCode(ip); } catch (_) {}
+        try {
+          entry = JSON.parse(raw);
+        } catch (_) {
+          entry = null;
+        }
+        if (entry && !this._isExpired(entry, now)) {
+          entry.reqCount += 1;
+          entry.bytes += bytes;
+          entry.lastSeen = now;
+          if (backend) entry.backend = backend;
+          // Retry country lookup if it was missing
+          if (!entry.country) {
+            try { entry.country = await geoIpService.getCountryCode(ip); } catch (_) {}
+          }
+        } else {
+          let country = null;
+          try { country = await geoIpService.getCountryCode(ip); } catch (_) {}
+          entry = { ip, country, protocol, backend: backend || null, reqCount: 1, bytes, firstSeen: now, lastSeen: now };
         }
       } else {
         let country = null;
@@ -72,10 +92,12 @@ class LiveTrafficService {
     const redis = this._redis;
     if (!redis) return [];
     try {
+      const now = Date.now();
       const hash = await redis.hgetall(this._key(domainId));
       if (!hash) return [];
       return Object.values(hash)
         .map(v => { try { return JSON.parse(v); } catch (_) { return null; } })
+        .filter(v => v && !this._isExpired(v, now))
         .filter(Boolean)
         .sort((a, b) => b.lastSeen - a.lastSeen);
     } catch (_) {
@@ -124,6 +146,7 @@ class LiveTrafficService {
         for (const [field, raw] of Object.entries(hash)) {
           let entry;
           try { entry = JSON.parse(raw); } catch (_) { continue; }
+          if (this._isExpired(entry)) continue;
           if (!entry.country) toEnrich.push({ key, field, entry });
         }
       }
@@ -143,6 +166,58 @@ class LiveTrafficService {
         await new Promise(r => setTimeout(r, 500));
       }
     } catch (_) {}
+  }
+
+  async _cleanupExpiredEntries() {
+    const redis = this._redis;
+    if (!redis) return;
+    const now = Date.now();
+    try {
+      const ids = await redis.smembers(ACTIVE_SET);
+      for (const id of ids) {
+        const key = this._key(id);
+        const hash = await redis.hgetall(key);
+        if (!hash || Object.keys(hash).length === 0) {
+          await redis.srem(ACTIVE_SET, String(id));
+          continue;
+        }
+
+        const toDelete = [];
+        let keepCount = 0;
+        for (const [field, raw] of Object.entries(hash)) {
+          let entry;
+          try {
+            entry = JSON.parse(raw);
+          } catch (_) {
+            toDelete.push(field);
+            continue;
+          }
+
+          if (this._isExpired(entry, now)) {
+            toDelete.push(field);
+          } else {
+            keepCount += 1;
+          }
+        }
+
+        if (toDelete.length > 0) {
+          const delPipe = redis.pipeline();
+          for (const field of toDelete) delPipe.hdel(key, field);
+          await delPipe.exec();
+        }
+
+        if (keepCount === 0) {
+          const purgePipe = redis.pipeline();
+          purgePipe.del(key);
+          purgePipe.srem(ACTIVE_SET, String(id));
+          await purgePipe.exec();
+        } else {
+          await redis.expire(key, HASH_TTL_SEC);
+        }
+      }
+    } catch (_) {
+      // silently ignore
+    }
   }
 
   async clearDomain(domainId) {

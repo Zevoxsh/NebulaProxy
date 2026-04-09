@@ -150,7 +150,7 @@ export default function AdminTraffic() {
             Trafic en direct
           </h1>
           <p className="text-admin-text-muted text-sm mt-1">
-            Connexions actives sur tous les domaines — fenêtre glissante 5 min
+            Connexions actives sur tous les domaines — rétention 30 jours
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -299,7 +299,7 @@ export default function AdminTraffic() {
           <AdminCardFooter className="px-6 py-2">
             <div className="w-full space-y-2">
               <p className="text-xs text-admin-text-muted">
-                Les connexions sans activité depuis plus de 5 minutes disparaissent automatiquement.
+                Les connexions sont conservées pendant 30 jours, puis supprimées automatiquement.
               </p>
               <PaginationControls
                 currentPage={currentPage}

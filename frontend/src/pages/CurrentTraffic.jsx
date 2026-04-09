@@ -4,6 +4,7 @@ import { domainAPI } from '../api/client';
 import { FlagImg } from '../utils/flagCache';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ export default function CurrentTraffic() {
   const [filterDomain, setFilterDomain] = useState('');
   const [filterProto,  setFilterProto]  = useState('');
   const [filterIp,     setFilterIp]     = useState('');
+  const [currentPage, setCurrentPage]   = useState(1);
+  const itemsPerPage = 25;
 
   const intervalRef  = useRef(null);
   const clockRef     = useRef(null);
@@ -107,6 +110,18 @@ export default function CurrentTraffic() {
 
   // Sort: most recently seen first
   const sorted = [...filtered].sort((a, b) => b.lastSeen - a.lastSeen);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
+  const paginatedConnections = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterDomain, filterProto, filterIp]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   if (loading) {
     return (
@@ -192,7 +207,7 @@ export default function CurrentTraffic() {
           </select>
           {(filterIp || filterDomain || filterProto) && (
             <button
-              onClick={() => { setFilterIp(''); setFilterDomain(''); setFilterProto(''); }}
+              onClick={() => { setFilterIp(''); setFilterDomain(''); setFilterProto(''); setCurrentPage(1); }}
               className="text-xs text-admin-text-muted hover:text-admin-text transition-colors"
             >
               Réinitialiser
@@ -233,7 +248,7 @@ export default function CurrentTraffic() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((c, i) => (
+              {paginatedConnections.map((c, i) => (
                 <TableRow key={`${c.ip}-${c.protocol}-${c.domainId}-${i}`} className="border-admin-border">
                   <TableCell className="pr-0">
                     <span className={`w-2 h-2 rounded-full inline-block ${recencyClass(c.lastSeen).replace('text-', 'bg-')}`} />
@@ -264,6 +279,20 @@ export default function CurrentTraffic() {
               ))}
             </TableBody>
           </Table>
+        )}
+
+        {sorted.length > 0 && (
+          <div className="px-6 py-4 border-t border-admin-border">
+            <PaginationControls
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={sorted.length}
+              pageSize={itemsPerPage}
+              onPageChange={setCurrentPage}
+              label="connexions"
+              className="mt-0"
+            />
+          </div>
         )}
       </div>
     </div>
