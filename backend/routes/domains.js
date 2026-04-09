@@ -2077,6 +2077,11 @@ export async function domainRoutes(fastify, options) {
         nextEnabled = true;
       }
 
+      const nextReqPerSecond = reqPerSecond ?? domain.ddos_req_per_second ?? 100;
+      const nextConnectionsPerMinute = connectionsPerMinute ?? domain.ddos_connections_per_minute ?? 60;
+      const nextBanDurationSec = banDurationSec ?? domain.ddos_ban_duration_sec ?? 3600;
+      const nextMaxConnectionsPerIp = maxConnectionsPerIp ?? domain.ddos_max_connections_per_ip ?? 50;
+
       await database.execute(
         `UPDATE domains SET
           ddos_protection_enabled     = $1,
@@ -2100,11 +2105,11 @@ export async function domainRoutes(fastify, options) {
         ]
       );
 
-      if (domain.is_active) {
         try { await proxyManager.reloadProxy(domainId); } catch (_) {}
-      }
-
-      return reply.send({ success: true, message: 'DDoS protection settings updated' });
+          nextReqPerSecond,
+          nextConnectionsPerMinute,
+          nextBanDurationSec,
+          nextMaxConnectionsPerIp,
     } catch (error) {
       fastify.log.error({ error }, 'Failed to update DDoS protection settings');
       return reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to update DDoS protection settings' });
