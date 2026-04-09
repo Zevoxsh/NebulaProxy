@@ -1644,7 +1644,7 @@ const escapeHtml = (value) => String(value ?? '')
               try {
                 const { token, answer, return: ret = '/' } = JSON.parse(body);
                 if (token && answer !== undefined && ddosProtectionService.verifyMathToken(clientIp, token, answer)) {
-                  const cookie = ddosProtectionService.generateVerifiedCookie(clientIp);
+                  const cookie = ddosProtectionService.generateVerifiedCookie(clientIp, domain.hostname);
                   res.writeHead(200, {
                     'Content-Type': 'application/json',
                     'Set-Cookie': `__ddos_bypass=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`
@@ -1667,7 +1667,7 @@ const escapeHtml = (value) => String(value ?? '')
           const bypassMatch  = cookieHeader.match(/__ddos_bypass=([^;]+)/);
           const bypassToken  = bypassMatch?.[1];
 
-          if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken)) {
+          if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken, domain.hostname)) {
             // Serve challenge page inline (no redirect)
             const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl);
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Blocked-By': 'DDoS-Challenge' });

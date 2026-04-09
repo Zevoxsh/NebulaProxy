@@ -39,20 +39,22 @@ function verifyChallengeAnswer(ip, token, userAnswer) {
 }
 
 // Bypass cookie token (set after challenge is solved, valid 1h)
-function generateChallengeToken(ip) {
+function generateChallengeToken(ip, scope = '') {
   const expires = Math.floor(Date.now() / 1000) + 3600;
-  const data    = `${ip}:${expires}`;
+  const normalizedScope = String(scope || '').toLowerCase();
+  const data    = `${ip}:${normalizedScope}:${expires}`;
   const sig     = crypto.createHmac('sha256', CHALLENGE_SECRET).update(data).digest('hex').slice(0, 16);
   return `${expires}.${sig}`;
 }
 
-function verifyChallengeToken(ip, token) {
+function verifyChallengeToken(ip, token, scope = '') {
   if (!token) return false;
   const [expiresStr, sig] = token.split('.');
   if (!expiresStr || !sig) return false;
   const expires = parseInt(expiresStr, 10);
   if (isNaN(expires) || expires < Math.floor(Date.now() / 1000)) return false;
-  const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${expires}`).digest('hex').slice(0, 16);
+  const normalizedScope = String(scope || '').toLowerCase();
+  const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${normalizedScope}:${expires}`).digest('hex').slice(0, 16);
   try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
 }
 
@@ -868,16 +870,16 @@ class ChallengeService {
 
   // ── Public wrappers ───────────────────────────────────────────────────────
 
-  verifyChallengeToken(ip, token) {
-    return verifyChallengeToken(ip, token);
+  verifyChallengeToken(ip, token, scope = '') {
+    return verifyChallengeToken(ip, token, scope);
   }
 
   verifyMathToken(ip, token, answer) {
     return verifyChallengeAnswer(ip, token, answer);
   }
 
-  generateVerifiedCookie(ip) {
-    return generateChallengeToken(ip);
+  generateVerifiedCookie(ip, scope = '') {
+    return generateChallengeToken(ip, scope);
   }
 }
 
