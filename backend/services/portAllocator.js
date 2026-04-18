@@ -8,9 +8,13 @@
 import net from 'net';
 import dgram from 'dgram';
 import { database } from './database.js';
-
-export const MIN_EXTERNAL_PORT = 1;
-export const MAX_EXTERNAL_PORT = 65535;
+import {
+  AUTOMATIC_EXTERNAL_PORT_MIN,
+  MAX_EXTERNAL_PORT,
+  MIN_EXTERNAL_PORT,
+  getRandomExternalPortCandidate,
+  isReservedExternalPort
+} from '../utils/externalPorts.js';
 
 /**
  * Check whether a port is free on the OS level (not already bound by another process).
@@ -38,15 +42,20 @@ export const isPortAvailable = (port, protocol) => new Promise((resolve) => {
  * Allocate a random available external port that is:
  * 1. Not already assigned in the database.
  * 2. Not already bound at the OS level.
+ * 3. Not in the reserved automatic allocation range.
  *
  * @param {'tcp'|'udp'} protocol
  * @returns {Promise<number>}
  */
-export async function allocateAvailablePort(protocol) {
+export async function allocateAvailablePort(protocol, options = {}) {
+  const minPort = options.minPort ?? AUTOMATIC_EXTERNAL_PORT_MIN;
+  const maxPort = options.maxPort ?? MAX_EXTERNAL_PORT;
   const maxAttempts = 100;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const candidate =
-      Math.floor(Math.random() * (MAX_EXTERNAL_PORT - MIN_EXTERNAL_PORT + 1)) + MIN_EXTERNAL_PORT;
+    const candidate = getRandomExternalPortCandidate(minPort, maxPort);
+    if (candidate < minPort || candidate > maxPort || isReservedExternalPort(candidate)) {
+      continue;
+    }
     const assigned = await database.isPortAssigned(candidate, protocol);
     if (assigned) continue;
     const available = await isPortAvailable(candidate, protocol);

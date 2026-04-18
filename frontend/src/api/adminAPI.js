@@ -32,6 +32,16 @@ export const adminAPI = {
   deleteRedirection: (id) => api.delete(`/admin/redirections/${id}`),
   toggleRedirection: (id) => api.post(`/admin/redirections/${id}/toggle`),
 
+  // Tunnel management
+  getAllTunnels: () => api.get('/tunnels'),
+  createTunnel: (data) => api.post('/tunnels', data),
+  getTunnel: (id) => api.get(`/tunnels/${id}`),
+  generateTunnelCode: (id, data) => api.post(`/tunnels/${id}/enrollment-code`, data),
+  enrollTunnel: (data) => api.post('/tunnels/enroll', data),
+  getTunnelBindings: (id) => api.get(`/tunnels/${id}/bindings`),
+  createTunnelBinding: (id, data) => api.post(`/tunnels/${id}/bindings`, data),
+  deleteTunnelBinding: (tunnelId, bindingId) => api.delete(`/tunnels/${tunnelId}/bindings/${bindingId}`),
+
   // Admin config
   getRedisConfig: () => api.get('/admin/config/redis'),
   updateRedisConfig: (data) => api.put('/admin/config/redis', data),

@@ -17,3 +17,4 @@ export { apiKeysAPI } from './apiKeysAPI';
 export { smtpProxyAPI } from './smtpProxyAPI';
 export { statusAPI } from './statusAPI';
 export { notificationAPI } from './notificationAPI';
+export { tunnelsAPI } from './tunnelsAPI';

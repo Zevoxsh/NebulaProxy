@@ -18,7 +18,8 @@ import {
   User,
   BarChart3,
   Activity,
-  Zap
+  Zap,
+  Cable
 } from 'lucide-react';
 import {
   Dialog,
@@ -132,6 +133,7 @@ export default function Layout() {
       title: 'Management',
       items: [
         { path: '/domains', icon: Globe, label: 'Domains' },
+        { path: '/tunnels', icon: Cable, label: 'Tunnels' },
         { path: '/redirections', icon: LinkIcon, label: 'Redirections' },
         { path: '/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
         { path: '/teams', icon: Users, label: 'Teams' },

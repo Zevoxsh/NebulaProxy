@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Globe, Shield, Settings, ArrowRight, Plus, Activity, Folder } from 'lucide-react';
+import { Globe, Shield, Settings, ArrowRight, Plus, Activity, Folder, Cable } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useBrandingStore } from '../store/brandingStore';
 import { domainAPI, domainGroupAPI } from '../api/client';
@@ -126,6 +126,10 @@ export default function Dashboard() {
                   <Plus className="w-5 h-5" strokeWidth={1.5} />
                   Add Your First Domain
                 </button>
+                <button onClick={() => navigate('/tunnels')} className="btn-secondary flex items-center gap-2">
+                  <Cable className="w-5 h-5" strokeWidth={1.5} />
+                  Open Tunnels
+                </button>
                 <button onClick={() => setShowQuickStart(false)} className="btn-secondary">
                   Skip Guide
                 </button>
@@ -139,6 +143,7 @@ export default function Dashboard() {
             {[
               { label: 'Domains', hint: 'Manage proxies', icon: Globe, onClick: () => navigate('/domains') },
               { label: 'Groups', hint: 'Organize domains', icon: Folder, onClick: () => navigate('/domains') },
+              { label: 'Tunnels', hint: 'Quick connect & bindings', icon: Cable, onClick: () => navigate('/tunnels') },
               { label: 'Monitoring', hint: 'Health status', icon: Activity, onClick: () => navigate('/domains') },
               { label: 'SSL', hint: 'Certificates', icon: Shield, onClick: () => navigate('/ssl-certificates') },
             ].map((item, idx) => {

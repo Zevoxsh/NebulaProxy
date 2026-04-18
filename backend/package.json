@@ -15,7 +15,8 @@
     "config:reset": "node scripts/config-manager.js reset",
     "config:export": "node scripts/config-manager.js export",
     "config:import": "node scripts/config-manager.js import",
-    "admin:reset-password": "node scripts/reset-admin-password.js"
+    "admin:reset-password": "node scripts/reset-admin-password.js",
+    "tunnel:agent": "node scripts/tunnel-agent.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",

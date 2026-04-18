@@ -24,7 +24,8 @@ import {
   User,
   Bell,
   Database,
-  Radio
+  Radio,
+  Cable
 } from 'lucide-react';
 import {
   Sheet,
@@ -200,6 +201,7 @@ export function AdminLayout() {
         { path: '/admin/domains', icon: Globe, label: 'Domains' },
         { path: '/admin/teams', icon: Shield, label: 'Teams' },
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
+        { path: '/admin/tunnels', icon: Cable, label: 'Tunnels' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
         { path: '/admin/ddos', icon: Shield, label: 'Challenge' },
         { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }

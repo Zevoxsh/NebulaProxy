@@ -37,6 +37,7 @@ import { domainGroupRoutes } from './routes/domainGroups.js';
 import { apiKeysRoutes } from './routes/apiKeys.js';
 import { updateRoutes } from './routes/updates.js';
 import { liveTrafficService } from './services/liveTrafficService.js';
+import { tunnelRoutes } from './routes/tunnels.js';
 import { notificationRoutes as userNotificationRoutes } from './routes/notifications.js';
 import { notificationPreferencesRoutes } from './routes/notificationPreferences.js';
 import urlBlockingRoutes from './routes/urlBlockingRules.js';
@@ -53,6 +54,7 @@ import NotificationService from './services/notificationService.js';
 import { urlFilterService } from './services/urlFilterService.js';
 import { logBroadcastService } from './services/logBroadcastService.js';
 import { smtpProxyService } from './services/smtpProxyService.js';
+import { tunnelRelayService } from './services/tunnelRelayService.js';
 import { apiKeyAuthMiddleware } from './middleware/apiKeyAuth.js';
 import { extractApiKeyFromHeaders } from './utils/apiKey.js';
 import { applyLogFilter } from './utils/logFilter.js';
@@ -644,6 +646,7 @@ await fastify.register(adminRoutes, { prefix: '/api/admin' });
 await fastify.register(teamRoutes, { prefix: '/api/teams' });
 await fastify.register(domainGroupRoutes, { prefix: '/api/domain-groups' });
 await fastify.register(apiKeysRoutes, { prefix: '/api/api-keys' });
+await fastify.register(tunnelRoutes, { prefix: '/api/tunnels' });
 await fastify.register(analyticsRoutes, { prefix: '/api/analytics' });
 await fastify.register(logsRoutes, { prefix: '/api/logs' });
 await fastify.register(monitoringRoutes, { prefix: '/api/monitoring' });
@@ -955,6 +958,12 @@ const start = async () => {
       if (config.logging.startupSummary) {
         logStep('Log Broadcast', 'OK', 'real-time traffic logs');
       }
+
+      await tunnelRelayService.init(fastify.server, fastify.log);
+      fastify.tunnelRelayService = tunnelRelayService;
+      if (config.logging.startupSummary) {
+        logStep('Tunnel Relay', 'OK', '/ws/tunnels/agent + tcp listeners');
+      }
     } catch (error) {
       fastify.log.error({ error }, 'Failed to initialize WebSocket/Notifications');
       if (config.logging.startupSummary) {
@@ -1080,6 +1089,11 @@ process.on('SIGTERM', async () => {
       fastify.log.info('WebSocket manager closed');
     }
 
+    if (fastify.tunnelRelayService) {
+      await fastify.tunnelRelayService.stop();
+      fastify.log.info('Tunnel relay service stopped');
+    }
+
     // Stop backup scheduler
     if (fastify.backupScheduler) {
       fastify.backupScheduler.stop();
@@ -1144,6 +1158,10 @@ process.on('SIGINT', async () => {
     // Stop WebSocket manager
     if (fastify.websocketManager) {
       fastify.websocketManager.close();
+    }
+
+    if (fastify.tunnelRelayService) {
+      await fastify.tunnelRelayService.stop();
     }
 
     // frontendServer handled by separate Docker container

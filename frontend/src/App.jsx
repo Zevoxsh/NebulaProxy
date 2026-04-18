@@ -8,6 +8,7 @@ import PasswordReset from './pages/PasswordReset';
 import Dashboard from './pages/Dashboard';
 import Domains from './pages/Domains';
 import DomainDetail from './pages/DomainDetail';
+import Tunnels from './pages/Tunnels';
 import Redirections from './pages/Redirections';
 import Teams from './pages/Teams';
 import TeamDetail from './pages/TeamDetail';
@@ -27,6 +28,7 @@ import AdminTeams from './pages/admin/AdminTeams';
 import AdminRedirections from './pages/admin/AdminRedirections';
 import AdminStats from './pages/admin/AdminStats';
 import AdminConfig from './pages/admin/AdminConfig';
+import AdminTunnels from './pages/admin/AdminTunnels';
 import AdminServices from './pages/admin/AdminServices';
 import AdminMonitoring from './pages/admin/AdminMonitoring';
 import AdminSmtp from './pages/admin/AdminSmtp';
@@ -72,6 +74,8 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/domains'], title: 'Admin Domains', description: 'Monitor and manage all domains.' },
   { patterns: ['/admin/teams'], title: 'Admin Teams', description: 'Manage all teams and team quotas.' },
   { patterns: ['/admin/redirections'], title: 'Admin Redirections', description: 'Manage all redirections across the platform.' },
+  { patterns: ['/tunnels'], title: 'Tunnels', description: 'Create tunnels, enroll agents, and manage port bindings.' },
+  { patterns: ['/admin/tunnels'], title: 'Admin Tunnels', description: 'Manage tunnel agents, bindings, and quick connect codes.' },
   { patterns: ['/admin/stats'], title: 'Admin Analytics', description: 'View platform analytics and usage stats.' },
   { patterns: ['/admin/config'], title: 'Admin Configuration', description: 'Configure global system settings.' },
   { patterns: ['/admin/services'], title: 'Admin Services', description: 'Manage backend and infrastructure services.' },
@@ -247,6 +251,7 @@ function App() {
           <Route path="/domains/:id/load-balancing" element={<DomainDetail />} />
           <Route path="/domains/:id/advanced" element={<DomainDetail />} />
           <Route path="/domains/:id/traffic" element={<DomainDetail />} />
+          <Route path="/tunnels" element={<Tunnels />} />
           <Route path="/redirections" element={<Redirections />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId/*" element={<TeamDetail />} />
@@ -273,6 +278,7 @@ function App() {
           <Route path="/admin/domains" element={<AdminDomains />} />
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/redirections" element={<AdminRedirections />} />
+          <Route path="/admin/tunnels" element={<AdminTunnels />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/config" element={<AdminConfig />} />
           <Route path="/admin/services" element={<AdminServices />} />
