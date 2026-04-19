@@ -91,6 +91,13 @@ const bootstrapPasswordChangeAllowedPaths = new Set([
   '/api/auth/verify'
 ]);
 
+const publicTunnelPaths = new Set([
+  '/api/tunnels/install.sh',
+  '/api/tunnels/install.ps1',
+  '/api/tunnels/agent-script',
+  '/api/tunnels/agent-script.js'
+]);
+
 function normalizeHost(host) {
   let value = String(host || '').trim().toLowerCase();
   if (!value) return '';
@@ -391,6 +398,12 @@ await fastify.register(fastifyStatic, {
 
 // Authentication decorator with JWT revocation check AND API key support
 fastify.decorate('authenticate', async function(request, reply) {
+  const rawPath = String(request.raw.url || '').split('?')[0];
+
+  if (publicTunnelPaths.has(rawPath)) {
+    return;
+  }
+
   // Check if request contains an API key
   const apiKey = extractApiKeyFromHeaders(request.headers);
 
