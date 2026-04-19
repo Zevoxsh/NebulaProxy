@@ -16,6 +16,8 @@ import {
   isReservedExternalPort
 } from '../utils/externalPorts.js';
 
+export { MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT };
+
 /**
  * Check whether a port is free on the OS level (not already bound by another process).
  * @param {number} port
