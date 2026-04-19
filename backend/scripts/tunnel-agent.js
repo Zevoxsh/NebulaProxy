@@ -4,6 +4,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import WebSocket from 'ws';
 
 const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.nebula-tunnel-agent.json');
 
@@ -203,22 +204,22 @@ async function runAgent(options) {
 
   while (!stopRequested) {
     await new Promise((resolve) => {
-      currentWs = createWebSocketClient(wsUrl);
+      currentWs = new WebSocket(wsUrl);
 
-      currentWs.addEventListener('open', () => {
+      currentWs.on('open', () => {
         process.stdout.write(`[tunnel-agent] relay connected to ${apiBase}\n`);
       });
 
-      currentWs.addEventListener('message', (event) => {
-        onMessage(event.data);
+      currentWs.on('message', (data) => {
+        onMessage(data);
       });
 
-      currentWs.addEventListener('close', () => {
+      currentWs.on('close', () => {
         closeAllSockets();
         resolve();
       });
 
-      currentWs.addEventListener('error', (event) => {
+      currentWs.on('error', (event) => {
         const message = event?.error?.message || event?.message || 'websocket error';
         process.stderr.write(`[tunnel-agent] websocket error: ${message}\n`);
       });

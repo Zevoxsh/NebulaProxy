@@ -655,7 +655,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                 <p className="mt-2 text-sm text-admin-text-muted">
                   {onlineAgents.length > 0
                     ? 'An agent is already online. Use the same installer again only on the same host; it will reuse the existing config.'
-                    : 'No agent is online yet. Generate a code to enroll a new host.'}
+                    : 'No agent is online yet. If you just restarted it, wait a few seconds for the heartbeat to arrive.'}
                 </p>
               </div>
               <AdminButton onClick={handleGenerateCode} disabled={saving} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500">
