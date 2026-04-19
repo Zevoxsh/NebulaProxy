@@ -20,6 +20,7 @@ docs/
 
 # Scripts not needed at runtime
 scripts/
+!scripts/tunnel-agent.js
 
 # IDE files
 .vscode/

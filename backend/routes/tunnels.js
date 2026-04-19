@@ -11,7 +11,24 @@ const sha256 = (value) => crypto.createHash('sha256').update(String(value)).dige
 const randomCode = (bytes = 16) => crypto.randomBytes(bytes).toString('hex');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const agentScriptPath = path.join(__dirname, '..', 'scripts', 'tunnel-agent.js');
+const agentScriptCandidates = [
+  path.join(__dirname, '..', 'scripts', 'tunnel-agent.js'),
+  '/repo/backend/scripts/tunnel-agent.js'
+];
+
+async function readAgentScriptContent() {
+  for (const candidatePath of agentScriptCandidates) {
+    try {
+      if (fs.existsSync(candidatePath)) {
+        return await fs.promises.readFile(candidatePath, 'utf8');
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error(`Tunnel agent script not found. Checked: ${agentScriptCandidates.join(', ')}`);
+}
 
 async function canAccessTunnel(tunnel, userId, isAdmin) {
   if (isAdmin) return true;
@@ -259,7 +276,7 @@ export async function tunnelRoutes(fastify, options) {
 
   const sendAgentScript = async (request, reply) => {
     try {
-      const content = await fs.promises.readFile(agentScriptPath, 'utf8');
+      const content = await readAgentScriptContent();
       reply.type('application/javascript; charset=utf-8').send(content);
     } catch (error) {
       fastify.log.error({ error }, 'Failed to fetch tunnel agent script');
