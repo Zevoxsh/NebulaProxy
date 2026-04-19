@@ -97,7 +97,11 @@ LOG_FILE="$INSTALL_DIR/agent.log"
 mkdir -p "$INSTALL_DIR"
 curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
 
-node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
+if [ -s "$CONFIG_FILE" ]; then
+  echo "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
+else
+  node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
+fi
 
 if command -v nohup >/dev/null 2>&1; then
   nohup node "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
@@ -132,7 +136,11 @@ $LogFile = Join-Path $InstallDir "agent.log"
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
 Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
 
-node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
+if ((Test-Path $ConfigFile -PathType Leaf) -and ((Get-Item $ConfigFile).Length -gt 0)) {
+  Write-Host "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
+} else {
+  node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
+}
 
 $process = Start-Process -FilePath node -ArgumentList @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile) -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
 Write-Host "[nebula-tunnel] Agent démarré. PID: $($process.Id)"

@@ -648,19 +648,19 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
       {currentSection === 'install' && (
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <SectionPanel title="Enrollment" description="Generate a code to install another agent." icon={KeyRound}>
+          <SectionPanel title="Install or restart" description="Generate a code for a new host. If the machine already has a local config, rerunning the installer will reuse it instead of creating a new agent." icon={KeyRound}>
             <div className="space-y-4">
               <div className="rounded-3xl border border-admin-border bg-admin-surface2 p-4">
                 <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Status</div>
                 <p className="mt-2 text-sm text-admin-text-muted">
                   {onlineAgents.length > 0
-                    ? 'An agent is already online. You can still generate a new code if you need another machine.'
-                    : 'No agent is online yet. Generate a code to enroll a host.'}
+                    ? 'An agent is already online. Use the same installer again only on the same host; it will reuse the existing config.'
+                    : 'No agent is online yet. Generate a code to enroll a new host.'}
                 </p>
               </div>
               <AdminButton onClick={handleGenerateCode} disabled={saving} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
-                Generate code
+                Generate code for a new host
               </AdminButton>
               <div className="rounded-3xl border border-admin-border bg-admin-surface2 p-4">
                 <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Enrollment code</div>
