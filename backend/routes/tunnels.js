@@ -76,7 +76,7 @@ CONFIG_FILE="$INSTALL_DIR/agent-config.json"
 LOG_FILE="$INSTALL_DIR/agent.log"
 
 mkdir -p "$INSTALL_DIR"
-curl -fsSL "$API_BASE/api/tunnels/agent-script.js" -o "$AGENT_FILE"
+curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
 
 node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
 
@@ -111,7 +111,7 @@ $ConfigFile = Join-Path $InstallDir "agent-config.json"
 $LogFile = Join-Path $InstallDir "agent.log"
 
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
-Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script.js" -OutFile $AgentFile
+Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
 
 node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
 
@@ -256,7 +256,7 @@ export async function tunnelRoutes(fastify, options) {
     }
   });
 
-  fastify.get('/agent-script.js', async (request, reply) => {
+  const sendAgentScript = async (request, reply) => {
     try {
       const content = await fs.promises.readFile(agentScriptPath, 'utf8');
       reply.type('application/javascript; charset=utf-8').send(content);
@@ -264,7 +264,12 @@ export async function tunnelRoutes(fastify, options) {
       fastify.log.error({ error }, 'Failed to fetch tunnel agent script');
       reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch agent script' });
     }
-  });
+  };
+
+  // Prefer extensionless path to avoid frontend nginx static .js routing conflicts.
+  fastify.get('/agent-script', sendAgentScript);
+  // Backward compatible endpoint for older installers.
+  fastify.get('/agent-script.js', sendAgentScript);
 
   fastify.get('/install.sh', {
     schema: {
