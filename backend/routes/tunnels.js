@@ -34,10 +34,11 @@ function buildPublicHostname(tunnel, protocol) {
 }
 
 function getPublicBaseUrl(request) {
-  const forwardedProto = String(request.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  const forwardedHost = String(request.headers['x-forwarded-host'] || '').split(',')[0].trim();
-  const protocol = forwardedProto || request.protocol || (request.socket?.encrypted ? 'https' : 'http');
-  const host = forwardedHost || request.headers.host || `127.0.0.1:${config.port}`;
+  const headers = request?.headers || {};
+  const forwardedProto = String(headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const forwardedHost = String(headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || (request?.socket?.encrypted ? 'https' : 'http');
+  const host = forwardedHost || String(headers.host || '').trim() || `127.0.0.1:${config.port}`;
   return `${protocol}://${host}`;
 }
 
@@ -283,10 +284,20 @@ export async function tunnelRoutes(fastify, options) {
       }
     }
   }, async (request, reply) => {
-    const baseUrl = getPublicBaseUrl(request);
-    const code = String(request.query.code || '').trim();
-    const script = buildLinuxInstallerScript({ baseUrl, code });
-    reply.type('text/x-shellscript; charset=utf-8').send(script);
+    try {
+      const baseUrl = getPublicBaseUrl(request);
+      const code = String(request.query.code || '').trim();
+      const script = buildLinuxInstallerScript({ baseUrl, code });
+      reply.type('text/x-shellscript; charset=utf-8').send(script);
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to generate Linux tunnel installer');
+      const headers = request?.headers || {};
+      const host = String(headers['x-forwarded-host'] || headers.host || `127.0.0.1:${config.port}`).trim();
+      const protocol = String(headers['x-forwarded-proto'] || (request?.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim() || 'http';
+      const fallbackBaseUrl = `${protocol}://${host}`;
+      const code = String(request?.query?.code || '').trim();
+      reply.type('text/x-shellscript; charset=utf-8').send(buildLinuxInstallerScript({ baseUrl: fallbackBaseUrl, code }));
+    }
   });
 
   fastify.get('/install.ps1', {
@@ -301,10 +312,20 @@ export async function tunnelRoutes(fastify, options) {
       }
     }
   }, async (request, reply) => {
-    const baseUrl = getPublicBaseUrl(request);
-    const code = String(request.query.code || '').trim();
-    const script = buildWindowsInstallerScript({ baseUrl, code });
-    reply.type('text/plain; charset=utf-8').send(script);
+    try {
+      const baseUrl = getPublicBaseUrl(request);
+      const code = String(request.query.code || '').trim();
+      const script = buildWindowsInstallerScript({ baseUrl, code });
+      reply.type('text/plain; charset=utf-8').send(script);
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to generate Windows tunnel installer');
+      const headers = request?.headers || {};
+      const host = String(headers['x-forwarded-host'] || headers.host || `127.0.0.1:${config.port}`).trim();
+      const protocol = String(headers['x-forwarded-proto'] || (request?.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim() || 'http';
+      const fallbackBaseUrl = `${protocol}://${host}`;
+      const code = String(request?.query?.code || '').trim();
+      reply.type('text/plain; charset=utf-8').send(buildWindowsInstallerScript({ baseUrl: fallbackBaseUrl, code }));
+    }
   });
 
   fastify.post('/enroll', {
