@@ -16,6 +16,7 @@
     "config:export": "node scripts/config-manager.js export",
     "config:import": "node scripts/config-manager.js import",
     "admin:reset-password": "node scripts/reset-admin-password.js",
+    "admin:disable-2fa": "node scripts/disable-user-2fa.js",
     "tunnel:agent": "node scripts/tunnel-agent.js"
   },
   "dependencies": {
