@@ -97,7 +97,18 @@ LOG_FILE="$INSTALL_DIR/agent.log"
 mkdir -p "$INSTALL_DIR"
 curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
 
+PREVIEW_JSON="$(curl -fsSL "$API_BASE/api/tunnels/enrollment-code/preview?code=$ENROLL_CODE" 2>/dev/null || true)"
+PREVIEW_TUNNEL_ID=""
+if [ -n "$PREVIEW_JSON" ]; then
+  PREVIEW_TUNNEL_ID="$(printf '%s' "$PREVIEW_JSON" | node -e 'const fs=require("fs"); let data=""; process.stdin.on("data", chunk => data += chunk).on("end", () => { try { const json = JSON.parse(data); process.stdout.write(String(json.tunnel?.id || "")); } catch { process.stdout.write(""); } });')"
+fi
+
+EXISTING_TUNNEL_ID=""
 if [ -s "$CONFIG_FILE" ]; then
+  EXISTING_TUNNEL_ID="$(cat "$CONFIG_FILE" | node -e 'const fs=require("fs"); let data=""; process.stdin.on("data", chunk => data += chunk).on("end", () => { try { const json = JSON.parse(data); process.stdout.write(String(json.tunnelId || "")); } catch { process.stdout.write(""); } });')"
+fi
+
+if [ -n "$PREVIEW_TUNNEL_ID" ] && [ -n "$EXISTING_TUNNEL_ID" ] && [ "$EXISTING_TUNNEL_ID" = "$PREVIEW_TUNNEL_ID" ]; then
   echo "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
 else
   node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
@@ -136,7 +147,32 @@ $LogFile = Join-Path $InstallDir "agent.log"
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
 Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
 
+$PreviewJson = ''
+try {
+  $PreviewJson = (Invoke-WebRequest -Uri "$ApiBase/api/tunnels/enrollment-code/preview?code=$EnrollCode" -UseBasicParsing).Content
+} catch {
+  $PreviewJson = ''
+}
+
+$PreviewTunnelId = ''
+if ($PreviewJson) {
+  try {
+    $PreviewTunnelId = ((($PreviewJson | ConvertFrom-Json).tunnel).id).ToString()
+  } catch {
+    $PreviewTunnelId = ''
+  }
+}
+
+$ExistingTunnelId = ''
 if ((Test-Path $ConfigFile -PathType Leaf) -and ((Get-Item $ConfigFile).Length -gt 0)) {
+  try {
+    $ExistingTunnelId = ((Get-Content $ConfigFile -Raw | ConvertFrom-Json).tunnelId).ToString()
+  } catch {
+    $ExistingTunnelId = ''
+  }
+}
+
+if ($PreviewTunnelId -and $ExistingTunnelId -and $ExistingTunnelId -eq $PreviewTunnelId) {
   Write-Host "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
 } else {
   node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
@@ -437,6 +473,41 @@ export async function tunnelRoutes(fastify, options) {
     } catch (error) {
       fastify.log.error({ error }, 'Failed to enroll tunnel agent');
       reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to enroll tunnel agent' });
+    }
+  });
+
+  fastify.get('/enrollment-code/preview', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: { type: 'string', minLength: 16, maxLength: 128 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const code = String(request.query.code || '').trim();
+      const tunnel = await database.getTunnelByEnrollmentCodeHash(sha256(code));
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Enrollment code is invalid or expired' });
+      }
+
+      reply.send({
+        success: true,
+        tunnel: {
+          id: tunnel.id,
+          name: tunnel.name,
+          public_domain: tunnel.public_domain,
+          status: tunnel.status
+        }
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to preview tunnel enrollment code');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to preview enrollment code' });
     }
   });
 

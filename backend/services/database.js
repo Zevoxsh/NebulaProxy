@@ -652,6 +652,17 @@ class DatabaseService {
     return this.getTunnelById(tunnel.id);
   }
 
+  async getTunnelByEnrollmentCodeHash(codeHash) {
+    return this.queryOne(`
+      SELECT *
+      FROM tunnels
+      WHERE enrollment_code_hash = ?
+        AND enrollment_code_expires_at IS NOT NULL
+        AND enrollment_code_expires_at > CURRENT_TIMESTAMP
+      LIMIT 1
+    `, [codeHash]);
+  }
+
   async createTunnelAgent(data) {
     const {
       tunnelId,
@@ -843,9 +854,9 @@ class DatabaseService {
                 SELECT 
                   id, user_id, team_id, hostname, backend_url, backend_port,
                   proxy_type, external_port, ssl_enabled, ssl_status,
-                  ssl_cert_path, ssl_key_path, ssl_expires_at,
-                  is_active, created_at, updated_at
-                FROM domains 
+                  AND enrollment_code_expires_at IS NOT NULL
+                  AND enrollment_code_expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
                 WHERE id = ? AND is_active = TRUE
               `, [id]);
               
@@ -862,6 +873,17 @@ class DatabaseService {
           return recoveredDomains;
         } catch (recoveryError) {
           console.error('[Database] Domain recovery failed:', recoveryError);
+
+            async getTunnelByEnrollmentCodeHash(codeHash) {
+              return this.queryOne(`
+                SELECT *
+                FROM tunnels
+                WHERE enrollment_code_hash = ?
+                  AND enrollment_code_expires_at IS NOT NULL
+                  AND enrollment_code_expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
+              `, [codeHash]);
+            }
           return []; // Return empty array to allow server to start
         }
       }
