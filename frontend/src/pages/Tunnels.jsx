@@ -764,12 +764,15 @@ export default function Tunnels({ mode = 'client' }) {
 
               <div className="space-y-2 md:col-span-2">
                 <Label className="text-white/70">Agent</Label>
-                <Select value={bindingForm.agentId} onValueChange={(value) => setBindingForm((current) => ({ ...current, agentId: value }))}>
+                <Select
+                  value={bindingForm.agentId || 'auto'}
+                  onValueChange={(value) => setBindingForm((current) => ({ ...current, agentId: value === 'auto' ? '' : value }))}
+                >
                   <SelectTrigger className="border-white/10 bg-white/[0.03] text-white">
                     <SelectValue placeholder={hasOnlineAgent ? 'Online agent selected automatically' : 'Select an agent (optional)'} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Auto-select</SelectItem>
+                    <SelectItem value="auto">Auto-select</SelectItem>
                     {(selectedTunnel?.agents || []).map((agent) => (
                       <SelectItem key={agent.id} value={String(agent.id)}>
                         {agent.name} · {agent.status}
