@@ -853,11 +853,9 @@ class DatabaseService {
               const domain = await this.queryOne(`
                 SELECT 
                   id, user_id, team_id, hostname, backend_url, backend_port,
-                  proxy_type, external_port, ssl_enabled, ssl_status,
-                  AND enrollment_code_expires_at IS NOT NULL
-                  AND enrollment_code_expires_at > CURRENT_TIMESTAMP
-                LIMIT 1
+                  proxy_type, external_port, ssl_enabled, ssl_status
                 WHERE id = ? AND is_active = TRUE
+                LIMIT 1
               `, [id]);
               
               if (domain) {
@@ -873,17 +871,6 @@ class DatabaseService {
           return recoveredDomains;
         } catch (recoveryError) {
           console.error('[Database] Domain recovery failed:', recoveryError);
-
-            async getTunnelByEnrollmentCodeHash(codeHash) {
-              return this.queryOne(`
-                SELECT *
-                FROM tunnels
-                WHERE enrollment_code_hash = ?
-                  AND enrollment_code_expires_at IS NOT NULL
-                  AND enrollment_code_expires_at > CURRENT_TIMESTAMP
-                LIMIT 1
-              `, [codeHash]);
-            }
           return []; // Return empty array to allow server to start
         }
       }
