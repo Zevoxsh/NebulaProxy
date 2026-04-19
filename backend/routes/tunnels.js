@@ -209,6 +209,40 @@ export async function tunnelRoutes(fastify, options) {
     }
   });
 
+  fastify.delete('/:id', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to delete this tunnel' });
+      }
+
+      await database.deleteTunnel(tunnelId);
+      await tunnelRelayService.reloadBindings();
+
+      await database.createAuditLog({
+        userId: request.user.id,
+        action: 'tunnel_deleted',
+        entityType: 'tunnel',
+        entityId: tunnelId,
+        details: { name: tunnel.name, provider: tunnel.provider, public_domain: tunnel.public_domain },
+        ipAddress: request.ip
+      });
+
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to delete tunnel');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to delete tunnel' });
+    }
+  });
+
   fastify.get('/:id', {
     preHandler: fastify.authenticate
   }, async (request, reply) => {

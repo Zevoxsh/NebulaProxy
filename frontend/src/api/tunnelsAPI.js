@@ -4,6 +4,7 @@ export const tunnelsAPI = {
   getAll: () => api.get('/tunnels'),
   create: (data) => api.post('/tunnels', data),
   getOne: (id) => api.get(`/tunnels/${id}`),
+  delete: (id) => api.delete(`/tunnels/${id}`),
   generateCode: (id, data) => api.post(`/tunnels/${id}/enrollment-code`, data),
   enroll: (data) => api.post('/tunnels/enroll', data),
   getBindings: (id) => api.get(`/tunnels/${id}/bindings`),

@@ -48,29 +48,29 @@ export default function TunnelCreate({ mode = 'client' }) {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl pb-10">
+    <div data-admin-theme className="space-y-6 max-w-4xl pb-10">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-white/35">Tunnels</p>
-          <h1 className="mt-1 text-3xl font-semibold text-white">Create tunnel</h1>
+          <p className="text-xs uppercase tracking-[0.22em] text-admin-text-muted">Tunnels</p>
+          <h1 className="mt-1 text-3xl font-semibold text-admin-text">Create tunnel</h1>
         </div>
-        <AdminButton variant="secondary" onClick={() => navigate(basePath)} className="border-white/10 bg-white/[0.03] text-white hover:bg-white/[0.06]">
+        <AdminButton variant="secondary" onClick={() => navigate(basePath)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </AdminButton>
       </div>
 
       {error && (
-        <AdminAlert variant="destructive" className="border-red-500/20 bg-red-500/10 text-red-100">
+        <AdminAlert variant="destructive">
           <AdminAlertTitle>Error</AdminAlertTitle>
           <AdminAlertDescription>{error}</AdminAlertDescription>
         </AdminAlert>
       )}
 
-      <AdminCard className="rounded-[1.75rem] border-white/10 bg-slate-950/70 shadow-[0_24px_70px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-        <AdminCardHeader className="border-b border-white/10 bg-white/[0.02]">
-          <AdminCardTitle className="flex items-center gap-2 text-white">
-            <Plus className="h-4 w-4 text-cyan-300" />
+      <AdminCard>
+        <AdminCardHeader>
+          <AdminCardTitle className="flex items-center gap-2">
+            <Plus className="h-4 w-4 text-admin-primary" />
             New tunnel
           </AdminCardTitle>
         </AdminCardHeader>
@@ -78,27 +78,27 @@ export default function TunnelCreate({ mode = 'client' }) {
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-white/70">Name</Label>
+                <Label className="text-admin-text-muted">Name</Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
                   placeholder="workstation-01"
-                  className="border-white/10 bg-white/[0.03] text-white placeholder:text-white/30"
+                  className="border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-white/70">Description</Label>
+                <Label className="text-admin-text-muted">Description</Label>
                 <Textarea
                   value={form.description}
                   onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
                   placeholder="Linux host behind NAT"
-                  className="min-h-28 border-white/10 bg-white/[0.03] text-white placeholder:text-white/30"
+                  className="min-h-28 border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-white/70">Provider</Label>
+                <Label className="text-admin-text-muted">Provider</Label>
                 <Select value={form.provider} onValueChange={(value) => setForm((current) => ({ ...current, provider: value }))}>
-                  <SelectTrigger className="border-white/10 bg-white/[0.03] text-white">
+                  <SelectTrigger className="border-admin-border bg-admin-surface2 text-admin-text">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -108,17 +108,17 @@ export default function TunnelCreate({ mode = 'client' }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-white/70">Public domain (optional)</Label>
+                <Label className="text-admin-text-muted">Public domain (optional)</Label>
                 <Input
                   value={form.publicDomain}
                   onChange={(e) => setForm((current) => ({ ...current, publicDomain: e.target.value }))}
                   placeholder="tunnel.example.com"
-                  className="border-white/10 bg-white/[0.03] text-white placeholder:text-white/30"
+                  className="border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
             </div>
 
-            <AdminButton type="submit" disabled={saving} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500">
+            <AdminButton type="submit" disabled={saving} className="w-full">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
               Create tunnel
             </AdminButton>

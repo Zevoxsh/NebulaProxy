@@ -517,6 +517,10 @@ class DatabaseService {
     `, [userId, teamId, name, description, provider, publicDomain]);
   }
 
+  async deleteTunnel(tunnelId) {
+    await this.execute('DELETE FROM tunnels WHERE id = ?', [tunnelId]);
+  }
+
   async getTunnelById(tunnelId) {
     return this.queryOne('SELECT * FROM tunnels WHERE id = ?', [tunnelId]);
   }
