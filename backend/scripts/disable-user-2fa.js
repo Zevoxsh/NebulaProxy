@@ -24,6 +24,16 @@ function readPgSecret() {
   }
 }
 
+function readRedisSecret() {
+  const secretFile = process.env.REDIS_SECRET_FILE || '/run/redis-secret/redis.secret';
+  try {
+    const value = fs.readFileSync(secretFile, 'utf-8').trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
 if (!identifier) {
   console.error('Usage: node scripts/disable-user-2fa.js <username-or-email>');
   process.exit(1);
@@ -32,7 +42,7 @@ if (!identifier) {
 async function readDbConfigFromRedis() {
   const redisHost = process.env.REDIS_HOST || '127.0.0.1';
   const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
-  const redisPassword = process.env.REDIS_PASSWORD || undefined;
+  const redisPassword = process.env.REDIS_PASSWORD || readRedisSecret() || undefined;
   const redisDb = parseInt(process.env.REDIS_DB || '0', 10);
 
   const redis = new Redis({
@@ -42,6 +52,9 @@ async function readDbConfigFromRedis() {
     db: redisDb,
     lazyConnect: true,
     maxRetriesPerRequest: 1,
+  });
+  redis.on('error', () => {
+    // Keep script output clean; we handle Redis fallback explicitly below.
   });
 
   try {
