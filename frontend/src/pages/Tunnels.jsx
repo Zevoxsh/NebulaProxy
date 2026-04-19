@@ -19,7 +19,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 
 function AccessUrl({ url }) {
-  return <code className="rounded-md bg-admin-bg-secondary px-2 py-1 text-xs text-admin-text break-all">{url}</code>;
+  return (
+    <code className="rounded-lg border border-admin-border bg-admin-bg-secondary/70 px-2.5 py-1.5 text-xs text-admin-text break-all shadow-sm">
+      {url}
+    </code>
+  );
 }
 
 export default function Tunnels({ mode = 'client' }) {
@@ -42,6 +46,11 @@ export default function Tunnels({ mode = 'client' }) {
   const selectedTunnel = useMemo(
     () => tunnels.find((tunnel) => String(tunnel.id) === String(selectedTunnelId)) || tunnels[0] || null,
     [tunnels, selectedTunnelId]
+  );
+
+  const totalBindings = useMemo(
+    () => tunnels.reduce((acc, tunnel) => acc + (tunnel.bindings?.length || 0), 0),
+    [tunnels]
   );
 
   const refresh = async () => {
@@ -196,20 +205,35 @@ export default function Tunnels({ mode = 'client' }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-semibold text-admin-text">Tunnels</h1>
-          <p className="text-admin-text-muted mt-1">
-            {mode === 'admin'
-              ? 'Administration des tunnels, accès partagés et quick connect.'
-              : 'Quick connect, agents, port bindings, and shared access.'}
-          </p>
+    <div className="space-y-6 max-w-[1600px]">
+      <div className="relative overflow-hidden rounded-2xl border border-admin-border bg-admin-surface p-5 md:p-6">
+        <div className="pointer-events-none absolute -top-24 -right-16 h-56 w-56 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 left-24 h-56 w-56 rounded-full bg-amber-500/10 blur-3xl" />
+        <div className="relative flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-admin-text">Tunnels</h1>
+            <p className="text-admin-text-muted mt-1.5 max-w-2xl">
+              {mode === 'admin'
+                ? 'Administration centralisée des agents, quick connect et accès partagés.'
+                : 'Gère tes agents, ouvre des ports publics et partage des accès en quelques clics.'}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full border border-admin-border bg-admin-bg-secondary px-3 py-1 text-admin-text">
+                {tunnels.length} tunnel(s)
+              </span>
+              <span className="rounded-full border border-admin-border bg-admin-bg-secondary px-3 py-1 text-admin-text">
+                {totalBindings} binding(s)
+              </span>
+              <span className="rounded-full border border-admin-border bg-admin-bg-secondary px-3 py-1 text-admin-text">
+                {selectedTunnel ? `Actif: ${selectedTunnel.name}` : 'Aucun tunnel sélectionné'}
+              </span>
+            </div>
+          </div>
+          <AdminButton variant="secondary" onClick={refresh} className="shadow-sm">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </AdminButton>
         </div>
-        <AdminButton variant="secondary" onClick={refresh}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
-        </AdminButton>
       </div>
 
       {error && (
@@ -220,7 +244,7 @@ export default function Tunnels({ mode = 'client' }) {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <AdminCard>
+        <AdminCard className="rounded-2xl shadow-sm">
           <AdminCardHeader>
             <AdminCardTitle>Create Tunnel</AdminCardTitle>
           </AdminCardHeader>
@@ -253,7 +277,7 @@ export default function Tunnels({ mode = 'client' }) {
         </AdminCard>
 
         <div className="space-y-6">
-          <AdminCard>
+          <AdminCard className="rounded-2xl shadow-sm">
             <AdminCardHeader>
               <AdminCardTitle>Existing Tunnels</AdminCardTitle>
             </AdminCardHeader>
@@ -274,17 +298,17 @@ export default function Tunnels({ mode = 'client' }) {
                   {selectedTunnel && (
                     <div className="space-y-4 pt-2">
                       <div className="grid gap-3 md:grid-cols-3 text-sm">
-                        <div className="rounded-lg border border-admin-border p-3">
-                          <div className="text-admin-text-muted">Status</div>
-                          <div className="font-medium text-admin-text">{selectedTunnel.status}</div>
+                        <div className="rounded-xl border border-admin-border bg-admin-bg-secondary/40 p-3">
+                          <div className="text-admin-text-muted text-xs uppercase tracking-wide">Status</div>
+                          <div className="font-medium text-admin-text mt-1">{selectedTunnel.status}</div>
                         </div>
-                        <div className="rounded-lg border border-admin-border p-3">
-                          <div className="text-admin-text-muted">Provider</div>
-                          <div className="font-medium text-admin-text">{selectedTunnel.provider}</div>
+                        <div className="rounded-xl border border-admin-border bg-admin-bg-secondary/40 p-3">
+                          <div className="text-admin-text-muted text-xs uppercase tracking-wide">Provider</div>
+                          <div className="font-medium text-admin-text mt-1">{selectedTunnel.provider}</div>
                         </div>
-                        <div className="rounded-lg border border-admin-border p-3">
-                          <div className="text-admin-text-muted">Domain</div>
-                          <div className="font-medium text-admin-text break-all">{selectedTunnel.public_domain}</div>
+                        <div className="rounded-xl border border-admin-border bg-admin-bg-secondary/40 p-3">
+                          <div className="text-admin-text-muted text-xs uppercase tracking-wide">Domain</div>
+                          <div className="font-medium text-admin-text break-all mt-1">{selectedTunnel.public_domain}</div>
                         </div>
                       </div>
 
@@ -297,8 +321,8 @@ export default function Tunnels({ mode = 'client' }) {
                       </div>
 
                       {enrollmentCode && (
-                        <div className="rounded-lg border border-admin-border bg-admin-bg-secondary p-3 text-sm space-y-2">
-                          <div className="text-admin-text-muted">Enrollment code</div>
+                        <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-transparent p-4 text-sm space-y-2">
+                          <div className="text-admin-text-muted text-xs uppercase tracking-wide">Enrollment code</div>
                           <code className="block break-all text-admin-text">{enrollmentCode}</code>
                           <div className="text-xs text-admin-text-muted">Expires: {enrollmentExpiresAt}</div>
                           <div className="text-xs text-admin-text-muted">Cette commande est liée a ce tunnel et donc au compte proprietaire du tunnel.</div>
@@ -329,10 +353,10 @@ export default function Tunnels({ mode = 'client' }) {
                         </div>
                       )}
 
-                      <div className="rounded-lg border border-admin-border p-3 space-y-2">
+                      <div className="rounded-xl border border-admin-border bg-admin-bg-secondary/30 p-3.5 space-y-2">
                         <div className="flex items-center gap-2 text-admin-text font-medium"><Server className="w-4 h-4" />Access URLs</div>
                         {selectedTunnel.bindings?.length ? selectedTunnel.bindings.map((binding) => (
-                          <div key={binding.id} className="flex items-center justify-between gap-3 text-sm">
+                          <div key={binding.id} className="flex items-center justify-between gap-3 text-sm rounded-lg border border-admin-border/70 bg-admin-surface/60 p-2.5">
                             <div className="min-w-0">
                               <div className="text-admin-text">{binding.label}</div>
                               <div className="text-admin-text-muted">{binding.protocol.toUpperCase()} {binding.local_port} → {binding.target_host}</div>
@@ -348,12 +372,12 @@ export default function Tunnels({ mode = 'client' }) {
                       </div>
 
                       {(mode === 'admin' || String(selectedTunnel.user_id) === String(user?.id)) && (
-                        <div className="rounded-lg border border-admin-border p-3 space-y-3">
+                        <div className="rounded-xl border border-admin-border bg-admin-bg-secondary/30 p-3.5 space-y-3">
                           <div className="text-admin-text font-medium">Shared access</div>
                           {selectedTunnel.access?.length ? (
                             <div className="space-y-2">
                               {selectedTunnel.access.map((access) => (
-                                <div key={access.id} className="flex items-center justify-between gap-3 text-sm">
+                                <div key={access.id} className="flex items-center justify-between gap-3 text-sm rounded-lg border border-admin-border/70 bg-admin-surface/60 p-2.5">
                                   <div>
                                     <div className="text-admin-text">{access.display_name || access.username || access.email}</div>
                                     <div className="text-admin-text-muted">Role: {access.role}</div>
@@ -395,7 +419,7 @@ export default function Tunnels({ mode = 'client' }) {
             </AdminCardContent>
           </AdminCard>
 
-          <AdminCard>
+          <AdminCard className="rounded-2xl shadow-sm">
             <AdminCardHeader>
               <AdminCardTitle>Add Port Binding</AdminCardTitle>
             </AdminCardHeader>
