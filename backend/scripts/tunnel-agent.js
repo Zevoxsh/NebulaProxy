@@ -4,7 +4,12 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import WebSocket from 'ws';
+
+const WebSocketCtor = globalThis.WebSocket;
+
+if (!WebSocketCtor) {
+  throw new Error('WebSocket is not available in this Node.js runtime. Use Node.js 18.17+ or install a runtime with built-in WebSocket support.');
+}
 
 const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.nebula-tunnel-agent.json');
 
@@ -94,6 +99,8 @@ async function runAgent(options) {
   const sockets = new Map();
   let stopRequested = false;
   let currentWs = null;
+  const OPEN = WebSocketCtor.OPEN ?? 1;
+  const CONNECTING = WebSocketCtor.CONNECTING ?? 0;
 
   const closeSocket = (connId) => {
     const socket = sockets.get(connId);
@@ -111,7 +118,7 @@ async function runAgent(options) {
   };
 
   const sendJson = (payload) => {
-    if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return;
+    if (!currentWs || currentWs.readyState !== OPEN) return;
     currentWs.send(JSON.stringify(payload));
   };
 
@@ -179,7 +186,7 @@ async function runAgent(options) {
 
   const shutdown = () => {
     stopRequested = true;
-    if (currentWs && (currentWs.readyState === WebSocket.OPEN || currentWs.readyState === WebSocket.CONNECTING)) {
+    if (currentWs && (currentWs.readyState === OPEN || currentWs.readyState === CONNECTING)) {
       currentWs.close(1000, 'Agent shutdown');
     }
     closeAllSockets();
@@ -197,21 +204,24 @@ async function runAgent(options) {
 
   while (!stopRequested) {
     await new Promise((resolve) => {
-      currentWs = new WebSocket(wsUrl);
+      currentWs = new WebSocketCtor(wsUrl);
 
-      currentWs.on('open', () => {
+      currentWs.addEventListener('open', () => {
         process.stdout.write(`[tunnel-agent] relay connected to ${apiBase}\n`);
       });
 
-      currentWs.on('message', onMessage);
+      currentWs.addEventListener('message', (event) => {
+        onMessage(event.data);
+      });
 
-      currentWs.on('close', () => {
+      currentWs.addEventListener('close', () => {
         closeAllSockets();
         resolve();
       });
 
-      currentWs.on('error', (error) => {
-        process.stderr.write(`[tunnel-agent] websocket error: ${error.message}\n`);
+      currentWs.addEventListener('error', (event) => {
+        const message = event?.error?.message || event?.message || 'websocket error';
+        process.stderr.write(`[tunnel-agent] websocket error: ${message}\n`);
       });
     });
 
