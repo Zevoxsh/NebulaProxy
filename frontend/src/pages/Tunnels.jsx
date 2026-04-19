@@ -28,6 +28,12 @@ function TunnelStatus({ tunnel }) {
   );
 }
 
+function getTunnelHostnamePreview(tunnel) {
+  const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
+  const publicDomain = tunnel.public_domain || 'tunnel.nebula-app.dev';
+  return `tcp.${publicSlug}.${publicDomain}`;
+}
+
 export default function Tunnels({ mode = 'client' }) {
   const navigate = useNavigate();
   const basePath = mode === 'admin' ? '/admin/tunnels' : '/tunnels';
@@ -158,8 +164,8 @@ export default function Tunnels({ mode = 'client' }) {
 
                   <div className="flex items-center gap-4">
                     <div className="hidden text-right md:block">
-                      <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Domain</div>
-                      <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-admin-text">{tunnel.public_domain}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Hostname</div>
+                      <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-admin-text">{getTunnelHostnamePreview(tunnel)}</div>
                     </div>
                     <div className="rounded-lg border border-admin-border bg-admin-surface2 p-3 text-admin-text-muted transition-all group-hover:bg-admin-surface">
                       <ChevronRight className="h-5 w-5" />

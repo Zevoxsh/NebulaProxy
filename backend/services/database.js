@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -15,6 +16,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const migrationsDir = join(__dirname, '..', 'migrations');
 
+function generateTunnelPublicSlug(length = 12) {
+  return crypto.randomBytes(16).toString('hex').slice(0, length);
+}
+
 class DatabaseService {
   constructor() {
     this.pgPool = null;
@@ -28,6 +33,7 @@ class DatabaseService {
     }
     await this.runMigrations();
     await this.verifySchema();
+    await this.ensureTunnelPublicSlugs();
     if (!config.logging.quiet) {
       console.log('[Database] Initialized successfully');
     }
@@ -133,6 +139,47 @@ class DatabaseService {
       const error = new Error(`Missing database tables: ${missing.join(', ')}`);
       error.code = 'SCHEMA_MISSING';
       throw error;
+    }
+  }
+
+  async ensureTunnelPublicSlugs() {
+    const tunnels = await this.queryAll(`
+      SELECT id, public_slug
+      FROM tunnels
+      WHERE public_slug IS NULL
+         OR public_slug = ''
+      ORDER BY id ASC
+    `, []);
+
+    if (tunnels.length === 0) {
+      return;
+    }
+
+    const existingSlugs = new Set(
+      (await this.queryAll(`
+        SELECT public_slug
+        FROM tunnels
+        WHERE public_slug IS NOT NULL
+          AND public_slug <> ''
+      `, [])).map((row) => String(row.public_slug))
+    );
+
+    for (const tunnel of tunnels) {
+      let slug = null;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const candidate = generateTunnelPublicSlug();
+        if (!existingSlugs.has(candidate)) {
+          slug = candidate;
+          existingSlugs.add(candidate);
+          break;
+        }
+      }
+
+      if (!slug) {
+        throw new Error(`Unable to generate a unique public slug for tunnel ${tunnel.id}`);
+      }
+
+      await this.execute('UPDATE tunnels SET public_slug = ? WHERE id = ?', [slug, tunnel.id]);
     }
   }
 
@@ -507,14 +554,30 @@ class DatabaseService {
       name,
       description = null,
       provider = 'cloudflare',
-      publicDomain = null
+      publicDomain = null,
+      publicSlug = null
     } = data;
 
+    const resolvedPublicSlug = publicSlug || await this.getUniqueTunnelPublicSlug();
+
     return this.queryOne(`
-      INSERT INTO tunnels (user_id, team_id, name, description, provider, public_domain)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO tunnels (user_id, team_id, name, description, provider, public_domain, public_slug)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       RETURNING *
-    `, [userId, teamId, name, description, provider, publicDomain]);
+    `, [userId, teamId, name, description, provider, publicDomain, resolvedPublicSlug]);
+  }
+
+  async getUniqueTunnelPublicSlug() {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const slug = generateTunnelPublicSlug();
+      const existing = await this.queryOne('SELECT id FROM tunnels WHERE public_slug = ? LIMIT 1', [slug]);
+
+      if (!existing) {
+        return slug;
+      }
+    }
+
+    throw new Error('Unable to generate a unique tunnel public slug');
   }
 
   async deleteTunnel(tunnelId) {

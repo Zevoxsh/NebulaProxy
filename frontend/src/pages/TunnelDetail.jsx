@@ -89,6 +89,12 @@ function EmptyBlock({ icon: Icon, title, description }) {
   );
 }
 
+function buildTunnelHostname(tunnel, protocol = 'tcp') {
+  const publicSlug = tunnel?.public_slug || tunnel?.publicSlug || tunnel?.id;
+  const publicDomain = tunnel?.public_domain || 'tunnel.nebula-app.dev';
+  return `${protocol}.${publicSlug}.${publicDomain}`;
+}
+
 export default function TunnelDetail({ mode = 'client', section = 'overview' }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -389,8 +395,9 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
             <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Domain</div>
-                  <div className="mt-2 break-all text-sm font-semibold text-admin-text">{tunnel.public_domain}</div>
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Hostname</div>
+                  <div className="mt-2 break-all text-sm font-semibold text-admin-text">{buildTunnelHostname(tunnel)}</div>
+                  <div className="mt-2 text-xs text-admin-text-muted">Base domain: {tunnel.public_domain}</div>
                 </div>
                 <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
                   <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Owner</div>

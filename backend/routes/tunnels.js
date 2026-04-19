@@ -47,7 +47,8 @@ async function canManageTunnel(tunnel, userId, isAdmin) {
 }
 
 function buildPublicHostname(tunnel, protocol) {
-  return `${protocol}.${tunnel.id}.${config.tunnels.publicDomain}`;
+  const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
+  return `${protocol}.${publicSlug}.${config.tunnels.publicDomain}`;
 }
 
 function getPublicBaseUrl(request) {

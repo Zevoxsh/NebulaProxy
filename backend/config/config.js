@@ -194,7 +194,7 @@ export const config = {
 
   // Tunnels
   tunnels: {
-    get publicDomain() { return getConfig('TUNNEL_PUBLIC_DOMAIN', 'nebula-app.dev'); },
+    get publicDomain() { return getConfig('TUNNEL_PUBLIC_DOMAIN', 'tunnel.nebula-app.dev'); },
     get portRangeMin() { return parseInt(getConfig('TUNNEL_PORT_RANGE_MIN', '20000'), 10); },
     get portRangeMax() { return parseInt(getConfig('TUNNEL_PORT_RANGE_MAX', '29999'), 10); },
     get enrollmentCodeTtlMinutes() { return parseInt(getConfig('TUNNEL_ENROLLMENT_CODE_TTL_MINUTES', '15'), 10); }
