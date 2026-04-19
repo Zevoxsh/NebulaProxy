@@ -7,25 +7,77 @@
 
 import pg from 'pg';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import Redis from 'ioredis';
 
 dotenv.config();
 
 const identifier = (process.argv[2] || '').trim();
+
+function readPgSecret() {
+  const secretFile = process.env.PG_SECRET_FILE || '/run/pg-secret/postgres.secret';
+  try {
+    const value = fs.readFileSync(secretFile, 'utf-8').trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
 
 if (!identifier) {
   console.error('Usage: node scripts/disable-user-2fa.js <username-or-email>');
   process.exit(1);
 }
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'nebulaproxy',
-  user: process.env.DB_USER || 'nebulaproxy',
-  password: process.env.DB_PASSWORD,
-});
+async function readDbConfigFromRedis() {
+  const redisHost = process.env.REDIS_HOST || '127.0.0.1';
+  const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
+  const redisPassword = process.env.REDIS_PASSWORD || undefined;
+  const redisDb = parseInt(process.env.REDIS_DB || '0', 10);
+
+  const redis = new Redis({
+    host: redisHost,
+    port: redisPort,
+    password: redisPassword,
+    db: redisDb,
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+  });
+
+  try {
+    await redis.connect();
+    const raw = await redis.get('nebulaproxy:config');
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    return {
+      host: cfg.DB_HOST,
+      port: cfg.DB_PORT,
+      database: cfg.DB_NAME,
+      user: cfg.DB_USER,
+      password: cfg.DB_PASSWORD,
+    };
+  } catch {
+    return null;
+  } finally {
+    try {
+      await redis.quit();
+    } catch {
+      // ignore redis shutdown errors
+    }
+  }
+}
 
 async function main() {
+  const redisDbConfig = await readDbConfigFromRedis();
+  const dbConfig = {
+    host: redisDbConfig?.host || process.env.DB_HOST || '127.0.0.1',
+    port: parseInt(redisDbConfig?.port || process.env.DB_PORT || '5432', 10),
+    database: redisDbConfig?.database || process.env.DB_NAME || 'nebulaproxy',
+    user: redisDbConfig?.user || process.env.DB_USER || 'nebulaproxy',
+    password: redisDbConfig?.password || process.env.DB_PASSWORD || readPgSecret(),
+  };
+
+  const pool = new pg.Pool(dbConfig);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -78,6 +130,6 @@ async function main() {
 
 main().catch(async (error) => {
   console.error('Unexpected error:', error.message);
-  await pool.end();
+  console.error('If needed, set REDIS_HOST/REDIS_PORT/REDIS_PASSWORD or DB_* env vars.');
   process.exit(1);
 });
