@@ -89,7 +89,7 @@ API_BASE=${safeBaseUrl}
 ENROLL_CODE=${safeCode}
 AGENT_NAME="$(hostname 2>/dev/null || echo tunnel-agent)"
 INSTALL_DIR="$HOME/.nebula-tunnel"
-AGENT_FILE="$INSTALL_DIR/tunnel-agent.js"
+AGENT_FILE="$INSTALL_DIR/tunnel-agent.mjs"
 CONFIG_FILE="$INSTALL_DIR/agent-config.json"
 LOG_FILE="$INSTALL_DIR/agent.log"
 
@@ -124,7 +124,7 @@ $ApiBase = ${safeBaseUrl}
 $EnrollCode = ${safeCode}
 $AgentName = $env:COMPUTERNAME
 $InstallDir = Join-Path $env:USERPROFILE ".nebula-tunnel"
-$AgentFile = Join-Path $InstallDir "tunnel-agent.js"
+$AgentFile = Join-Path $InstallDir "tunnel-agent.mjs"
 $ConfigFile = Join-Path $InstallDir "agent-config.json"
 $LogFile = Join-Path $InstallDir "agent.log"
 
