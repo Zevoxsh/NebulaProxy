@@ -51,7 +51,7 @@ function buildPublicHostname(tunnel, protocol, publicPort = null) {
   const publicDomain = tunnel.public_domain || config.tunnels.publicDomain;
 
   if (publicPort) {
-    return `${protocol}-${publicPort}.${publicSlug}.${publicDomain}`;
+    return `${protocol}-${publicSlug}-${publicPort}.${publicDomain}`;
   }
 
   return `${protocol}.${publicSlug}.${publicDomain}`;
@@ -84,21 +84,7 @@ function buildInstallCommands(baseUrl, code) {
 }
 
 function buildBindingAccessUrl(binding) {
-  const host = `${binding.publicHostname}:${binding.publicPort}`;
-
-  if (binding.protocol === 'udp') {
-    return `udp://${host}`;
-  }
-
-  if (Number(binding.localPort) === 80) {
-    return `http://${host}`;
-  }
-
-  if (Number(binding.localPort) === 443) {
-    return `https://${host}`;
-  }
-
-  return host;
+  return `${binding.publicHostname}:${binding.publicPort}`;
 }
 
 function buildLinuxInstallerScript({ baseUrl, code }) {

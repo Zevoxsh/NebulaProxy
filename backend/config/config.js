@@ -169,7 +169,7 @@ export const config = {
       return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
     },
     get requestTimeoutMs() {
-      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '4000'), 10);
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
     },
     get badGatewayPage() {
       return {

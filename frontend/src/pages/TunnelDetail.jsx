@@ -96,21 +96,7 @@ function buildTunnelHostname(tunnel, protocol = 'tcp') {
 }
 
 function buildBindingAccessHint(binding) {
-  const base = `${binding.public_hostname}:${binding.public_port}`;
-
-  if (binding.protocol === 'udp') {
-    return `udp://${base}`;
-  }
-
-  if (Number(binding.local_port) === 80) {
-    return `http://${base}`;
-  }
-
-  if (Number(binding.local_port) === 443) {
-    return `https://${base}`;
-  }
-
-  return base;
+  return `${binding.public_hostname}:${binding.public_port}`;
 }
 
 export default function TunnelDetail({ mode = 'client', section = 'overview' }) {
@@ -525,10 +511,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                         </div>
                         <div className="flex items-center gap-2">
                           <code className="rounded-xl border border-admin-border bg-admin-surface px-3 py-2 text-[11px] text-admin-text-muted">
-                            {binding.public_hostname}:{binding.public_port}
+                            {buildBindingAccessHint(binding)}
                           </code>
                           <code className="rounded-xl border border-admin-border bg-admin-surface px-3 py-2 text-[11px] text-admin-text-muted">
-                            {buildBindingAccessHint(binding)}
+                            {binding.public_hostname}:{binding.public_port}
                           </code>
                           {canManage && (
                             <AdminButton variant="ghost" onClick={() => handleDeleteBinding(binding.id)}>
