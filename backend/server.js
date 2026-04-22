@@ -217,6 +217,19 @@ const startFrontendServer = async () => {
     httpMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
   });
 
+  frontend.server.on('upgrade', (request, socket, head) => {
+    const rawPath = String(request.url || '').split('?')[0];
+    if (!rawPath.startsWith('/ws/')) {
+      socket.destroy();
+      return;
+    }
+
+    proxy.ws(request, socket, head, {
+      target: backendTarget,
+      changeOrigin: true
+    });
+  });
+
   // Manual proxy for redirection routes (to avoid conflicts with fastify-http-proxy)
   frontend.get('/r/:shortCode', async (request, reply) => {
     fastify.log.debug({ shortCode: request.params.shortCode, host: request.headers.host || '' }, '[Frontend] /r proxy request');
