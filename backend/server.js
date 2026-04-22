@@ -990,6 +990,28 @@ const start = async () => {
       if (config.logging.startupSummary) {
         logStep('Tunnel Relay', 'OK', '/ws/tunnels/agent + tcp listeners');
       }
+
+      const wsUpgradeRouter = (request, socket, head) => {
+        try {
+          if (fastify.tunnelRelayService?.shouldHandleUpgrade(request)) {
+            fastify.tunnelRelayService.handleUpgrade(request, socket, head);
+            return;
+          }
+
+          if (fastify.websocketManager?.shouldHandleUpgrade(request)) {
+            fastify.websocketManager.handleUpgrade(request, socket, head);
+            return;
+          }
+
+          socket.destroy();
+        } catch (err) {
+          fastify.log.warn({ err, url: request?.url }, 'WebSocket upgrade routing failed');
+          socket.destroy();
+        }
+      };
+
+      fastify.server.on('upgrade', wsUpgradeRouter);
+      fastify.wsUpgradeRouter = wsUpgradeRouter;
     } catch (error) {
       fastify.log.error({ error }, 'Failed to initialize WebSocket/Notifications');
       if (config.logging.startupSummary) {
@@ -1110,6 +1132,11 @@ process.on('SIGTERM', async () => {
     fastify.log.info('Update service stopped');
 
     // Stop WebSocket manager
+    if (fastify.wsUpgradeRouter) {
+      fastify.server.off('upgrade', fastify.wsUpgradeRouter);
+      fastify.wsUpgradeRouter = null;
+    }
+
     if (fastify.websocketManager) {
       fastify.websocketManager.close();
       fastify.log.info('WebSocket manager closed');
@@ -1182,6 +1209,11 @@ process.on('SIGINT', async () => {
     }
 
     // Stop WebSocket manager
+    if (fastify.wsUpgradeRouter) {
+      fastify.server.off('upgrade', fastify.wsUpgradeRouter);
+      fastify.wsUpgradeRouter = null;
+    }
+
     if (fastify.websocketManager) {
       fastify.websocketManager.close();
     }

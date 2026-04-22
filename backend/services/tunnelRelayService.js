@@ -17,7 +17,8 @@ class TunnelRelayService {
 
   async init(server, logger) {
     this.logger = logger || console;
-    this.wss = new WebSocketServer({ server, path: '/ws/tunnels/agent' });
+    this.server = server;
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.wss.on('connection', async (ws, req) => {
       try {
@@ -70,6 +71,21 @@ class TunnelRelayService {
 
     await this.reloadBindings();
     this.logger.info('[TunnelRelay] Initialized on /ws/tunnels/agent');
+  }
+
+  shouldHandleUpgrade(req) {
+    try {
+      const parsed = new URL(req.url || '', 'http://localhost');
+      return parsed.pathname === '/ws/tunnels/agent';
+    } catch {
+      return false;
+    }
+  }
+
+  handleUpgrade(req, socket, head) {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
+    });
   }
 
   async reloadBindings() {

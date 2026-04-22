@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { URL } from 'url';
 
 class WebSocketManager {
   constructor(server, logger) {
@@ -9,12 +10,28 @@ class WebSocketManager {
     this.ipConnections = new Map();   // ip -> connection count
     this.MAX_CONNECTIONS_PER_IP = 10;
 
-    this.wss = new WebSocketServer({
-      server,
-      path: '/ws/notifications'
-    });
+    this.server = server;
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.setupWebSocketServer();
+  }
+
+  _getPathname(req) {
+    try {
+      return new URL(req.url || '', 'http://localhost').pathname;
+    } catch {
+      return '';
+    }
+  }
+
+  shouldHandleUpgrade(req) {
+    return this._getPathname(req) === '/ws/notifications';
+  }
+
+  handleUpgrade(req, socket, head) {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
+    });
   }
 
   _getClientIp(req) {
