@@ -99,7 +99,7 @@ async function runAgent(options) {
   const NativeWebSocket = globalThis.WebSocket;
 
   if (!NativeWebSocket) {
-    throw new Error('Node.js WebSocket API is not available. Use Node 18+ with a standard build.');
+    throw new Error(`Node.js WebSocket API is not available on ${process.version}. Try: node --experimental-websocket ${path.basename(process.argv[1] || 'tunnel-agent.mjs')} run --server <url> --config <path>`);
   }
 
   const closeSocket = (connId) => {

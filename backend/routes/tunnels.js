@@ -98,6 +98,11 @@ INSTALL_DIR="$HOME/.nebula-tunnel"
 AGENT_FILE="$INSTALL_DIR/tunnel-agent.mjs"
 CONFIG_FILE="$INSTALL_DIR/agent-config.json"
 LOG_FILE="$INSTALL_DIR/agent.log"
+NODE_WS_ARGS=""
+
+if node --experimental-websocket -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" >/dev/null 2>&1; then
+  NODE_WS_ARGS="--experimental-websocket"
+fi
 
 mkdir -p "$INSTALL_DIR"
 curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
@@ -120,11 +125,11 @@ else
 fi
 
 if command -v nohup >/dev/null 2>&1; then
-  nohup node "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
+  nohup node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
   echo "[nebula-tunnel] Agent démarré en arrière-plan."
   echo "[nebula-tunnel] Logs: $LOG_FILE"
 else
-  node "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE"
+  node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE"
 fi
 `;
 }
@@ -148,6 +153,16 @@ $InstallDir = Join-Path $env:USERPROFILE ".nebula-tunnel"
 $AgentFile = Join-Path $InstallDir "tunnel-agent.mjs"
 $ConfigFile = Join-Path $InstallDir "agent-config.json"
 $LogFile = Join-Path $InstallDir "agent.log"
+$NodeWsArgs = @()
+
+try {
+  node --experimental-websocket -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $NodeWsArgs = @('--experimental-websocket')
+  }
+} catch {
+  $NodeWsArgs = @()
+}
 
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
 Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
@@ -183,7 +198,7 @@ if ($PreviewTunnelId -and $ExistingTunnelId -and $ExistingTunnelId -eq $PreviewT
   node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
 }
 
-$process = Start-Process -FilePath node -ArgumentList @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile) -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
+$process = Start-Process -FilePath node -ArgumentList @($NodeWsArgs + @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile)) -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
 Write-Host "[nebula-tunnel] Agent démarré. PID: $($process.Id)"
 Write-Host "[nebula-tunnel] Logs: $LogFile"
 `;
