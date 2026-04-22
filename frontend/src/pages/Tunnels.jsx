@@ -48,6 +48,8 @@ export default function Tunnels({ mode = 'client' }) {
     [tunnels]
   );
 
+  const getOnlineAgentsCount = (tunnel) => tunnel.agents?.filter((agent) => agent.status === 'online').length || 0;
+
   const refresh = async () => {
     try {
       setRefreshing(true);
@@ -64,6 +66,14 @@ export default function Tunnels({ mode = 'client' }) {
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      refresh();
+    }, 6000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   const openTunnel = (tunnelId) => {
@@ -152,8 +162,8 @@ export default function Tunnels({ mode = 'client' }) {
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-3">
                       <h3 className="truncate text-lg font-semibold text-admin-text">{tunnel.name}</h3>
-                      <AdminBadge variant={tunnel.status === 'online' ? 'success' : 'secondary'}>
-                        {tunnel.status || 'unknown'}
+                      <AdminBadge variant={getOnlineAgentsCount(tunnel) > 0 ? 'success' : 'secondary'}>
+                        {getOnlineAgentsCount(tunnel) > 0 ? 'Agent connecte' : 'En attente'}
                       </AdminBadge>
                     </div>
                     <p className="max-w-3xl text-sm leading-6 text-admin-text-muted">

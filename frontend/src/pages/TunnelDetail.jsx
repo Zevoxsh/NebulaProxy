@@ -131,6 +131,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
   const onlineAgents = useMemo(() => tunnel?.agents?.filter((agent) => agent.status === 'online') || [], [tunnel]);
   const canManage = mode === 'admin' || String(tunnel?.user_id) === String(user?.id);
+  const isAgentConnected = onlineAgents.length > 0;
 
   const loadTunnel = async ({ quiet = false } = {}) => {
     try {
@@ -331,8 +332,8 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-admin-text-muted">
               <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{tunnel.provider}</span>
-              <span className={`rounded-full border px-3 py-1 ${tunnel.status === 'online' ? 'border-admin-success/30 bg-admin-success/10 text-admin-success' : 'border-admin-border bg-admin-surface2 text-admin-text-muted'}`}>
-                {tunnel.status || 'unknown'}
+              <span className={`rounded-full border px-3 py-1 ${isAgentConnected ? 'border-admin-success/30 bg-admin-success/10 text-admin-success' : 'border-admin-border bg-admin-surface2 text-admin-text-muted'}`}>
+                {isAgentConnected ? 'Agent connecte' : 'Agent non connecte'}
               </span>
               <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{onlineAgents.length} agent(s) en ligne</span>
               <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{tunnel.bindings?.length || 0} port(s) publie(s)</span>

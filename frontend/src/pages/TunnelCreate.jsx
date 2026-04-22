@@ -37,7 +37,11 @@ export default function TunnelCreate({ mode = 'client' }) {
     try {
       setSaving(true);
       setError('');
-      const response = await tunnelsAPI.create(form);
+      const payload = {
+        ...form,
+        publicDomain: form.publicDomain.trim() ? form.publicDomain.trim() : undefined
+      };
+      const response = await tunnelsAPI.create(payload);
       toast({ title: 'Tunnel cree', description: response.data.tunnel.name });
       navigate(`${basePath}/${response.data.tunnel.id}`);
     } catch (err) {
