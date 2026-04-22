@@ -95,6 +95,24 @@ function buildTunnelHostname(tunnel, protocol = 'tcp') {
   return `${protocol}.${publicSlug}.${publicDomain}`;
 }
 
+function buildBindingAccessHint(binding) {
+  const base = `${binding.public_hostname}:${binding.public_port}`;
+
+  if (binding.protocol === 'udp') {
+    return `udp://${base}`;
+  }
+
+  if (Number(binding.local_port) === 80) {
+    return `http://${base}`;
+  }
+
+  if (Number(binding.local_port) === 443) {
+    return `https://${base}`;
+  }
+
+  return base;
+}
+
 export default function TunnelDetail({ mode = 'client', section = 'overview' }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -130,7 +148,14 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
   };
 
   const onlineAgents = useMemo(() => tunnel?.agents?.filter((agent) => agent.status === 'online') || [], [tunnel]);
-  const canManage = mode === 'admin' || String(tunnel?.user_id) === String(user?.id);
+  const canManage = useMemo(() => {
+    if (!tunnel || !user) return false;
+    if (mode === 'admin') return true;
+    if (String(tunnel.user_id) === String(user.id)) return true;
+    return (tunnel.access || []).some(
+      (entry) => String(entry.user_id) === String(user.id) && entry.role === 'manage'
+    );
+  }, [mode, tunnel, user]);
   const isAgentConnected = onlineAgents.length > 0;
 
   const loadTunnel = async ({ quiet = false } = {}) => {
@@ -230,6 +255,18 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
       await loadTunnel({ quiet: true });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de supprimer le port' });
+    }
+  };
+
+  const handleDeleteAgent = async (agentId) => {
+    if (!tunnel) return;
+
+    try {
+      await tunnelsAPI.deleteAgent(tunnel.id, agentId);
+      toast({ title: 'Agent supprime' });
+      await loadTunnel({ quiet: true });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de supprimer l agent' });
     }
   };
 
@@ -449,9 +486,16 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                             {agent.platform || 'unknown'} · {agent.os_name || 'unknown'} · {agent.version || 'n/a'}
                           </div>
                         </div>
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${agent.status === 'online' ? 'border-admin-success/30 bg-admin-success/10 text-admin-success' : 'border-admin-border bg-admin-surface text-admin-text-muted'}`}>
-                          {agent.status || 'unknown'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${agent.status === 'online' ? 'border-admin-success/30 bg-admin-success/10 text-admin-success' : 'border-admin-border bg-admin-surface text-admin-text-muted'}`}>
+                            {agent.status || 'unknown'}
+                          </span>
+                          {canManage && (
+                            <AdminButton variant="ghost" onClick={() => handleDeleteAgent(agent.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </AdminButton>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -482,6 +526,9 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                         <div className="flex items-center gap-2">
                           <code className="rounded-xl border border-admin-border bg-admin-surface px-3 py-2 text-[11px] text-admin-text-muted">
                             {binding.public_hostname}:{binding.public_port}
+                          </code>
+                          <code className="rounded-xl border border-admin-border bg-admin-surface px-3 py-2 text-[11px] text-admin-text-muted">
+                            {buildBindingAccessHint(binding)}
                           </code>
                           {canManage && (
                             <AdminButton variant="ghost" onClick={() => handleDeleteBinding(binding.id)}>
@@ -519,9 +566,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="tcp">TCP</SelectItem>
+                        <SelectItem value="udp">UDP</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-admin-text-muted">Seul TCP est supporte actuellement.</p>
+                    <p className="text-xs text-admin-text-muted">TCP et UDP sont supportes.</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white/70">Agent</Label>

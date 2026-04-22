@@ -10,6 +10,7 @@ export const tunnelsAPI = {
   getBindings: (id) => api.get(`/tunnels/${id}/bindings`),
   createBinding: (id, data) => api.post(`/tunnels/${id}/bindings`, data),
   deleteBinding: (tunnelId, bindingId) => api.delete(`/tunnels/${tunnelId}/bindings/${bindingId}`),
+  deleteAgent: (tunnelId, agentId) => api.delete(`/tunnels/${tunnelId}/agents/${agentId}`),
   getAccess: (id) => api.get(`/tunnels/${id}/access`),
   grantAccess: (id, data) => api.post(`/tunnels/${id}/access`, data),
   revokeAccess: (id, userId) => api.delete(`/tunnels/${id}/access/${userId}`)

@@ -46,9 +46,14 @@ async function canManageTunnel(tunnel, userId, isAdmin) {
   return access?.role === 'manage';
 }
 
-function buildPublicHostname(tunnel, protocol) {
+function buildPublicHostname(tunnel, protocol, publicPort = null) {
   const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
   const publicDomain = tunnel.public_domain || config.tunnels.publicDomain;
+
+  if (publicPort) {
+    return `${protocol}-${publicPort}.${publicSlug}.${publicDomain}`;
+  }
+
   return `${protocol}.${publicSlug}.${publicDomain}`;
 }
 
@@ -76,6 +81,24 @@ function buildInstallCommands(baseUrl, code) {
     linuxCommand: `curl -fsSL "${linuxInstallerUrl}" | bash`,
     windowsCommand: `powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr '${windowsInstallerUrl}' -UseBasicParsing | iex"`
   };
+}
+
+function buildBindingAccessUrl(binding) {
+  const host = `${binding.publicHostname}:${binding.publicPort}`;
+
+  if (binding.protocol === 'udp') {
+    return `udp://${host}`;
+  }
+
+  if (Number(binding.localPort) === 80) {
+    return `http://${host}`;
+  }
+
+  if (Number(binding.localPort) === 443) {
+    return `https://${host}`;
+  }
+
+  return host;
 }
 
 function buildLinuxInstallerScript({ baseUrl, code }) {
@@ -603,7 +626,7 @@ export async function tunnelRoutes(fastify, options) {
         required: ['label', 'localPort'],
         properties: {
           label: { type: 'string', minLength: 1, maxLength: 255 },
-          protocol: { type: 'string', enum: ['tcp'] },
+          protocol: { type: 'string', enum: ['tcp', 'udp'] },
           agentId: { type: ['integer', 'null'], minimum: 1 },
           localPort: { type: 'integer', minimum: 1, maximum: 65535 },
           publicPort: { type: ['integer', 'null'], minimum: 1, maximum: 65535 },
@@ -625,10 +648,6 @@ export async function tunnelRoutes(fastify, options) {
 
       const { label, protocol = 'tcp', localPort, publicPort, targetHost = '127.0.0.1', agentId: requestedAgentId } = request.body;
 
-      if (protocol !== 'tcp') {
-        return reply.code(400).send({ error: 'Bad Request', message: 'Only TCP bindings are supported right now' });
-      }
-
       let effectiveAgentId = requestedAgentId ?? null;
       if (effectiveAgentId !== null) {
         const agent = await database.getTunnelAgentById(effectiveAgentId);
@@ -645,7 +664,7 @@ export async function tunnelRoutes(fastify, options) {
         minPort: config.tunnels.portRangeMin,
         maxPort: config.tunnels.portRangeMax
       });
-      const publicHostname = buildPublicHostname(tunnel, protocol);
+      const publicHostname = buildPublicHostname(tunnel, protocol, effectivePublicPort);
 
       const binding = await database.createTunnelBinding({
         tunnelId,
@@ -672,7 +691,12 @@ export async function tunnelRoutes(fastify, options) {
       reply.code(201).send({
         success: true,
         binding,
-        accessUrl: `${publicHostname}:${effectivePublicPort}`
+        accessUrl: buildBindingAccessUrl({
+          protocol,
+          localPort,
+          publicHostname,
+          publicPort: effectivePublicPort
+        })
       });
     } catch (error) {
       fastify.log.error({ error }, 'Failed to create tunnel binding');
@@ -789,6 +813,47 @@ export async function tunnelRoutes(fastify, options) {
     } catch (error) {
       fastify.log.error({ error }, 'Failed to revoke tunnel access');
       reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to revoke tunnel access' });
+    }
+  });
+
+  fastify.delete('/:id/agents/:agentId', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const agentId = parseInt(request.params.agentId, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this tunnel' });
+      }
+
+      const agent = await database.getTunnelAgentById(agentId);
+      if (!agent || Number(agent.tunnel_id) !== tunnelId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Agent not found' });
+      }
+
+      tunnelRelayService.disconnectAgent(agentId, 1008, 'Agent deleted from panel');
+      await database.deleteTunnelAgent(agentId);
+      await tunnelRelayService.reloadBindings();
+
+      await database.createAuditLog({
+        userId: request.user.id,
+        action: 'tunnel_agent_deleted',
+        entityType: 'tunnel',
+        entityId: tunnelId,
+        details: { agent_id: agentId, agent_name: agent.name },
+        ipAddress: request.ip
+      });
+
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to delete tunnel agent');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to delete tunnel agent' });
     }
   });
 

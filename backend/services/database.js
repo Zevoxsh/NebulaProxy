@@ -708,6 +708,10 @@ class DatabaseService {
     return this.getTunnelAgentById(agentId);
   }
 
+  async deleteTunnelAgent(agentId) {
+    return this.execute('DELETE FROM tunnel_agents WHERE id = ?', [agentId]);
+  }
+
   async getTunnelBindings(tunnelId) {
     return this.queryAll(`
       SELECT *
@@ -729,6 +733,18 @@ class DatabaseService {
         AND is_enabled = TRUE
       ORDER BY id DESC
     `, [agentId]);
+  }
+
+  async getActiveTunnelBindings() {
+    return this.queryAll(`
+      SELECT tb.*
+      FROM tunnel_bindings tb
+      JOIN tunnel_agents ta ON ta.id = tb.agent_id
+      JOIN tunnels t ON t.id = tb.tunnel_id
+      WHERE tb.is_enabled = TRUE
+        AND tb.protocol IN ('tcp', 'udp')
+        AND t.status IN ('active', 'pending')
+    `, []);
   }
 
   async getActiveTcpTunnelBindings() {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from 'crypto';
+import dgram from 'dgram';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -121,11 +122,21 @@ async function runAgent(options) {
   const WS_CONNECTING = WebSocketCtor.CONNECTING ?? 0;
 
   const closeSocket = (connId) => {
-    const socket = sockets.get(connId);
-    if (!socket) return;
+    const entry = sockets.get(connId);
+    if (!entry) return;
     sockets.delete(connId);
-    if (!socket.destroyed) {
-      socket.destroy();
+
+    if (entry.kind === 'udp') {
+      try {
+        entry.socket.close();
+      } catch {
+        // Ignore UDP close race conditions.
+      }
+      return;
+    }
+
+    if (!entry.socket.destroyed) {
+      entry.socket.destroy();
     }
   };
 
@@ -229,6 +240,7 @@ async function runAgent(options) {
     if (!connId) return;
 
     if (message.type === 'open') {
+      const protocol = String(message.protocol || 'tcp').toLowerCase();
       const targetHost = String(message.targetHost || '127.0.0.1');
       const targetPort = Number.parseInt(String(message.targetPort || ''), 10);
       if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535) {
@@ -236,11 +248,42 @@ async function runAgent(options) {
         return;
       }
 
+      if (protocol === 'udp') {
+        const socket = dgram.createSocket('udp4');
+
+        sockets.set(connId, {
+          kind: 'udp',
+          socket,
+          targetHost,
+          targetPort
+        });
+
+        socket.on('message', (chunk) => {
+          sendJson({ type: 'data', connId, data: chunk.toString('base64') });
+        });
+
+        socket.on('error', () => {
+          sendJson({ type: 'close', connId });
+          closeSocket(connId);
+        });
+
+        socket.on('close', () => {
+          sendJson({ type: 'close', connId });
+          sockets.delete(connId);
+        });
+
+        sendJson({ type: 'opened', connId });
+        return;
+      }
+
       const socket = net.connect({ host: targetHost, port: targetPort }, () => {
         sendJson({ type: 'opened', connId });
       });
 
-      sockets.set(connId, socket);
+      sockets.set(connId, {
+        kind: 'tcp',
+        socket
+      });
 
       socket.on('data', (chunk) => {
         sendJson({ type: 'data', connId, data: chunk.toString('base64') });
@@ -259,16 +302,30 @@ async function runAgent(options) {
     }
 
     if (message.type === 'data') {
-      const socket = sockets.get(connId);
-      if (!socket || socket.destroyed || typeof message.data !== 'string') return;
-      socket.write(Buffer.from(message.data, 'base64'));
+      const entry = sockets.get(connId);
+      if (!entry || typeof message.data !== 'string') return;
+
+      const payload = Buffer.from(message.data, 'base64');
+
+      if (entry.kind === 'udp') {
+        entry.socket.send(payload, entry.targetPort, entry.targetHost);
+        return;
+      }
+
+      if (entry.socket.destroyed) return;
+      entry.socket.write(payload);
       return;
     }
 
     if (message.type === 'close') {
-      const socket = sockets.get(connId);
-      if (socket && !socket.destroyed) {
-        socket.end();
+      const entry = sockets.get(connId);
+      if (entry?.kind === 'udp') {
+        closeSocket(connId);
+        return;
+      }
+
+      if (entry?.socket && !entry.socket.destroyed) {
+        entry.socket.end();
       }
       sockets.delete(connId);
     }
