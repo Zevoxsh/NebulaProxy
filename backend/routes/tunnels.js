@@ -180,7 +180,17 @@ try {
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
 Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
 
-if (-not (node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null; $LASTEXITCODE -eq 0)) {
+$HasNativeWs = $false
+try {
+  node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $HasNativeWs = $true
+  }
+} catch {
+  $HasNativeWs = $false
+}
+
+if (-not $HasNativeWs) {
   if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Host "[nebula-tunnel] WebSocket natif indisponible, installation du fallback ws..."
     try {
