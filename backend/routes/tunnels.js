@@ -107,6 +107,19 @@ fi
 mkdir -p "$INSTALL_DIR"
 curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
 
+if ! node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "[nebula-tunnel] WebSocket natif indisponible, installation du fallback ws..."
+    (
+      cd "$INSTALL_DIR"
+      npm init -y >/dev/null 2>&1 || true
+      npm install ws --no-audit --no-fund --silent >/dev/null 2>&1
+    ) || echo "[nebula-tunnel] Impossible d installer ws automatiquement."
+  else
+    echo "[nebula-tunnel] npm absent: fallback ws non installe automatiquement."
+  fi
+fi
+
 PREVIEW_JSON="$(curl -fsSL "$API_BASE/api/tunnels/enrollment-code/preview?code=$ENROLL_CODE" 2>/dev/null || true)"
 PREVIEW_TUNNEL_ID=""
 if [ -n "$PREVIEW_JSON" ]; then
@@ -166,6 +179,23 @@ try {
 
 New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
 Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
+
+if (-not (node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null; $LASTEXITCODE -eq 0)) {
+  if (Get-Command npm -ErrorAction SilentlyContinue) {
+    Write-Host "[nebula-tunnel] WebSocket natif indisponible, installation du fallback ws..."
+    try {
+      Push-Location $InstallDir
+      npm init -y *> $null
+      npm install ws --no-audit --no-fund --silent *> $null
+    } catch {
+      Write-Host "[nebula-tunnel] Impossible d installer ws automatiquement."
+    } finally {
+      Pop-Location
+    }
+  } else {
+    Write-Host "[nebula-tunnel] npm absent: fallback ws non installe automatiquement."
+  }
+}
 
 $PreviewJson = ''
 try {

@@ -97,10 +97,28 @@ async function runAgent(options) {
   let attempt = 0;
   let consecutiveFailures = 0;
   const NativeWebSocket = globalThis.WebSocket;
+  let WebSocketCtor = NativeWebSocket;
+  let webSocketMode = NativeWebSocket ? 'native' : 'ws-package';
 
-  if (!NativeWebSocket) {
-    throw new Error(`Node.js WebSocket API is not available on ${process.version}. Try: node --experimental-websocket ${path.basename(process.argv[1] || 'tunnel-agent.mjs')} run --server <url> --config <path>`);
+  if (!WebSocketCtor) {
+    try {
+      const wsModule = await import('ws');
+      WebSocketCtor = wsModule.default || wsModule.WebSocket;
+    } catch {
+      WebSocketCtor = null;
+    }
   }
+
+  if (!WebSocketCtor) {
+    throw new Error(`WebSocket API unavailable on ${process.version}. Install fallback package with: cd ${path.dirname(configPath)} && npm init -y && npm install ws`);
+  }
+
+  if (WebSocketCtor !== NativeWebSocket) {
+    webSocketMode = 'ws-package';
+  }
+
+  const WS_OPEN = WebSocketCtor.OPEN ?? 1;
+  const WS_CONNECTING = WebSocketCtor.CONNECTING ?? 0;
 
   const closeSocket = (connId) => {
     const socket = sockets.get(connId);
@@ -118,7 +136,7 @@ async function runAgent(options) {
   };
 
   const sendJson = (payload) => {
-    if (!currentWs || currentWs.readyState !== NativeWebSocket.OPEN) return;
+    if (!currentWs || currentWs.readyState !== WS_OPEN) return;
     currentWs.send(JSON.stringify(payload));
   };
 
@@ -258,7 +276,7 @@ async function runAgent(options) {
 
   const shutdown = () => {
     stopRequested = true;
-    if (currentWs && (currentWs.readyState === NativeWebSocket.OPEN || currentWs.readyState === NativeWebSocket.CONNECTING)) {
+    if (currentWs && (currentWs.readyState === WS_OPEN || currentWs.readyState === WS_CONNECTING)) {
       currentWs.close(1000, 'Agent shutdown');
     }
     closeAllSockets();
@@ -277,6 +295,7 @@ async function runAgent(options) {
   log('INFO', 'Agent runtime started', {
     apiBase,
     wsUrl: redactUrl(wsUrl),
+    webSocketMode,
     reconnectMs,
     configPath,
     agentId: configData.agentId,
@@ -294,36 +313,53 @@ async function runAgent(options) {
     });
 
     await new Promise((resolve) => {
-      currentWs = new NativeWebSocket(wsUrl);
+      currentWs = new WebSocketCtor(wsUrl);
 
-      currentWs.addEventListener('open', () => {
+      const onOpen = () => {
         consecutiveFailures = 0;
         process.stdout.write(`[tunnel-agent] relay connected to ${apiBase} (attempt ${attempt})\n`);
-      });
+      };
 
-      currentWs.addEventListener('message', async (event) => {
-        onMessage(await normalizeMessageData(event.data));
-      });
+      const onMessageEvent = async (eventOrData) => {
+        const payload = webSocketMode === 'native'
+          ? await normalizeMessageData(eventOrData?.data)
+          : await normalizeMessageData(eventOrData);
+        onMessage(payload);
+      };
 
-      currentWs.addEventListener('close', (event) => {
+      const onClose = (eventOrCode, reasonMaybe) => {
         closeDetails = {
-          code: event?.code ?? null,
-          reason: event?.reason ? String(event.reason) : '',
-          wasClean: event?.wasClean ?? null
+          code: webSocketMode === 'native' ? (eventOrCode?.code ?? null) : (eventOrCode ?? null),
+          reason: webSocketMode === 'native'
+            ? (eventOrCode?.reason ? String(eventOrCode.reason) : '')
+            : (reasonMaybe ? String(reasonMaybe) : ''),
+          wasClean: webSocketMode === 'native' ? (eventOrCode?.wasClean ?? null) : null
         };
         closeAllSockets();
         resolve();
-      });
+      };
 
-      currentWs.addEventListener('error', (event) => {
-        const message = event?.error?.message || event?.message || 'websocket error';
+      const onError = (eventOrError) => {
+        const message = eventOrError?.error?.message || eventOrError?.message || String(eventOrError) || 'websocket error';
         lastError = message;
         log('ERROR', 'WebSocket error event', {
           attempt,
           message,
           wsUrl: redactUrl(wsUrl)
         });
-      });
+      };
+
+      if (webSocketMode === 'native') {
+        currentWs.addEventListener('open', onOpen);
+        currentWs.addEventListener('message', onMessageEvent);
+        currentWs.addEventListener('close', onClose);
+        currentWs.addEventListener('error', onError);
+      } else {
+        currentWs.on('open', onOpen);
+        currentWs.on('message', onMessageEvent);
+        currentWs.on('close', onClose);
+        currentWs.on('error', onError);
+      }
     });
 
     if (!stopRequested) {
