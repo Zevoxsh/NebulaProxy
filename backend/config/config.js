@@ -194,6 +194,7 @@ export const config = {
 
   // Tunnels
   tunnels: {
+    get baseUrl() { return String(getConfig('TUNNEL_BASE_URL', '') || '').trim().replace(/\/$/, ''); },
     get publicDomain() { return getConfig('TUNNEL_PUBLIC_DOMAIN', 'tunnel.nebula-app.dev'); },
     get portRangeMin() { return parseInt(getConfig('TUNNEL_PORT_RANGE_MIN', '20000'), 10); },
     get portRangeMax() { return parseInt(getConfig('TUNNEL_PORT_RANGE_MAX', '29999'), 10); },

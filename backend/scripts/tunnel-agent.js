@@ -2,6 +2,7 @@
 
 import crypto from 'crypto';
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 
@@ -93,6 +94,8 @@ async function runAgent(options) {
   const sockets = new Map();
   let stopRequested = false;
   let currentWs = null;
+  let attempt = 0;
+  let consecutiveFailures = 0;
   const NativeWebSocket = globalThis.WebSocket;
 
   if (!NativeWebSocket) {
@@ -117,6 +120,70 @@ async function runAgent(options) {
   const sendJson = (payload) => {
     if (!currentWs || currentWs.readyState !== NativeWebSocket.OPEN) return;
     currentWs.send(JSON.stringify(payload));
+  };
+
+  const log = (level, message, details = null) => {
+    const ts = new Date().toISOString();
+    if (details) {
+      process.stderr.write(`[tunnel-agent] ${ts} ${level} ${message} ${JSON.stringify(details)}\n`);
+      return;
+    }
+    process.stderr.write(`[tunnel-agent] ${ts} ${level} ${message}\n`);
+  };
+
+  const redactUrl = (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.searchParams.has('token')) {
+        parsed.searchParams.set('token', '***');
+      }
+      return parsed.toString();
+    } catch {
+      return rawUrl;
+    }
+  };
+
+  const wsProbeUrl = wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+
+  const runFailureDiagnostics = async (failureContext) => {
+    const baseContext = {
+      ...failureContext,
+      apiBase,
+      wsUrl: redactUrl(wsUrl),
+      configPath
+    };
+
+    try {
+      const response = await fetch(wsProbeUrl);
+      const body = await response.text();
+      log('WARN', 'WebSocket HTTP probe response', {
+        ...baseContext,
+        probeUrl: redactUrl(wsProbeUrl),
+        httpStatus: response.status,
+        bodyPreview: body.slice(0, 180)
+      });
+    } catch (error) {
+      log('WARN', 'WebSocket HTTP probe failed', {
+        ...baseContext,
+        probeUrl: redactUrl(wsProbeUrl),
+        error: error?.message || String(error)
+      });
+    }
+
+    try {
+      const response = await fetch(`${apiBase}/api/tunnels/agent-script`);
+      log('INFO', 'Agent script endpoint check', {
+        ...baseContext,
+        endpoint: `${apiBase}/api/tunnels/agent-script`,
+        httpStatus: response.status
+      });
+    } catch (error) {
+      log('WARN', 'Agent script endpoint check failed', {
+        ...baseContext,
+        endpoint: `${apiBase}/api/tunnels/agent-script`,
+        error: error?.message || String(error)
+      });
+    }
   };
 
   const normalizeMessageData = async (data) => {
@@ -207,30 +274,80 @@ async function runAgent(options) {
     process.exit(0);
   });
 
+  log('INFO', 'Agent runtime started', {
+    apiBase,
+    wsUrl: redactUrl(wsUrl),
+    reconnectMs,
+    configPath,
+    agentId: configData.agentId,
+    tunnelId: configData.tunnelId
+  });
+
   while (!stopRequested) {
+    attempt += 1;
+    let lastError = null;
+    let closeDetails = { code: null, reason: '', wasClean: null };
+
+    log('INFO', 'Attempting relay connection', {
+      attempt,
+      wsUrl: redactUrl(wsUrl)
+    });
+
     await new Promise((resolve) => {
       currentWs = new NativeWebSocket(wsUrl);
 
       currentWs.addEventListener('open', () => {
-        process.stdout.write(`[tunnel-agent] relay connected to ${apiBase}\n`);
+        consecutiveFailures = 0;
+        process.stdout.write(`[tunnel-agent] relay connected to ${apiBase} (attempt ${attempt})\n`);
       });
 
       currentWs.addEventListener('message', async (event) => {
         onMessage(await normalizeMessageData(event.data));
       });
 
-      currentWs.addEventListener('close', () => {
+      currentWs.addEventListener('close', (event) => {
+        closeDetails = {
+          code: event?.code ?? null,
+          reason: event?.reason ? String(event.reason) : '',
+          wasClean: event?.wasClean ?? null
+        };
         closeAllSockets();
         resolve();
       });
 
       currentWs.addEventListener('error', (event) => {
         const message = event?.error?.message || event?.message || 'websocket error';
-        process.stderr.write(`[tunnel-agent] websocket error: ${message}\n`);
+        lastError = message;
+        log('ERROR', 'WebSocket error event', {
+          attempt,
+          message,
+          wsUrl: redactUrl(wsUrl)
+        });
       });
     });
 
     if (!stopRequested) {
+      consecutiveFailures += 1;
+      log('WARN', 'Relay disconnected', {
+        attempt,
+        consecutiveFailures,
+        closeCode: closeDetails.code,
+        closeReason: closeDetails.reason,
+        closeClean: closeDetails.wasClean,
+        lastError: lastError || null,
+        retryInMs: reconnectMs
+      });
+
+      if (consecutiveFailures <= 3 || consecutiveFailures % 10 === 0) {
+        await runFailureDiagnostics({
+          attempt,
+          consecutiveFailures,
+          lastError: lastError || null,
+          closeCode: closeDetails.code,
+          closeReason: closeDetails.reason
+        });
+      }
+
       process.stderr.write(`[tunnel-agent] relay disconnected, retrying in ${reconnectMs}ms\n`);
       await new Promise((resolve) => setTimeout(resolve, reconnectMs));
     }

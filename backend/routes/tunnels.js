@@ -53,6 +53,10 @@ function buildPublicHostname(tunnel, protocol) {
 }
 
 function getPublicBaseUrl(request) {
+  if (config.tunnels.baseUrl) {
+    return config.tunnels.baseUrl;
+  }
+
   const headers = request?.headers || {};
   const forwardedProto = String(headers['x-forwarded-proto'] || '').split(',')[0].trim();
   const forwardedHost = String(headers['x-forwarded-host'] || '').split(',')[0].trim();
