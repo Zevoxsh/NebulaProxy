@@ -171,6 +171,9 @@ export const config = {
     get requestTimeoutMs() {
       return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
     },
+    get injectConsoleScript() {
+      return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
+    },
     get badGatewayPage() {
       return {
         htmlTitle: getConfig('BAD_GATEWAY_HTML_TITLE', 'Bad Gateway'),

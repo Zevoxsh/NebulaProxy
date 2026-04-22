@@ -1794,7 +1794,7 @@ const escapeHtml = (value) => String(value ?? '')
     }
 
     const acceptsHtml = String(req.headers.accept || '').includes('text/html');
-    if (acceptsHtml) {
+    if (acceptsHtml && config.proxy.injectConsoleScript) {
       options.headers['accept-encoding'] = 'identity';
     }
 
@@ -1890,7 +1890,7 @@ const escapeHtml = (value) => String(value ?? '')
       // Build response headers (copy from backend)
       const responseHeaders = { ...proxyRes.headers };
 
-      if (isHtmlResponse) {
+      if (isHtmlResponse && config.proxy.injectConsoleScript) {
         delete responseHeaders['content-length'];
         delete responseHeaders['content-encoding'];
         delete responseHeaders['transfer-encoding'];
@@ -1908,7 +1908,7 @@ const escapeHtml = (value) => String(value ?? '')
 
       res.writeHead(proxyRes.statusCode, responseHeaders);
 
-      if (isHtmlResponse) {
+      if (isHtmlResponse && config.proxy.injectConsoleScript) {
         const chunks = [];
         proxyRes.on('data', (chunk) => {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
