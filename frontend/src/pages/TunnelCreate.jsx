@@ -38,7 +38,7 @@ export default function TunnelCreate({ mode = 'client' }) {
       setSaving(true);
       setError('');
       const response = await tunnelsAPI.create(form);
-      toast({ title: 'Tunnel created', description: response.data.tunnel.name });
+      toast({ title: 'Tunnel cree', description: response.data.tunnel.name });
       navigate(`${basePath}/${response.data.tunnel.id}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Impossible de creer le tunnel');
@@ -52,17 +52,17 @@ export default function TunnelCreate({ mode = 'client' }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-admin-text-muted">Tunnels</p>
-          <h1 className="mt-1 text-3xl font-semibold text-admin-text">Create tunnel</h1>
+          <h1 className="mt-1 text-3xl font-semibold text-admin-text">Creer un tunnel</h1>
         </div>
         <AdminButton variant="secondary" onClick={() => navigate(basePath)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
+          Retour
         </AdminButton>
       </div>
 
       {error && (
         <AdminAlert variant="destructive">
-          <AdminAlertTitle>Error</AdminAlertTitle>
+          <AdminAlertTitle>Erreur</AdminAlertTitle>
           <AdminAlertDescription>{error}</AdminAlertDescription>
         </AdminAlert>
       )}
@@ -71,18 +71,18 @@ export default function TunnelCreate({ mode = 'client' }) {
         <AdminCardHeader>
           <AdminCardTitle className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-admin-primary" />
-            New tunnel
+            Nouveau tunnel
           </AdminCardTitle>
         </AdminCardHeader>
         <AdminCardContent className="p-6">
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-admin-text-muted">Name</Label>
+                <Label className="text-admin-text-muted">Nom</Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
-                  placeholder="workstation-01"
+                  placeholder="serveur-01"
                   className="border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
@@ -91,24 +91,24 @@ export default function TunnelCreate({ mode = 'client' }) {
                 <Textarea
                   value={form.description}
                   onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
-                  placeholder="Linux host behind NAT"
+                  placeholder="Machine Linux derriere NAT"
                   className="min-h-28 border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-admin-text-muted">Provider</Label>
+                <Label className="text-admin-text-muted">Fournisseur</Label>
                 <Select value={form.provider} onValueChange={(value) => setForm((current) => ({ ...current, provider: value }))}>
                   <SelectTrigger className="border-admin-border bg-admin-surface2 text-admin-text">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cloudflare">Cloudflare</SelectItem>
-                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="manual">Manuel</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-admin-text-muted">Public domain (optional)</Label>
+                <Label className="text-admin-text-muted">Domaine public (optionnel)</Label>
                 <Input
                   value={form.publicDomain}
                   onChange={(e) => setForm((current) => ({ ...current, publicDomain: e.target.value }))}
@@ -120,7 +120,7 @@ export default function TunnelCreate({ mode = 'client' }) {
 
             <AdminButton type="submit" disabled={saving} className="w-full">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create tunnel
+              Creer le tunnel
             </AdminButton>
           </form>
         </AdminCardContent>

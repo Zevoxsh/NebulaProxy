@@ -22,8 +22,8 @@ function TunnelStatus({ tunnel }) {
   return (
     <div className="flex flex-wrap gap-2 text-[11px] text-white/55">
       <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{tunnel.provider}</span>
-      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{onlineAgents} online agent(s)</span>
-      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{hasBindings} binding(s)</span>
+      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{onlineAgents} agent(s) en ligne</span>
+      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{hasBindings} port(s) publie(s)</span>
     </div>
   );
 }
@@ -81,32 +81,32 @@ export default function Tunnels({ mode = 'client' }) {
           <h1 className="mb-2 text-3xl font-semibold text-admin-text">Tunnels</h1>
           <p className="text-admin-text-muted">
             {mode === 'admin'
-              ? 'Vue admin des tunnels, agents et bindings.'
-              : 'Liste de tes tunnels. Ouvre-en un pour configurer les ports, l’accès et l’installation.'}
+              ? 'Vue administrateur des tunnels, agents et ports publies.'
+              : 'Gere tes tunnels: installation de l agent, publication des ports et acces partage.'}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
           <AdminButton variant="secondary" onClick={refresh}>
             {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Refresh
+            Actualiser
           </AdminButton>
           <AdminButton onClick={createTunnel}>
             <Plus className="mr-2 h-4 w-4" />
-            New tunnel
+            Nouveau tunnel
           </AdminButton>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <AdminStatCard title="Total tunnels" value={tunnels.length} subtitle="visible in the list" icon={Cloud} />
-        <AdminStatCard title="Online agents" value={onlineCount} subtitle="currently connected" icon={Wifi} />
-        <AdminStatCard title="Bindings" value={tunnels.reduce((total, tunnel) => total + (tunnel.bindings?.length || 0), 0)} subtitle="port forwarding rules" icon={Cable} />
+        <AdminStatCard title="Tunnels" value={tunnels.length} subtitle="dans la liste" icon={Cloud} />
+        <AdminStatCard title="Agents en ligne" value={onlineCount} subtitle="connectes maintenant" icon={Wifi} />
+        <AdminStatCard title="Ports publies" value={tunnels.reduce((total, tunnel) => total + (tunnel.bindings?.length || 0), 0)} subtitle="regles de redirection" icon={Cable} />
       </div>
 
       {error && (
         <AdminAlert variant="destructive">
-          <AdminAlertTitle>Error</AdminAlertTitle>
+          <AdminAlertTitle>Erreur</AdminAlertTitle>
           <AdminAlertDescription>{error}</AdminAlertDescription>
         </AdminAlert>
       )}
@@ -115,7 +115,7 @@ export default function Tunnels({ mode = 'client' }) {
         <AdminCard>
           <AdminCardContent className="p-10 text-center text-admin-text-muted">
             <Loader2 className="mx-auto h-5 w-5 animate-spin text-admin-primary" />
-            <p className="mt-3 text-sm">Loading tunnels...</p>
+            <p className="mt-3 text-sm">Chargement des tunnels...</p>
           </AdminCardContent>
         </AdminCard>
       ) : tunnels.length === 0 ? (
@@ -125,14 +125,14 @@ export default function Tunnels({ mode = 'client' }) {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-admin-primary/10 text-admin-primary">
                 <Cloud className="h-7 w-7" />
               </div>
-              <h2 className="mt-4 text-xl font-semibold text-admin-text">No tunnel yet</h2>
+              <h2 className="mt-4 text-xl font-semibold text-admin-text">Aucun tunnel pour le moment</h2>
               <p className="mt-2 text-sm leading-6 text-admin-text-muted">
-                Create a tunnel, then open it to configure ports, access, and enrollment.
+                Cree un tunnel puis ouvre-le pour configurer les ports, l acces et l installation de l agent.
               </p>
               <div className="mt-6 flex justify-center gap-3">
                 <AdminButton onClick={createTunnel}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add tunnel
+                  Creer un tunnel
                 </AdminButton>
               </div>
             </div>
@@ -157,14 +157,14 @@ export default function Tunnels({ mode = 'client' }) {
                       </AdminBadge>
                     </div>
                     <p className="max-w-3xl text-sm leading-6 text-admin-text-muted">
-                      {tunnel.description || 'No description provided.'}
+                      {tunnel.description || 'Aucune description.'}
                     </p>
                     <TunnelStatus tunnel={tunnel} />
                   </div>
 
                   <div className="flex items-center gap-4">
                     <div className="hidden text-right md:block">
-                      <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Hostname</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Adresse publique</div>
                       <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-admin-text">{getTunnelHostnamePreview(tunnel)}</div>
                     </div>
                     <div className="rounded-lg border border-admin-border bg-admin-surface2 p-3 text-admin-text-muted transition-all group-hover:bg-admin-surface">

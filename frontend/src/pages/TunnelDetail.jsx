@@ -176,9 +176,9 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
         linux: response.data.linuxCommand || '',
         windows: response.data.windowsCommand || ''
       });
-      toast({ title: 'Code generated', description: 'Quick connect ready' });
+      toast({ title: 'Code genere', description: 'Code de connexion pret' });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible de generer le code' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de generer le code' });
     } finally {
       setSaving(false);
     }
@@ -189,12 +189,12 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
     try {
       await navigator.clipboard.writeText(value);
       setCopiedField(fieldKey);
-      toast({ title: 'Copied', description: 'Command copied to clipboard.' });
+      toast({ title: 'Copie', description: 'Commande copiere dans le presse-papiers.' });
       setTimeout(() => {
         setCopiedField((current) => (current === fieldKey ? '' : current));
       }, 1500);
     } catch {
-      toast({ variant: 'destructive', title: 'Error', description: 'Unable to copy automatically.' });
+      toast({ variant: 'destructive', title: 'Erreur', description: 'Copie automatique impossible.' });
     }
   };
 
@@ -211,11 +211,11 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
         agentId: bindingForm.agentId && bindingForm.agentId !== 'auto' ? parseInt(bindingForm.agentId, 10) : null
       };
       await tunnelsAPI.createBinding(tunnel.id, payload);
-      toast({ title: 'Binding created' });
+      toast({ title: 'Port ajoute' });
       setBindingForm({ label: '', protocol: 'tcp', localPort: '', publicPort: '', targetHost: '127.0.0.1', agentId: '' });
       await loadTunnel({ quiet: true });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible de creer le binding' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de creer le port' });
     } finally {
       setSaving(false);
     }
@@ -225,10 +225,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
     if (!tunnel) return;
     try {
       await tunnelsAPI.deleteBinding(tunnel.id, bindingId);
-      toast({ title: 'Binding deleted' });
+      toast({ title: 'Port supprime' });
       await loadTunnel({ quiet: true });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible de supprimer le binding' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de supprimer le port' });
     }
   };
 
@@ -242,11 +242,11 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
         userId: Number.parseInt(accessForm.userId, 10),
         role: accessForm.role || 'view'
       });
-      toast({ title: 'Access granted' });
+      toast({ title: 'Acces ajoute' });
       setAccessForm({ userId: '', role: 'view' });
       await loadTunnel({ quiet: true });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible d accorder l acces' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible d accorder l acces' });
     } finally {
       setSaving(false);
     }
@@ -256,10 +256,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
     if (!tunnel) return;
     try {
       await tunnelsAPI.revokeAccess(tunnel.id, userIdToRemove);
-      toast({ title: 'Access revoked' });
+      toast({ title: 'Acces retire' });
       await loadTunnel({ quiet: true });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible de retirer l acces' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de retirer l acces' });
     }
   };
 
@@ -269,10 +269,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
     try {
       setSaving(true);
       await tunnelsAPI.delete(tunnel.id);
-      toast({ title: 'Tunnel deleted' });
+      toast({ title: 'Tunnel supprime' });
       navigate(basePath);
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.message || 'Impossible de supprimer le tunnel' });
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Impossible de supprimer le tunnel' });
     } finally {
       setSaving(false);
       setDeleteDialogOpen(false);
@@ -284,7 +284,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-white/70">
           <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
-          <span className="text-sm">Loading tunnel...</span>
+          <span className="text-sm">Chargement du tunnel...</span>
         </div>
       </div>
     );
@@ -294,10 +294,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
     return (
       <AdminCard className="rounded-[1.75rem] border-white/10 bg-slate-950/70 shadow-[0_24px_70px_rgba(0,0,0,0.25)]">
         <AdminCardContent className="p-8">
-          <div className="text-sm text-white/55">Tunnel not found.</div>
+          <div className="text-sm text-white/55">Tunnel introuvable.</div>
           <AdminButton className="mt-4" variant="secondary" onClick={() => navigate(basePath)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to list
+            Retour a la liste
           </AdminButton>
         </AdminCardContent>
       </AdminCard>
@@ -305,10 +305,10 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
   }
 
   const sections = [
-    { key: 'overview', label: 'Overview', icon: Eye },
+    { key: 'overview', label: 'Vue generale', icon: Eye },
     { key: 'ports', label: 'Ports', icon: Cable },
-    { key: 'access', label: 'Access', icon: UserPlus },
-    { key: 'install', label: 'Install', icon: KeyRound }
+    { key: 'access', label: 'Acces', icon: UserPlus },
+    { key: 'install', label: 'Installation', icon: KeyRound }
   ];
 
   return (
@@ -321,12 +321,12 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
               className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-admin-text-muted hover:text-admin-text"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to tunnels
+              Retour aux tunnels
             </button>
             <div>
               <h1 className="text-3xl font-semibold text-admin-text md:text-4xl">{tunnel.name}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-admin-text-muted md:text-base">
-                {tunnel.description || 'No description provided.'}
+                {tunnel.description || 'Aucune description.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-admin-text-muted">
@@ -334,15 +334,15 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
               <span className={`rounded-full border px-3 py-1 ${tunnel.status === 'online' ? 'border-admin-success/30 bg-admin-success/10 text-admin-success' : 'border-admin-border bg-admin-surface2 text-admin-text-muted'}`}>
                 {tunnel.status || 'unknown'}
               </span>
-              <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{onlineAgents.length} online agent(s)</span>
-              <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{tunnel.bindings?.length || 0} binding(s)</span>
+              <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{onlineAgents.length} agent(s) en ligne</span>
+              <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1">{tunnel.bindings?.length || 0} port(s) publie(s)</span>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
             <AdminButton variant="secondary" onClick={() => loadTunnel()}>
               {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Refresh
+              Actualiser
             </AdminButton>
             <AdminButton
               variant={autoRefresh ? 'secondary' : 'default'}
@@ -350,7 +350,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
               className={autoRefresh ? 'border-admin-success/30 bg-admin-success/10 text-admin-success hover:bg-admin-success/15' : ''}
             >
               <CircleDot className="mr-2 h-4 w-4" />
-              {autoRefresh ? 'Auto refresh on' : 'Auto refresh off'}
+              {autoRefresh ? 'Auto refresh active' : 'Auto refresh inactive'}
             </AdminButton>
             {canManage && (
               <AdminButton
@@ -358,7 +358,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                 onClick={() => setDeleteDialogOpen(true)}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete tunnel
+                Supprimer le tunnel
               </AdminButton>
             )}
           </div>
@@ -366,7 +366,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
       {error && (
         <AdminAlert variant="destructive">
-          <AdminAlertTitle>Error</AdminAlertTitle>
+          <AdminAlertTitle>Erreur</AdminAlertTitle>
           <AdminAlertDescription>{error}</AdminAlertDescription>
         </AdminAlert>
       )}
@@ -387,20 +387,20 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
       {currentSection === 'overview' && (
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <SectionPanel
-            title="Tunnel summary"
-            description="Core state, ownership and runtime status."
+            title="Resume du tunnel"
+            description="Etat general, proprietaire et statut runtime."
             icon={Server}
-            action={canManage ? null : <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1 text-[11px] text-admin-text-muted">Read only</span>}
+            action={canManage ? null : <span className="rounded-full border border-admin-border bg-admin-surface2 px-3 py-1 text-[11px] text-admin-text-muted">Lecture seule</span>}
           >
             <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Hostname</div>
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Adresse publique</div>
                   <div className="mt-2 break-all text-sm font-semibold text-admin-text">{buildTunnelHostname(tunnel)}</div>
-                  <div className="mt-2 text-xs text-admin-text-muted">Base domain: {tunnel.public_domain}</div>
+                  <div className="mt-2 text-xs text-admin-text-muted">Domaine de base: {tunnel.public_domain}</div>
                 </div>
                 <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Owner</div>
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Proprietaire</div>
                   <div className="mt-2 text-sm font-semibold text-admin-text">User #{tunnel.user_id}</div>
                 </div>
                 <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
@@ -414,16 +414,16 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   <div>
                     <div className="flex items-center gap-2 text-sm font-semibold text-admin-text">
                       <Zap className="h-4 w-4 text-admin-primary" />
-                      Runtime state
+                      Etat runtime
                     </div>
                     <p className="mt-1 text-sm text-admin-text-muted">
                       {onlineAgents.length > 0
-                        ? 'At least one agent is online. Use the Ports and Access pages to manage the tunnel.'
-                        : 'No online agent yet. Open the Install page to generate an enrollment code.'}
+                        ? 'Au moins un agent est en ligne. Utilise les onglets Ports et Acces pour piloter le tunnel.'
+                        : 'Aucun agent en ligne. Ouvre l onglet Installation pour generer un code d enrollment.'}
                     </p>
                   </div>
                   <AdminButton variant="secondary" onClick={() => navigate(detailPath('ports'))}>
-                    Configure ports
+                    Configurer les ports
                     <ChevronRight className="ml-2 h-4 w-4" />
                   </AdminButton>
                 </div>
@@ -432,8 +432,8 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
           </SectionPanel>
 
           <SectionPanel
-            title="Online agents"
-            description="Agents enrolled on this tunnel and their runtime state."
+            title="Agents"
+            description="Agents enrolles sur ce tunnel et leur etat."
             icon={Wifi}
           >
             <div className="space-y-3">
@@ -456,7 +456,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   ))}
                 </div>
               ) : (
-                <EmptyBlock icon={Wifi} title="No agents" description="This tunnel does not have any enrolled agent yet." />
+                <EmptyBlock icon={Wifi} title="Aucun agent" description="Ce tunnel n a encore aucun agent enrole." />
               )}
             </div>
           </SectionPanel>
@@ -465,7 +465,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
       {currentSection === 'ports' && (
         <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
-          <SectionPanel title="Port forwarding" description="Every public port bound to this tunnel." icon={Cable}>
+          <SectionPanel title="Ports publies" description="Tous les ports publics relies a ce tunnel." icon={Cable}>
             <div className="space-y-3">
               {tunnel.bindings?.length ? (
                 <div className="space-y-3">
@@ -493,15 +493,15 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   ))}
                 </div>
               ) : (
-                <EmptyBlock icon={Cable} title="No bindings yet" description="Create a port forwarding rule to expose a local service." />
+                <EmptyBlock icon={Cable} title="Aucun port publie" description="Cree une regle de redirection pour exposer un service local." />
               )}
             </div>
           </SectionPanel>
 
-          <SectionPanel title="Add binding" description="Create a new forwarding rule." icon={Plus}>
+          <SectionPanel title="Ajouter un port" description="Cree une nouvelle regle de redirection." icon={Plus}>
               <form className="space-y-4" onSubmit={handleCreateBinding}>
                 <div className="space-y-2">
-                  <Label className="text-white/70">Label</Label>
+                  <Label className="text-white/70">Nom</Label>
                   <Input
                     value={bindingForm.label}
                     onChange={(e) => setBindingForm((current) => ({ ...current, label: e.target.value }))}
@@ -511,16 +511,16 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label className="text-white/70">Protocol</Label>
+                    <Label className="text-white/70">Protocole</Label>
                     <Select value={bindingForm.protocol} onValueChange={(value) => setBindingForm((current) => ({ ...current, protocol: value }))}>
                       <SelectTrigger className="border-white/10 bg-white/[0.03] text-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="tcp">TCP</SelectItem>
-                        <SelectItem value="udp">UDP</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-admin-text-muted">Seul TCP est supporte actuellement.</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white/70">Agent</Label>
@@ -532,7 +532,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                         <SelectValue placeholder="Auto" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="auto">Auto-select</SelectItem>
+                        <SelectItem value="auto">Selection auto</SelectItem>
                         {(tunnel.agents || []).map((agent) => (
                           <SelectItem key={agent.id} value={String(agent.id)}>
                             {agent.name} · {agent.status}
@@ -542,7 +542,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-white/70">Local port</Label>
+                    <Label className="text-white/70">Port local</Label>
                     <Input
                       type="number"
                       min="1"
@@ -554,7 +554,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-white/70">Public port</Label>
+                    <Label className="text-white/70">Port public</Label>
                     <Input
                       type="number"
                       min="1"
@@ -566,7 +566,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label className="text-white/70">Target host</Label>
+                    <Label className="text-white/70">Host cible</Label>
                     <Input
                       value={bindingForm.targetHost}
                       onChange={(e) => setBindingForm((current) => ({ ...current, targetHost: e.target.value }))}
@@ -577,7 +577,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                 </div>
                 <AdminButton type="submit" disabled={saving} className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:from-emerald-400 hover:to-cyan-400">
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cable className="mr-2 h-4 w-4" />}
-                  Add binding
+                  Ajouter le port
                 </AdminButton>
               </form>
           </SectionPanel>
@@ -586,7 +586,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
       {currentSection === 'access' && (
         <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
-          <SectionPanel title="Shared access" description="People who can view or manage this tunnel." icon={Shield}>
+          <SectionPanel title="Acces partages" description="Utilisateurs autorises a voir ou gerer ce tunnel." icon={Shield}>
             <div className="space-y-3">
               {tunnel.access?.length ? (
                 <div className="space-y-3">
@@ -607,15 +607,15 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   ))}
                 </div>
               ) : (
-                <EmptyBlock icon={Shield} title="No shared access" description="Grant access to another user if you want them to manage or view this tunnel." />
+                <EmptyBlock icon={Shield} title="Aucun acces partage" description="Ajoute un utilisateur si tu veux partager la consultation ou la gestion du tunnel." />
               )}
             </div>
           </SectionPanel>
 
-          <SectionPanel title="Grant access" description="Invite a user to this tunnel." icon={UserPlus}>
+          <SectionPanel title="Ajouter un acces" description="Autoriser un utilisateur sur ce tunnel." icon={UserPlus}>
               <form className="space-y-4" onSubmit={handleGrantAccess}>
                 <div className="space-y-2">
-                    <Label className="text-admin-text-muted">User ID</Label>
+                    <Label className="text-admin-text-muted">ID utilisateur</Label>
                   <Input
                     type="number"
                     min="1"
@@ -632,14 +632,14 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="view">View</SelectItem>
-                      <SelectItem value="manage">Manage</SelectItem>
+                      <SelectItem value="view">Lecture</SelectItem>
+                      <SelectItem value="manage">Gestion</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <AdminButton type="submit" disabled={saving} className="w-full">
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                  Grant access
+                  Ajouter l acces
                 </AdminButton>
               </form>
           </SectionPanel>
@@ -648,29 +648,29 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
 
       {currentSection === 'install' && (
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <SectionPanel title="Install or restart" description="Generate a code for a new host. If the machine already has a local config, rerunning the installer will reuse it instead of creating a new agent." icon={KeyRound}>
+          <SectionPanel title="Installer ou redemarrer" description="Genere un code pour une nouvelle machine. Si la machine a deja une config locale, relancer l installateur reutilise la config existante." icon={KeyRound}>
             <div className="space-y-4">
               <div className="rounded-3xl border border-admin-border bg-admin-surface2 p-4">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Status</div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Etat</div>
                 <p className="mt-2 text-sm text-admin-text-muted">
                   {onlineAgents.length > 0
-                    ? 'An agent is already online. Use the same installer again only on the same host; it will reuse the existing config.'
-                    : 'No agent is online yet. If you just restarted it, wait a few seconds for the heartbeat to arrive.'}
+                    ? 'Un agent est deja en ligne. Reutilise l installateur uniquement sur la meme machine pour reutiliser sa config.'
+                    : 'Aucun agent en ligne. Si tu viens de le relancer, attends quelques secondes le temps du heartbeat.'}
                 </p>
               </div>
               <AdminButton onClick={handleGenerateCode} disabled={saving} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
-                Generate code for a new host
+                Generer un code d installation
               </AdminButton>
               <div className="rounded-3xl border border-admin-border bg-admin-surface2 p-4">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Enrollment code</div>
-                <div className="mt-2 break-all text-sm font-mono text-admin-text">{installCode || 'Click Generate code'}</div>
-                <div className="mt-2 text-xs text-admin-text-muted">{installExpiresAt ? `Expires ${installExpiresAt}` : 'One-time code'}</div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-admin-text-muted">Code d enrollment</div>
+                <div className="mt-2 break-all text-sm font-mono text-admin-text">{installCode || 'Clique sur Generer un code'}</div>
+                <div className="mt-2 text-xs text-admin-text-muted">{installExpiresAt ? `Expire le ${installExpiresAt}` : 'Code a usage unique'}</div>
               </div>
             </div>
           </SectionPanel>
 
-          <SectionPanel title="Install commands" description="Copy the command for the target host." icon={Cloud}>
+          <SectionPanel title="Commandes d installation" description="Copie la commande selon la machine cible." icon={Cloud}>
             <div className="space-y-4">
               <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-admin-text-muted">
@@ -680,7 +680,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   </AdminButton>
                 </div>
                 <code className="block break-all rounded-xl border border-admin-border bg-admin-surface p-3 text-[11px] leading-6 text-admin-text-muted">
-                  {installCommands.linux || 'Generate a code to display the command.'}
+                  {installCommands.linux || 'Genere un code pour afficher la commande.'}
                 </code>
               </div>
               <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
@@ -691,7 +691,7 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
                   </AdminButton>
                 </div>
                 <code className="block break-all rounded-xl border border-admin-border bg-admin-surface p-3 text-[11px] leading-6 text-admin-text-muted">
-                  {installCommands.windows || 'Generate a code to display the command.'}
+                  {installCommands.windows || 'Genere un code pour afficher la commande.'}
                 </code>
               </div>
             </div>
@@ -702,24 +702,24 @@ export default function TunnelDetail({ mode = 'client', section = 'overview' }) 
       <AdminModal open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AdminModalContent className="max-w-xl border-admin-border bg-admin-surface text-admin-text">
           <AdminModalHeader>
-            <AdminModalTitle>Delete tunnel</AdminModalTitle>
+            <AdminModalTitle>Supprimer le tunnel</AdminModalTitle>
             <AdminModalDescription className="text-admin-text-muted">
-              This will permanently remove {tunnel.name} and all related bindings, agents, and access shares.
+              Cette action supprime definitivement {tunnel.name} et tous ses ports, agents et partages d acces.
             </AdminModalDescription>
           </AdminModalHeader>
 
           <div className="space-y-3 rounded-2xl border border-admin-danger/30 bg-admin-danger/10 p-4 text-sm text-red-200">
-            <p className="font-medium">This action cannot be undone.</p>
-            <p className="text-red-200/70">Public endpoints will stop working immediately after deletion.</p>
+            <p className="font-medium">Cette action est irreversible.</p>
+            <p className="text-red-200/70">Les endpoints publics cesseront de fonctionner immediatement.</p>
           </div>
 
           <AdminModalFooter className="mt-2 border-admin-border">
             <AdminButton variant="secondary" onClick={() => setDeleteDialogOpen(false)}>
-              Cancel
+              Annuler
             </AdminButton>
             <AdminButton variant="danger" onClick={handleDeleteTunnel} disabled={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-              Delete tunnel
+              Supprimer le tunnel
             </AdminButton>
           </AdminModalFooter>
         </AdminModalContent>

@@ -48,7 +48,8 @@ async function canManageTunnel(tunnel, userId, isAdmin) {
 
 function buildPublicHostname(tunnel, protocol) {
   const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
-  return `${protocol}.${publicSlug}.${config.tunnels.publicDomain}`;
+  const publicDomain = tunnel.public_domain || config.tunnels.publicDomain;
+  return `${protocol}.${publicSlug}.${publicDomain}`;
 }
 
 function getPublicBaseUrl(request) {
@@ -543,7 +544,7 @@ export async function tunnelRoutes(fastify, options) {
         required: ['label', 'localPort'],
         properties: {
           label: { type: 'string', minLength: 1, maxLength: 255 },
-          protocol: { type: 'string', enum: ['tcp', 'udp'] },
+          protocol: { type: 'string', enum: ['tcp'] },
           agentId: { type: ['integer', 'null'], minimum: 1 },
           localPort: { type: 'integer', minimum: 1, maximum: 65535 },
           publicPort: { type: ['integer', 'null'], minimum: 1, maximum: 65535 },
@@ -564,6 +565,10 @@ export async function tunnelRoutes(fastify, options) {
       }
 
       const { label, protocol = 'tcp', localPort, publicPort, targetHost = '127.0.0.1', agentId: requestedAgentId } = request.body;
+
+      if (protocol !== 'tcp') {
+        return reply.code(400).send({ error: 'Bad Request', message: 'Only TCP bindings are supported right now' });
+      }
 
       let effectiveAgentId = requestedAgentId ?? null;
       if (effectiveAgentId !== null) {
