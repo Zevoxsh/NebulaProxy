@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Copy, Loader2, Plus, Wifi } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Loader2, Plus, Terminal, Wifi } from 'lucide-react';
 import { tunnelsAPI } from '../api/client';
 import {
   AdminAlert,
@@ -89,7 +89,6 @@ export default function TunnelCreate({ mode = 'client' }) {
       setTimeout(() => {
         setCopiedField((current) => (current === fieldKey ? '' : current));
       }, 1200);
-      toast({ title: 'Copie', description: 'Commande copiee dans le presse-papiers.' });
     } catch {
       toast({ variant: 'destructive', title: 'Erreur', description: 'Copie automatique impossible.' });
     }
@@ -123,8 +122,6 @@ export default function TunnelCreate({ mode = 'client' }) {
         windows: codeResponse.data.windowsCommand || ''
       });
       setModalOpen(true);
-
-      toast({ title: 'Tunnel cree', description: 'Installe maintenant l agent avec la commande affichee.' });
     } catch (err) {
       setError(err.response?.data?.message || 'Impossible de creer le tunnel');
     } finally {
@@ -133,95 +130,111 @@ export default function TunnelCreate({ mode = 'client' }) {
   };
 
   return (
-    <div data-admin-theme className="space-y-6 max-w-4xl pb-10">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-admin-text-muted">Tunnels</p>
-          <h1 className="mt-1 text-3xl font-semibold text-admin-text">Creer un tunnel</h1>
+    <div data-admin-theme className="pb-10">
+      <div className="mx-auto w-full max-w-3xl px-4 pt-6 md:px-6 md:pt-10">
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-admin-text-muted">Tunnels</p>
+            <h1 className="mt-1 text-4xl font-semibold text-admin-text">Creer un tunnel</h1>
+            <p className="mt-2 text-sm text-admin-text-muted">Creation rapide: nom, description puis installation agent.</p>
+          </div>
+          <AdminButton variant="secondary" onClick={() => navigate(basePath)}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Retour
+          </AdminButton>
         </div>
-        <AdminButton variant="secondary" onClick={() => navigate(basePath)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Retour
-        </AdminButton>
-      </div>
 
-      {error && (
-        <AdminAlert variant="destructive">
-          <AdminAlertTitle>Erreur</AdminAlertTitle>
-          <AdminAlertDescription>{error}</AdminAlertDescription>
-        </AdminAlert>
-      )}
+        {error && (
+          <AdminAlert variant="destructive" className="mb-5">
+            <AdminAlertTitle>Erreur</AdminAlertTitle>
+            <AdminAlertDescription>{error}</AdminAlertDescription>
+          </AdminAlert>
+        )}
 
-      <AdminCard>
-        <AdminCardHeader>
-          <AdminCardTitle className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-admin-primary" />
-            Nouveau tunnel
-          </AdminCardTitle>
-        </AdminCardHeader>
-        <AdminCardContent className="p-6">
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
+        <AdminCard className="overflow-hidden border-admin-border/80 bg-gradient-to-b from-admin-surface to-admin-surface2 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+          <AdminCardHeader className="border-b border-admin-border/80 bg-admin-surface/60">
+            <AdminCardTitle className="flex items-center gap-2 text-xl">
+              <Plus className="h-5 w-5 text-admin-primary" />
+              Nouveau tunnel
+            </AdminCardTitle>
+          </AdminCardHeader>
+          <AdminCardContent className="p-6 md:p-7">
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              <div className="space-y-2">
                 <Label className="text-admin-text-muted">Nom</Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
                   placeholder="serveur-01"
-                  className="border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
+                  className="h-12 border-admin-border bg-admin-surface text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label className="text-admin-text-muted">Description</Label>
                 <Textarea
                   value={form.description}
                   onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
                   placeholder="Machine Linux derriere NAT"
-                  className="min-h-28 border-admin-border bg-admin-surface2 text-admin-text placeholder:text-admin-text-muted"
+                  className="min-h-32 border-admin-border bg-admin-surface text-admin-text placeholder:text-admin-text-muted"
                 />
               </div>
-            </div>
 
-            <AdminButton type="submit" disabled={saving} className="w-full">
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Creer le tunnel
-            </AdminButton>
-          </form>
-        </AdminCardContent>
-      </AdminCard>
+              <div className="rounded-xl border border-admin-border bg-admin-surface/70 px-4 py-3 text-xs text-admin-text-muted">
+                Apres creation, une fenetre d installation apparait automatiquement avec la commande agent.
+              </div>
+
+              <AdminButton type="submit" disabled={saving} className="h-12 w-full text-sm font-semibold">
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                Creer le tunnel
+              </AdminButton>
+            </form>
+          </AdminCardContent>
+        </AdminCard>
+      </div>
 
       <AdminModal open={modalOpen} onOpenChange={() => {}}>
         <AdminModalContent
-          className="max-w-3xl border-admin-border bg-admin-surface text-admin-text"
+          className="max-w-4xl border-admin-border bg-gradient-to-b from-admin-surface to-admin-surface2 text-admin-text shadow-2xl [&>button]:hidden"
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
           <AdminModalHeader>
-            <AdminModalTitle className="flex items-center gap-2">
-              <Wifi className="h-5 w-5 text-admin-primary" />
+            <AdminModalTitle className="flex items-center gap-3 text-2xl">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-admin-primary/30 bg-admin-primary/10">
+                <Terminal className="h-5 w-5 text-admin-primary" />
+              </div>
               Installation de l agent
             </AdminModalTitle>
-            <AdminModalDescription className="text-admin-text-muted">
+            <AdminModalDescription className="pt-1 text-sm text-admin-text-muted">
               {modalSubtitle}
             </AdminModalDescription>
           </AdminModalHeader>
 
-          <div className="space-y-4 pt-4">
-            <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-admin-text-muted">Code enrollment</div>
-              <div className="mt-2 break-all font-mono text-sm text-admin-text">{installCode || 'Generation en cours...'}</div>
-              <div className="mt-2 text-xs text-admin-text-muted">
-                {installExpiresAt ? `Expire le ${installExpiresAt}` : 'Code a usage unique'}
+          <div className="space-y-5 pt-4">
+            <div className="grid gap-4 rounded-2xl border border-admin-border bg-admin-surface p-4 md:grid-cols-[1fr_auto] md:items-center">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.2em] text-admin-text-muted">Code enrollment</div>
+                <div className="mt-2 break-all rounded-lg border border-admin-border bg-admin-surface2 px-3 py-2 font-mono text-sm text-admin-text">
+                  {installCode || 'Generation en cours...'}
+                </div>
+                <div className="mt-2 text-xs text-admin-text-muted">
+                  {installExpiresAt ? `Expire le ${installExpiresAt}` : 'Code a usage unique'}
+                </div>
               </div>
+              <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCode, 'code')}>
+                {copiedField === 'code' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                Copier le code
+              </AdminButton>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
+              <div className="rounded-2xl border border-admin-border bg-admin-surface p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-admin-text-muted">
-                  <span>Linux</span>
-                  <AdminButton type="button" variant="ghost" onClick={() => handleCopy(installCommands.linux, 'linux')}>
-                    {copiedField === 'linux' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  <span className="font-medium text-admin-text">Linux</span>
+                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.linux, 'linux')}>
+                    {copiedField === 'linux' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    Copier
                   </AdminButton>
                 </div>
                 <code className="block break-all rounded-xl border border-admin-border bg-admin-surface p-3 text-[11px] leading-6 text-admin-text-muted">
@@ -229,11 +242,12 @@ export default function TunnelCreate({ mode = 'client' }) {
                 </code>
               </div>
 
-              <div className="rounded-2xl border border-admin-border bg-admin-surface2 p-4">
+              <div className="rounded-2xl border border-admin-border bg-admin-surface p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-admin-text-muted">
-                  <span>Windows</span>
-                  <AdminButton type="button" variant="ghost" onClick={() => handleCopy(installCommands.windows, 'windows')}>
-                    {copiedField === 'windows' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  <span className="font-medium text-admin-text">Windows</span>
+                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.windows, 'windows')}>
+                    {copiedField === 'windows' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    Copier
                   </AdminButton>
                 </div>
                 <code className="block break-all rounded-xl border border-admin-border bg-admin-surface p-3 text-[11px] leading-6 text-admin-text-muted">
@@ -242,9 +256,22 @@ export default function TunnelCreate({ mode = 'client' }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-admin-success/30 bg-admin-success/10 px-3 py-2 text-xs text-admin-success">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Detection automatique de l agent active.
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-admin-success/30 bg-admin-success/10 px-4 py-3 text-xs text-admin-success">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Detection automatique de l agent active.
+              </div>
+              <div className="rounded-full border border-admin-success/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]">
+                En attente
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-admin-border bg-admin-surface px-4 py-3 text-xs text-admin-text-muted">
+              1. Copie une commande ci-dessus.
+              <br />
+              2. Execute-la sur la machine cible.
+              <br />
+              3. La fenetre se fermera automatiquement des que l agent est connecte.
             </div>
           </div>
         </AdminModalContent>
