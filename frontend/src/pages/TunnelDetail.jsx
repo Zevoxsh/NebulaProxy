@@ -21,7 +21,6 @@ import {
 } from '@/components/admin';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function SectionButton({ active, children, ...props }) {
   return (
@@ -111,13 +110,17 @@ export default function TunnelDetail({ mode = 'client' }) {
     e.preventDefault();
     if (!tunnel) return;
 
+    const singleAgentId = tunnel?.agents?.length === 1 ? tunnel.agents[0].id : null;
+
     try {
       setSaving(true);
       const payload = {
         ...bindingForm,
         localPort: parseInt(bindingForm.localPort, 10),
         publicPort: bindingForm.publicPort ? parseInt(bindingForm.publicPort, 10) : null,
-        agentId: bindingForm.agentId && bindingForm.agentId !== 'auto' ? parseInt(bindingForm.agentId, 10) : null
+        agentId: bindingForm.agentId && bindingForm.agentId !== 'auto'
+          ? parseInt(bindingForm.agentId, 10)
+          : singleAgentId
       };
 
       await tunnelsAPI.createBinding(tunnel.id, payload);
@@ -357,35 +360,31 @@ export default function TunnelDetail({ mode = 'client' }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="text-admin-text-muted">Protocole</Label>
-                  <Select value={bindingForm.protocol} onValueChange={(value) => setBindingForm((current) => ({ ...current, protocol: value }))}>
-                    <SelectTrigger className="border-admin-border bg-admin-surface2 text-admin-text">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="tcp">TCP</SelectItem>
-                      <SelectItem value="udp">UDP</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBindingForm((current) => ({ ...current, protocol: 'tcp' }))}
+                      className={`rounded-lg border px-3 py-2 text-sm transition ${bindingForm.protocol === 'tcp' ? 'border-admin-primary/40 bg-admin-primary/10 text-admin-text' : 'border-admin-border bg-admin-surface2 text-admin-text-muted hover:bg-admin-surface'}`}
+                    >
+                      TCP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBindingForm((current) => ({ ...current, protocol: 'udp' }))}
+                      className={`rounded-lg border px-3 py-2 text-sm transition ${bindingForm.protocol === 'udp' ? 'border-admin-primary/40 bg-admin-primary/10 text-admin-text' : 'border-admin-border bg-admin-surface2 text-admin-text-muted hover:bg-admin-surface'}`}
+                    >
+                      UDP
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-admin-text-muted">Agent</Label>
-                  <Select
-                    value={bindingForm.agentId || 'auto'}
-                    onValueChange={(value) => setBindingForm((current) => ({ ...current, agentId: value === 'auto' ? '' : value }))}
-                  >
-                    <SelectTrigger className="border-admin-border bg-admin-surface2 text-admin-text">
-                      <SelectValue placeholder="Selection auto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Selection auto</SelectItem>
-                      {(tunnel.agents || []).map((agent) => (
-                        <SelectItem key={agent.id} value={String(agent.id)}>
-                          {agent.name} · {agent.status}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex min-h-10 items-center rounded-lg border border-admin-border bg-admin-surface2 px-3 text-sm text-admin-text-muted">
+                    {tunnel.agents?.length === 1
+                      ? `Selection automatique: ${tunnel.agents[0].name}`
+                      : 'Aucun agent detecte.'}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
