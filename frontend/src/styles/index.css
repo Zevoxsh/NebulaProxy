@@ -496,3 +496,18 @@ textarea {
   background: #09090b !important;
   background-image: none !important;
 }
+
+/* Global floating UI: enforce opaque surfaces (menus, popovers, modals, toasts) */
+[data-radix-popper-content-wrapper] > *,
+[data-radix-portal] [role="dialog"],
+[data-radix-toast-viewport] > * {
+  background: #111113 !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+[data-radix-portal] [role="dialog"] [class*="bg-"][class*="/"] {
+  background-image: none !important;
+  backdrop-filter: none !important;
+}
