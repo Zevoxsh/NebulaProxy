@@ -257,8 +257,8 @@ function App() {
           <Route path="/tunnels/new" element={<TunnelCreate mode="client" />} />
           <Route path="/tunnels/:id" element={<TunnelDetail mode="client" section="overview" />} />
           <Route path="/tunnels/:id/ports" element={<TunnelDetail mode="client" section="ports" />} />
-          <Route path="/tunnels/:id/access" element={<TunnelDetail mode="client" section="access" />} />
-          <Route path="/tunnels/:id/install" element={<TunnelDetail mode="client" section="install" />} />
+          <Route path="/tunnels/:id/access" element={<TunnelDetail mode="client" />} />
+          <Route path="/tunnels/:id/install" element={<TunnelDetail mode="client" />} />
           <Route path="/redirections" element={<Redirections />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId/*" element={<TeamDetail />} />
@@ -289,8 +289,8 @@ function App() {
           <Route path="/admin/tunnels/new" element={<TunnelCreate mode="admin" />} />
           <Route path="/admin/tunnels/:id" element={<TunnelDetail mode="admin" section="overview" />} />
           <Route path="/admin/tunnels/:id/ports" element={<TunnelDetail mode="admin" section="ports" />} />
-          <Route path="/admin/tunnels/:id/access" element={<TunnelDetail mode="admin" section="access" />} />
-          <Route path="/admin/tunnels/:id/install" element={<TunnelDetail mode="admin" section="install" />} />
+          <Route path="/admin/tunnels/:id/access" element={<TunnelDetail mode="admin" />} />
+          <Route path="/admin/tunnels/:id/install" element={<TunnelDetail mode="admin" />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/config" element={<AdminConfig />} />
           <Route path="/admin/services" element={<AdminServices />} />
