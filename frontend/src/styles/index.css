@@ -113,15 +113,15 @@
 
   .client-mobile-overlay {
     @apply fixed inset-0 z-40 lg:hidden;
-    background: rgba(1, 5, 12, 0.78);
-    backdrop-filter: blur(8px);
+    background: #09090b;
+    backdrop-filter: none;
   }
 
   .client-mobile-header {
     @apply lg:hidden fixed top-0 left-0 right-0 z-30 p-3 flex items-center justify-between border-b;
-    background: rgba(9, 9, 11, 0.94);
+    background: #09090b;
     border-color: #27272a;
-    backdrop-filter: blur(14px);
+    backdrop-filter: none;
   }
 
   .client-sidebar {
