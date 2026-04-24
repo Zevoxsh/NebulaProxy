@@ -30,7 +30,7 @@ function TunnelStatus({ tunnel }) {
 
 function getTunnelHostnamePreview(tunnel) {
   const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
-  const publicDomain = tunnel.public_domain || 'tunnel.nebula-app.dev';
+  const publicDomain = tunnel.public_domain || 'paxcia.net';
   return `tcp.${publicSlug}.${publicDomain}`;
 }
 

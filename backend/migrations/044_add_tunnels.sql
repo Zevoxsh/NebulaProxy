@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS tunnels (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   provider VARCHAR(32) NOT NULL DEFAULT 'cloudflare',
-  public_domain VARCHAR(255) NOT NULL DEFAULT 'nebula-app.dev',
+  public_domain VARCHAR(255) NOT NULL DEFAULT 'paxcia.net',
   status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'paused', 'revoked')),
   enrollment_code_hash TEXT,
   enrollment_code_expires_at TIMESTAMP,

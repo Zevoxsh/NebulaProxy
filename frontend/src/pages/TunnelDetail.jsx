@@ -91,7 +91,7 @@ function EmptyBlock({ icon: Icon, title, description }) {
 
 function buildTunnelHostname(tunnel, protocol = 'tcp') {
   const publicSlug = tunnel?.public_slug || tunnel?.publicSlug || tunnel?.id;
-  const publicDomain = tunnel?.public_domain || 'tunnel.nebula-app.dev';
+  const publicDomain = tunnel?.public_domain || 'paxcia.net';
   return `${protocol}.${publicSlug}.${publicDomain}`;
 }
 
