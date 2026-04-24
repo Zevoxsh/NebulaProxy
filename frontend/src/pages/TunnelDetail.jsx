@@ -67,6 +67,7 @@ export default function TunnelDetail({ mode = 'client' }) {
 
   const canManage = useMemo(() => {
     if (!tunnel || !user) return false;
+    if (user.role === 'admin') return true;
     if (mode === 'admin') return true;
     if (String(tunnel.user_id) === String(user.id)) return true;
     return (tunnel.access || []).some(
