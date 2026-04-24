@@ -331,6 +331,16 @@ export const config = {
     },
     get csrfEnabled() { return getConfig('CSRF_ENABLED', 'true') !== 'false'; },
     get dnsRebindingProtection() { return getConfig('DNS_REBINDING_PROTECTION', 'true') !== 'false'; },
+    get hstsEnabled() {
+      const defaultValue = getConfig('NODE_ENV', 'development') === 'production' ? 'true' : 'false';
+      return getConfig('HSTS_ENABLED', defaultValue) === 'true';
+    },
+    get hstsMaxAgeSeconds() {
+      const value = parseInt(getConfig('HSTS_MAX_AGE_SECONDS', '31536000'), 10);
+      return Number.isFinite(value) && value >= 0 ? value : 31536000;
+    },
+    get hstsIncludeSubDomains() { return getConfig('HSTS_INCLUDE_SUBDOMAINS', 'false') === 'true'; },
+    get hstsPreload() { return getConfig('HSTS_PRELOAD', 'false') === 'true'; },
     get strictTokenRevocation() {
       const defaultValue = getConfig('NODE_ENV', 'development') === 'production' ? 'true' : 'false';
       return getConfig('STRICT_TOKEN_REVOCATION', defaultValue) === 'true';

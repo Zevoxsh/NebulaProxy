@@ -96,7 +96,11 @@ function buildTunnelHostname(tunnel, protocol = 'tcp') {
 }
 
 function buildBindingAccessHint(binding) {
-  return `${binding.public_hostname}:${binding.public_port}`;
+  const host = `${binding.public_hostname}:${binding.public_port}`;
+  if (binding.protocol === 'udp') {
+    return `udp://${host}`;
+  }
+  return `tcp://${host}`;
 }
 
 export default function TunnelDetail({ mode = 'client', section = 'overview' }) {

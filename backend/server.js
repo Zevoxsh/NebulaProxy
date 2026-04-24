@@ -587,7 +587,15 @@ fastify.addHook('onSend', async (request, reply) => {
 
   // HSTS (HTTP Strict Transport Security)
   if (config.nodeEnv === 'production') {
-    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    if (config.security.hstsEnabled) {
+      const directives = [`max-age=${config.security.hstsMaxAgeSeconds}`];
+      if (config.security.hstsIncludeSubDomains) directives.push('includeSubDomains');
+      if (config.security.hstsPreload) directives.push('preload');
+      reply.header('Strict-Transport-Security', directives.join('; '));
+    } else {
+      // Explicitly clear previously cached HSTS policy in compliant browsers.
+      reply.header('Strict-Transport-Security', 'max-age=0');
+    }
   }
 
   // Content-Security-Policy

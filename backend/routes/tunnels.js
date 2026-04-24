@@ -84,7 +84,11 @@ function buildInstallCommands(baseUrl, code) {
 }
 
 function buildBindingAccessUrl(binding) {
-  return `${binding.publicHostname}:${binding.publicPort}`;
+  const host = `${binding.publicHostname}:${binding.publicPort}`;
+  if (binding.protocol === 'udp') {
+    return `udp://${host}`;
+  }
+  return `tcp://${host}`;
 }
 
 function buildLinuxInstallerScript({ baseUrl, code }) {
