@@ -32,7 +32,7 @@ async function readAgentScriptContent() {
 
 async function canAccessTunnel(tunnel, userId, isAdmin) {
   if (isAdmin) return true;
-  if (tunnel.user_id === userId) return true;
+  if (String(tunnel.user_id) === String(userId)) return true;
   if (tunnel.team_id && await database.isTeamMember(tunnel.team_id, userId)) return true;
   const access = await database.getTunnelAccessEntry(tunnel.id, userId);
   if (access) return true;
@@ -41,7 +41,7 @@ async function canAccessTunnel(tunnel, userId, isAdmin) {
 
 async function canManageTunnel(tunnel, userId, isAdmin) {
   if (isAdmin) return true;
-  if (tunnel.user_id === userId) return true;
+  if (String(tunnel.user_id) === String(userId)) return true;
   const access = await database.getTunnelAccessEntry(tunnel.id, userId);
   return access?.role === 'manage';
 }
@@ -343,16 +343,25 @@ export async function tunnelRoutes(fastify, options) {
       }
 
       await database.deleteTunnel(tunnelId);
-      await tunnelRelayService.reloadBindings();
 
-      await database.createAuditLog({
-        userId: request.user.id,
-        action: 'tunnel_deleted',
-        entityType: 'tunnel',
-        entityId: tunnelId,
-        details: { name: tunnel.name, provider: tunnel.provider, public_domain: tunnel.public_domain },
-        ipAddress: request.ip
-      });
+      try {
+        await tunnelRelayService.reloadBindings();
+      } catch (reloadError) {
+        fastify.log.error({ error: reloadError, tunnelId }, 'Tunnel deleted but failed to reload relay bindings');
+      }
+
+      try {
+        await database.createAuditLog({
+          userId: request.user.id,
+          action: 'tunnel_deleted',
+          entityType: 'tunnel',
+          entityId: tunnelId,
+          details: { name: tunnel.name, provider: tunnel.provider, public_domain: tunnel.public_domain },
+          ipAddress: request.ip
+        });
+      } catch (auditError) {
+        fastify.log.error({ error: auditError, tunnelId }, 'Tunnel deleted but failed to write audit log');
+      }
 
       reply.send({ success: true });
     } catch (error) {
