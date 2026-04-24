@@ -132,13 +132,13 @@ export default function TunnelCreate({ mode = 'client' }) {
   return (
     <div data-admin-theme className="pb-10">
       <div className="mx-auto w-full max-w-3xl px-4 pt-6 md:px-6 md:pt-10">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.22em] text-admin-text-muted">Tunnels</p>
-            <h1 className="mt-1 text-4xl font-semibold text-admin-text">Creer un tunnel</h1>
-            <p className="mt-2 text-sm text-admin-text-muted">Creation rapide: nom, description puis installation agent.</p>
+            <h1 className="mt-1 text-3xl font-semibold text-admin-text sm:text-4xl">Creer un tunnel</h1>
+            <p className="mt-2 text-sm leading-6 text-admin-text-muted">Creation rapide: nom, description puis installation agent.</p>
           </div>
-          <AdminButton variant="secondary" onClick={() => navigate(basePath)}>
+          <AdminButton variant="secondary" onClick={() => navigate(basePath)} className="w-full sm:w-auto">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour
           </AdminButton>
@@ -152,7 +152,7 @@ export default function TunnelCreate({ mode = 'client' }) {
         )}
 
         <AdminCard className="overflow-hidden border-admin-border/80 bg-gradient-to-b from-admin-surface to-admin-surface2 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-          <AdminCardHeader className="border-b border-admin-border/80 bg-admin-surface/60">
+          <AdminCardHeader className="border-b border-admin-border/80 bg-admin-surface/60 px-5 py-4 md:px-6">
             <AdminCardTitle className="flex items-center gap-2 text-xl">
               <Plus className="h-5 w-5 text-admin-primary" />
               Nouveau tunnel
@@ -194,7 +194,7 @@ export default function TunnelCreate({ mode = 'client' }) {
 
       <AdminModal open={modalOpen} onOpenChange={() => {}}>
         <AdminModalContent
-          className="max-w-4xl border-admin-border bg-gradient-to-b from-admin-surface to-admin-surface2 text-admin-text shadow-2xl [&>button]:hidden"
+          className="max-w-[calc(100vw-1.5rem)] border-admin-border bg-gradient-to-b from-admin-surface to-admin-surface2 text-admin-text shadow-2xl sm:max-w-4xl [&>button]:hidden"
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
@@ -222,7 +222,7 @@ export default function TunnelCreate({ mode = 'client' }) {
                   {installExpiresAt ? `Expire le ${installExpiresAt}` : 'Code a usage unique'}
                 </div>
               </div>
-              <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCode, 'code')}>
+              <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCode, 'code')} className="w-full md:w-auto">
                 {copiedField === 'code' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                 Copier le code
               </AdminButton>
@@ -232,7 +232,7 @@ export default function TunnelCreate({ mode = 'client' }) {
               <div className="rounded-2xl border border-admin-border bg-admin-surface p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-admin-text-muted">
                   <span className="font-medium text-admin-text">Linux</span>
-                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.linux, 'linux')}>
+                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.linux, 'linux')} className="w-full sm:w-auto">
                     {copiedField === 'linux' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                     Copier
                   </AdminButton>
@@ -245,7 +245,7 @@ export default function TunnelCreate({ mode = 'client' }) {
               <div className="rounded-2xl border border-admin-border bg-admin-surface p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-admin-text-muted">
                   <span className="font-medium text-admin-text">Windows</span>
-                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.windows, 'windows')}>
+                  <AdminButton type="button" variant="secondary" onClick={() => handleCopy(installCommands.windows, 'windows')} className="w-full sm:w-auto">
                     {copiedField === 'windows' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                     Copier
                   </AdminButton>

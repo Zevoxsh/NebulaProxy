@@ -213,15 +213,15 @@ export default function TunnelDetail({ mode = 'client' }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <AdminButton variant="secondary" onClick={() => loadTunnel()}>
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto lg:flex-wrap">
+          <AdminButton variant="secondary" onClick={() => loadTunnel()} className="w-full sm:w-auto">
             {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Actualiser
           </AdminButton>
           <AdminButton
             variant={autoRefresh ? 'secondary' : 'default'}
             onClick={() => setAutoRefresh((value) => !value)}
-            className={autoRefresh ? 'border-admin-success/30 bg-admin-success/10 text-admin-success hover:bg-admin-success/15' : ''}
+            className={`w-full sm:w-auto ${autoRefresh ? 'border-admin-success/30 bg-admin-success/10 text-admin-success hover:bg-admin-success/15' : ''}`}
           >
             <CircleDot className="mr-2 h-4 w-4" />
             {autoRefresh ? 'Auto refresh active' : 'Auto refresh inactive'}
@@ -229,6 +229,7 @@ export default function TunnelDetail({ mode = 'client' }) {
           {canManage && (
             <AdminButton
               variant="danger"
+              className="w-full sm:w-auto"
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -268,7 +269,7 @@ export default function TunnelDetail({ mode = 'client' }) {
                 <p className="mt-1 text-sm text-admin-text-muted">Ouvre ou ferme les ports du tunnel.</p>
               </div>
               {canManage && (
-                <AdminButton onClick={() => setOpenPortModal(true)} className="bg-admin-primary text-admin-primary-foreground hover:opacity-90">
+                <AdminButton onClick={() => setOpenPortModal(true)} className="w-full bg-admin-primary text-admin-primary-foreground hover:opacity-90 sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
                   Ouvrir un port
                 </AdminButton>
@@ -310,7 +311,7 @@ export default function TunnelDetail({ mode = 'client' }) {
                   <h3 className="mt-4 text-base font-semibold text-admin-text">Aucun port publie</h3>
                   <p className="mt-2 text-sm leading-6 text-admin-text-muted">Ajoute une regle pour exposer un service local.</p>
                   {canManage && (
-                    <AdminButton className="mt-4" onClick={() => setOpenPortModal(true)}>
+                    <AdminButton className="mt-4 w-full sm:w-auto" onClick={() => setOpenPortModal(true)}>
                       <Plus className="mr-2 h-4 w-4" />
                       Ouvrir mon premier port
                     </AdminButton>
@@ -326,7 +327,7 @@ export default function TunnelDetail({ mode = 'client' }) {
         <button
           type="button"
           onClick={() => setOpenPortModal(true)}
-          className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-admin-primary text-admin-primary-foreground shadow-lg transition hover:scale-105 hover:opacity-90"
+          className="fixed bottom-6 right-6 z-40 hidden h-14 w-14 items-center justify-center rounded-full bg-admin-primary text-admin-primary-foreground shadow-lg transition hover:scale-105 hover:opacity-90 sm:flex"
           aria-label="Ouvrir un port"
         >
           <Plus className="h-6 w-6" />

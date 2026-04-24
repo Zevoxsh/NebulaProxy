@@ -85,30 +85,30 @@ export default function Tunnels({ mode = 'client' }) {
   };
 
   return (
-    <div data-admin-theme className="space-y-6">
+    <div data-admin-theme className="space-y-6 pb-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="mb-2 text-3xl font-semibold text-admin-text">Tunnels</h1>
-          <p className="text-admin-text-muted">
+        <div className="max-w-2xl">
+          <h1 className="mb-2 text-3xl font-semibold text-admin-text md:text-4xl">Tunnels</h1>
+          <p className="text-sm leading-6 text-admin-text-muted md:text-base">
             {mode === 'admin'
               ? 'Vue administrateur des tunnels, agents et ports publies.'
               : 'Gere tes tunnels: installation de l agent, publication des ports et acces partage.'}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <AdminButton variant="secondary" onClick={refresh}>
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto lg:flex-wrap">
+          <AdminButton variant="secondary" onClick={refresh} className="w-full sm:w-auto">
             {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Actualiser
           </AdminButton>
-          <AdminButton onClick={createTunnel}>
+          <AdminButton onClick={createTunnel} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             Nouveau tunnel
           </AdminButton>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <AdminStatCard title="Tunnels" value={tunnels.length} subtitle="dans la liste" icon={Cloud} />
         <AdminStatCard title="Agents en ligne" value={onlineCount} subtitle="connectes maintenant" icon={Wifi} />
         <AdminStatCard title="Ports publies" value={tunnels.reduce((total, tunnel) => total + (tunnel.bindings?.length || 0), 0)} subtitle="regles de redirection" icon={Cable} />
@@ -139,8 +139,8 @@ export default function Tunnels({ mode = 'client' }) {
               <p className="mt-2 text-sm leading-6 text-admin-text-muted">
                 Cree un tunnel puis ouvre-le pour configurer les ports, l acces et l installation de l agent.
               </p>
-              <div className="mt-6 flex justify-center gap-3">
-                <AdminButton onClick={createTunnel}>
+              <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+                <AdminButton onClick={createTunnel} className="w-full sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
                   Creer un tunnel
                 </AdminButton>
@@ -172,7 +172,7 @@ export default function Tunnels({ mode = 'client' }) {
                     <TunnelStatus tunnel={tunnel} />
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex w-full items-center justify-between gap-4 md:w-auto">
                     <div className="hidden text-right md:block">
                       <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Adresse publique</div>
                       <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-admin-text">{getTunnelHostnamePreview(tunnel)}</div>
