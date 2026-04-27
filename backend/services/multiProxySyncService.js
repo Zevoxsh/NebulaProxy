@@ -1,47 +1,39 @@
 /**
  * MultiProxySyncService - Synchronizes proxy updates across multiple proxy instances
  *
- * When running multiple NebulaProxy instances:
+ * PostgreSQL-only mode:
  * - Each instance reads domains from the shared database
  * - When a domain is created/modified/deleted on one instance,
- *   it publishes an event via Redis Pub/Sub
+ *   it emits a PostgreSQL NOTIFY event
  * - All instances receive the event and update their proxies in real-time
- *
- * This ensures that opening a TCP/UDP port on proxy1 automatically
- * updates all other proxy instances
  */
 
 import { v4 as uuidv4 } from 'uuid';
-
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+import { getPgPool } from '../config/database.js';
 
 export class MultiProxySyncService {
   constructor() {
-    this.redis = null;
     this.processId = uuidv4(); // Unique ID for this proxy instance
     this.proxyManager = null;
     this.database = null;
+    this.pgPool = null;
+    this.pgClient = null;
 
     // Track subscriptions
     this.isSubscribed = false;
-    this.subscriptionChannel = 'nebula:proxy:sync';
-    this.healthChannel = 'nebula:proxy:health';
-
-    // Health tracking
-    this.lastHeartbeat = null;
-    this.heartbeatInterval = null;
+    this.subscriptionChannel = 'nebula_proxy_sync';
+    this.notificationHandler = null;
   }
 
   /**
    * Initialize the service
-   * @param {Object} redisClient - Redis client instance
    * @param {Object} proxyManagerInstance - ProxyManager instance
    * @param {Object} databaseInstance - Database instance
    */
-  init(redisClient, proxyManagerInstance, databaseInstance) {
-    this.redis = redisClient;
+  init(proxyManagerInstance, databaseInstance) {
     this.proxyManager = proxyManagerInstance;
     this.database = databaseInstance;
+    this.pgPool = getPgPool();
 
     console.log(`[MultiProxySync] Initialized with process ID: ${this.processId}`);
     return this;
@@ -51,7 +43,7 @@ export class MultiProxySyncService {
    * Start subscribing to sync events from other proxy instances
    */
   async startListening() {
-    if (!this.redis || !this.proxyManager) {
+    if (!this.pgPool || !this.proxyManager) {
       throw new Error('[MultiProxySync] Service not initialized');
     }
 
@@ -59,34 +51,49 @@ export class MultiProxySyncService {
       return; // Already listening
     }
 
-    // Create a separate Redis connection for pub/sub (can't use the same one)
-    const pubsubRedis = this.redis.duplicate();
-    await pubsubRedis.connect();
+    this.pgClient = await this.pgPool.connect();
+    this.notificationHandler = async (message) => {
+      if (message.channel !== this.subscriptionChannel || !message.payload) {
+        return;
+      }
 
-    // Subscribe to sync events
-    await pubsubRedis.subscribe(this.subscriptionChannel, async (message) => {
       try {
-        const event = JSON.parse(message);
+        const event = JSON.parse(message.payload);
         await this._handleSyncEvent(event);
       } catch (err) {
         console.error(`[MultiProxySync] Failed to handle sync event:`, err.message);
       }
+    };
+
+    this.pgClient.on('notification', this.notificationHandler);
+    this.pgClient.on('error', (err) => {
+      console.error('[MultiProxySync] PostgreSQL listener error:', err.message);
     });
 
-    this.isSubscribed = true;
-    console.log(`[MultiProxySync] Now listening for domain changes on channel: ${this.subscriptionChannel}`);
+    await this.pgClient.query(`LISTEN ${this.subscriptionChannel}`);
 
-    // Start periodic health broadcasts
-    this._startHealthBeacon();
+    this.isSubscribed = true;
+    console.log(`[MultiProxySync] Now listening for domain changes on PostgreSQL channel: ${this.subscriptionChannel}`);
   }
 
   /**
    * Stop listening to sync events
    */
   async stopListening() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
+    if (this.pgClient) {
+      try {
+        await this.pgClient.query(`UNLISTEN ${this.subscriptionChannel}`);
+      } catch (err) {
+        console.warn(`[MultiProxySync] Failed to unlisten:`, err.message);
+      }
+
+      if (this.notificationHandler) {
+        this.pgClient.off('notification', this.notificationHandler);
+        this.notificationHandler = null;
+      }
+
+      this.pgClient.release();
+      this.pgClient = null;
     }
     this.isSubscribed = false;
     console.log(`[MultiProxySync] Stopped listening`);
@@ -97,7 +104,7 @@ export class MultiProxySyncService {
    * This is called whenever a domain is created, modified, or deleted
    */
   async publishDomainChange(action, domain, details = {}) {
-    if (!this.redis) return;
+    if (!this.pgPool) return;
 
     const event = {
       id: uuidv4(),
@@ -115,7 +122,7 @@ export class MultiProxySyncService {
     };
 
     try {
-      await this.redis.publish(this.subscriptionChannel, JSON.stringify(event));
+      await this.pgPool.query('SELECT pg_notify($1, $2)', [this.subscriptionChannel, JSON.stringify(event)]);
       console.log(`[MultiProxySync] Published '${action}' event for domain ${domain.hostname}`);
     } catch (err) {
       console.error(`[MultiProxySync] Failed to publish event:`, err.message);
@@ -290,47 +297,11 @@ export class MultiProxySyncService {
   }
 
   /**
-   * Broadcast health status and get other proxy instances
-   */
-  async _startHealthBeacon() {
-    this.heartbeatInterval = setInterval(async () => {
-      if (!this.redis) return;
-
-      const healthData = {
-        proxyId: this.processId,
-        timestamp: Date.now(),
-        domainsCount: this.proxyManager.proxies.size,
-        memoryUsage: process.memoryUsage().heapUsed / 1024 / 1024 // MB
-      };
-
-      try {
-        // Store health data with 1-day expiry
-        await this.redis.setEx(
-          `${this.healthChannel}:${this.processId}`,
-          ONE_DAY_MS / 1000,
-          JSON.stringify(healthData)
-        );
-      } catch (err) {
-        console.warn(`[MultiProxySync] Failed to update health beacon:`, err.message);
-      }
-    }, 30000); // Every 30 seconds
-  }
-
-  /**
    * Get list of healthy proxy instances
    * @returns {Promise<Array>} List of proxy instance IDs
    */
   async getHealthyProxies() {
-    if (!this.redis) return [this.processId];
-
-    try {
-      const pattern = `${this.healthChannel}:*`;
-      const keys = await this.redis.keys(pattern);
-      return keys.map(key => key.replace(`${this.healthChannel}:`, ''));
-    } catch (err) {
-      console.warn(`[MultiProxySync] Failed to get healthy proxies:`, err.message);
-      return [this.processId];
-    }
+    return [this.processId];
   }
 
   /**

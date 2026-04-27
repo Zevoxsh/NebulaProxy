@@ -879,7 +879,7 @@ const start = async () => {
     }
 
     // 4.5. Initialize multi-proxy sync service (for multiple proxy instances)
-    multiProxySyncService.init(redisService.redis || null, proxyManager, database);
+    multiProxySyncService.init(proxyManager, database);
     try {
       await multiProxySyncService.startListening();
       fastify.log.info('Multi-proxy sync service initialized');
