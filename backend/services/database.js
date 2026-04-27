@@ -333,6 +333,11 @@ class DatabaseService {
     `, [userId]);
   }
 
+  async getDomainIdsByUserId(userId) {
+    const rows = await this.queryAll('SELECT id FROM domains WHERE user_id = ? ORDER BY id ASC', [userId]);
+    return rows.map((row) => row.id);
+  }
+
   getAllDomains() {
     return this.queryAll(`
       SELECT
@@ -349,6 +354,11 @@ class DatabaseService {
 
   async countDomainsByUserId(userId) {
     const result = await this.queryOne('SELECT COUNT(*) as count FROM domains WHERE user_id = ?', [userId]);
+    return Number(result?.count || 0);
+  }
+
+  async countActiveDomains() {
+    const result = await this.queryOne('SELECT COUNT(*) as count FROM domains WHERE is_active = TRUE', []);
     return Number(result?.count || 0);
   }
 
@@ -2461,22 +2471,55 @@ class DatabaseService {
     return this.queryAll(query, params);
   }
 
-  // Get request log statistics for a domain
-  async getRequestLogStats(domainId, days = 7) {
-    return this.queryOne(`
+  // OPTIMIZED: Get combined request log statistics (stats + distributions in 1 query)
+  async getCombinedRequestLogStats(domainId, days = 7) {
+    const result = await this.queryOne(`
+      WITH date_filter AS (
+        SELECT 
+          COUNT(*) as total_requests,
+          COUNT(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 END) as success_count,
+          COUNT(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 END) as client_error_count,
+          COUNT(CASE WHEN status_code >= 500 THEN 1 END) as server_error_count,
+          ROUND(CAST(AVG(response_time) AS numeric), 2) as avg_response_time,
+          MAX(response_time) as max_response_time,
+          MIN(response_time) as min_response_time,
+          COALESCE(SUM(response_size), 0) as total_bandwidth
+        FROM request_logs
+        WHERE domain_id = ? AND timestamp >= (CURRENT_TIMESTAMP - (? || ' days')::interval)
+      ),
+      method_dist AS (
+        SELECT json_object_agg(method, cnt ORDER BY cnt DESC) as methods
+        FROM (
+          SELECT method, COUNT(*) as cnt
+          FROM request_logs
+          WHERE domain_id = ? AND timestamp >= (CURRENT_TIMESTAMP - (? || ' days')::interval)
+          GROUP BY method
+        ) m
+      ),
+      status_dist AS (
+        SELECT json_object_agg(CAST(status_code AS text), cnt ORDER BY cnt DESC) as statuses
+        FROM (
+          SELECT status_code, COUNT(*) as cnt
+          FROM request_logs
+          WHERE domain_id = ? AND timestamp >= (CURRENT_TIMESTAMP - (? || ' days')::interval)
+          GROUP BY status_code
+        ) s
+      )
       SELECT
-        COUNT(*) as total_requests,
-        COUNT(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 END) as success_count,
-        COUNT(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 END) as client_error_count,
-        COUNT(CASE WHEN status_code >= 500 THEN 1 END) as server_error_count,
-        AVG(response_time) as avg_response_time,
-        MAX(response_time) as max_response_time,
-        MIN(response_time) as min_response_time,
-        SUM(response_size) as total_bandwidth
-      FROM request_logs
-      WHERE domain_id = ?
-        AND timestamp >= (CURRENT_TIMESTAMP - (? || ' days')::interval)
-    `, [domainId, days]);
+        date_filter.*,
+        COALESCE(method_dist.methods, '{}'::jsonb) as method_distribution,
+        COALESCE(status_dist.statuses, '{}'::jsonb) as status_distribution
+      FROM date_filter, method_dist, status_dist
+    `, [domainId, days, domainId, days, domainId, days]);
+    
+    return result;
+  }
+
+  // Get request log statistics for a domain (uses optimized combined query)
+  async getRequestLogStats(domainId, days = 7) {
+    const combined = await this.getCombinedRequestLogStats(domainId, days);
+    const { method_distribution, status_distribution, ...stats } = combined;
+    return stats;
   }
 
   // Get recent errors for a domain

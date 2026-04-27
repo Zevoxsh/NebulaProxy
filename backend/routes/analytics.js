@@ -75,8 +75,7 @@ export async function analyticsRoutes(fastify, options) {
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate = buildStartDate(timeRange);
 
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) {
             return {
@@ -111,7 +110,7 @@ export async function analyticsRoutes(fastify, options) {
             ? parseFloat(((uptimeSeconds / rangeSeconds) * 100).toFixed(3))
             : 100;
 
-          const activeConnections = (await database.getAllActiveDomains()).length;
+          const activeConnections = await database.countActiveDomains();
 
           return {
             totalRequests, bandwidth: totalBytes,
@@ -136,8 +135,7 @@ export async function analyticsRoutes(fastify, options) {
         const cacheKey = `analytics:traffic:${userId}:${timeRange}`;
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) return { data: [] };
 
@@ -149,31 +147,46 @@ export async function analyticsRoutes(fastify, options) {
             case '30d': intervals = 15; intervalMinutes = 2880; break;
           }
 
-          const now         = new Date();
-          const trafficData = [];
+          const now = new Date();
+          const endDate = now;
+          const startDate = new Date(now.getTime() - (intervals * intervalMinutes * 60 * 1000));
+          const bucketInterval = `${intervalMinutes} minutes`;
 
-          for (let i = intervals - 1; i >= 0; i--) {
-            const endTime   = new Date(now.getTime() - (i * intervalMinutes * 60 * 1000));
-            const startTime = new Date(endTime.getTime() - (intervalMinutes * 60 * 1000));
-
-            const row = await database.queryOne(`
+          const rows = await database.queryAll(`
+            WITH buckets AS (
+              SELECT generate_series(
+                ?::timestamptz,
+                (?::timestamptz) - ('${bucketInterval}'::interval),
+                '${bucketInterval}'::interval
+              ) AS bucket_start
+            ), aggregated AS (
               SELECT
-                COUNT(*)                        AS req_count,
+                date_bin('${bucketInterval}'::interval, created_at, ?::timestamptz) AS bucket_start,
+                COUNT(*) AS req_count,
                 SUM(COALESCE(response_size, 0)) AS bytes
               FROM request_logs
               WHERE domain_id = ANY(?)
-                AND created_at >= ? AND created_at < ?
-            `, [domainIds, startTime.toISOString(), endTime.toISOString()]);
+                AND created_at >= ?
+                AND created_at < ?
+              GROUP BY 1
+            )
+            SELECT
+              b.bucket_start,
+              COALESCE(a.req_count, 0) AS req_count,
+              COALESCE(a.bytes, 0) AS bytes
+            FROM buckets b
+            LEFT JOIN aggregated a USING (bucket_start)
+            ORDER BY b.bucket_start
+          `, [startDate.toISOString(), endDate.toISOString(), startDate.toISOString(), domainIds, startDate.toISOString(), endDate.toISOString()]);
 
-            trafficData.push({
-              time:      endTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-              requests:  Number(row?.req_count || 0),
-              bandwidth: Number(row?.bytes     || 0),
-              bandwidthFormatted: formatBandwidth(Number(row?.bytes || 0))
-            });
-          }
-
-          return { data: trafficData };
+          return {
+            data: rows.map((row) => ({
+              time: new Date(row.bucket_start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              requests: Number(row.req_count || 0),
+              bandwidth: Number(row.bytes || 0),
+              bandwidthFormatted: formatBandwidth(Number(row.bytes || 0))
+            }))
+          };
         });
       } catch (error) {
         fastify.log.error({ error }, 'Error getting traffic data');
@@ -193,11 +206,9 @@ export async function analyticsRoutes(fastify, options) {
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate   = buildStartDate(timeRange);
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) return { domains: [] };
-
           const domainStats = await database.queryAll(`
             SELECT
               hostname,
@@ -242,11 +253,9 @@ export async function analyticsRoutes(fastify, options) {
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate   = buildStartDate(timeRange);
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) return { ips: [] };
-
           const rows = await database.queryAll(`
             SELECT
               ip_address,
@@ -289,11 +298,9 @@ export async function analyticsRoutes(fastify, options) {
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate   = buildStartDate(timeRange);
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) return { paths: [] };
-
           const rows = await database.queryAll(`
             SELECT
               path,
@@ -337,13 +344,11 @@ export async function analyticsRoutes(fastify, options) {
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate   = buildStartDate(timeRange);
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) {
             return { distribution: [], groups: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 } };
           }
-
           const rows = await database.queryAll(`
             SELECT
               status_code,
@@ -387,11 +392,9 @@ export async function analyticsRoutes(fastify, options) {
 
         return await withCache(cacheKey, cacheTTL(timeRange), async () => {
           const startDate   = buildStartDate(timeRange);
-          const userDomains = await database.getDomainsByUserId(userId);
-          const domainIds   = userDomains.map(d => d.id);
+          const domainIds = await database.getDomainIdsByUserId(userId);
 
           if (domainIds.length === 0) return { agents: [] };
-
           const rows = await database.queryAll(`
             SELECT
               COALESCE(user_agent, 'Unknown') AS agent,
@@ -426,11 +429,9 @@ export async function analyticsRoutes(fastify, options) {
     handler: async (request, reply) => {
       try {
         const userId      = request.user.id;
-        const userDomains = await database.getDomainsByUserId(userId);
-        const domainIds   = userDomains.map(d => d.id);
+        const domainIds = await database.getDomainIdsByUserId(userId);
 
-        const history = await trafficStatsService.getRealtimeHistory(domainIds);
-        return { history };
+        const history = await trafficStatsService.getRealtimeHistory(domainIds);        return { history };
       } catch (error) {
         fastify.log.error({ error }, 'Error getting realtime history');
         return reply.code(500).send({ error: 'Internal Server Error' });
@@ -446,11 +447,9 @@ export async function analyticsRoutes(fastify, options) {
     handler: async (request, reply) => {
       try {
         const userId      = request.user.id;
-        const userDomains = await database.getDomainsByUserId(userId);
-        const domainIds   = userDomains.map(d => d.id);
+        const domainIds = await database.getDomainIdsByUserId(userId);
 
-        const data = await trafficStatsService.get24hHistory(domainIds);
-        return { data };
+        const data = await trafficStatsService.get24hHistory(domainIds);        return { data };
       } catch (error) {
         fastify.log.error({ error }, 'Error getting 24h traffic history');
         return reply.code(500).send({ error: 'Internal Server Error' });

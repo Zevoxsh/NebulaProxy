@@ -24,6 +24,7 @@ import { urlFilterService } from './urlFilterService.js';
 import { circuitBreaker } from './circuitBreaker.js';
 import { geoIpService } from './geoIpService.js';
 import { redisService } from './redis.js';
+import { logBatchQueue } from './logBatchQueue.js';
 
 // Lazy singleton for live traffic tracking (avoids circular deps at load time)
 let _lts = null;
@@ -438,9 +439,9 @@ const escapeHtml = (value) => String(value ?? '')
           // Ignore destroy errors
         }
 
-        // Log TCP connection after cleanup
+        // Log TCP connection after cleanup (batched)
         const responseTime = Date.now() - startTime;
-        database.createRequestLog({
+        logBatchQueue.queueRequestLog({
           domainId: domain.id,
           hostname: domain.hostname,
           method: 'TCP',
@@ -458,8 +459,6 @@ const escapeHtml = (value) => String(value ?? '')
           },
           responseHeaders: {},
           errorMessage: errorMessage
-        }).catch((err) => {
-          console.error('[ProxyManager] Failed to write TCP log:', err);
         });
       };
 
@@ -665,7 +664,7 @@ const escapeHtml = (value) => String(value ?? '')
             const message = networkAccess.response?.message || 'Connection blocked by network policy';
             console.warn(`[UDP Proxy ${domain.id}] Blocked client ${clientKey}: ${message}`);
 
-            database.createRequestLog({
+            logBatchQueue.queueRequestLog({
               domainId: domain.id,
               hostname: domain.hostname,
               method: 'UDP',
@@ -683,8 +682,6 @@ const escapeHtml = (value) => String(value ?? '')
               },
               responseHeaders: {},
               errorMessage: message
-            }).catch((err) => {
-              console.error('[ProxyManager] Failed to write UDP blocked log:', err);
             });
 
             return;
@@ -1825,9 +1822,9 @@ const escapeHtml = (value) => String(value ?? '')
       else if (statusCode >= 400) logLevel = 'warning';
       else if (statusCode >= 300) logLevel = 'info';
 
-      // Log the request
+      // Log the request (batched for performance)
       proxyRes.on('end', () => {
-        database.createRequestLog({
+        logBatchQueue.queueRequestLog({
           domainId: domain.id,
           hostname: domain.hostname,
           method: req.method,
@@ -1849,13 +1846,11 @@ const escapeHtml = (value) => String(value ?? '')
             'content-encoding': proxyRes.headers['content-encoding'],
             'cache-control': proxyRes.headers['cache-control']
           }
-        }).catch((err) => {
-          console.error('[ProxyManager] Failed to write request log:', err);
         });
       });
 
-      // Legacy proxy log
-      database.createProxyLog({
+      // Legacy proxy log (batched)
+      logBatchQueue.queueProxyLog({
         domainId: domain.id,
         hostname: domain.hostname,
         method: req.method,
@@ -1865,8 +1860,6 @@ const escapeHtml = (value) => String(value ?? '')
         ipAddress: clientIp,
         userAgent: req.headers['user-agent'] || null,
         level: logLevel
-      }).catch((err) => {
-        console.error('[ProxyManager] Failed to write proxy log:', err);
       });
 
       // Custom error pages for 404 / 502 / 503 from backend

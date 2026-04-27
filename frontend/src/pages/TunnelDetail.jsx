@@ -98,13 +98,28 @@ export default function TunnelDetail({ mode = 'client' }) {
   }, [id]);
 
   useEffect(() => {
-    if (!autoRefresh) return undefined;
+    if (!autoRefresh || document.hidden) return undefined;
 
     const interval = window.setInterval(() => {
-      loadTunnel({ quiet: true });
+      // Double-check visibility and auto-refresh state
+      if (!document.hidden && autoRefresh) {
+        loadTunnel({ quiet: true });
+      }
     }, 6000);
 
-    return () => window.clearInterval(interval);
+    // Listen to visibility changes to pause refresh
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        window.clearInterval(interval);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [autoRefresh, id]);
 
   const handleCreateBinding = async (e) => {

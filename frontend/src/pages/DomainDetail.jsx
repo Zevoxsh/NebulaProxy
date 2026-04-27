@@ -212,27 +212,61 @@ export default function DomainDetail() {
     loadStats();
   }, [id]);
 
+  // Auto-refresh logs and stats (disabled if tab hidden or not active)
   useEffect(() => {
-    if (autoRefresh && activeTab === 'logs') {
-      const interval = setInterval(() => {
+    if (!autoRefresh || activeTab !== 'logs' || document.hidden) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      // Double-check visibility before making requests
+      if (!document.hidden && autoRefresh && activeTab === 'logs') {
         loadLogs();
         loadStats();
-      }, 5000); // Refresh every 5 seconds
-      return () => clearInterval(interval);
-    }
+      }
+    }, 5000); // Refresh every 5 seconds
+
+    // Listen to visibility changes to pause/resume refresh
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(interval);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [autoRefresh, filters, activeTab]);
 
-  // Load traffic when switching to traffic tab
+  // Auto-refresh traffic (disabled if tab hidden or not active)
   useEffect(() => {
-    if (activeTab === 'traffic') loadTraffic();
-  }, [activeTab]);
-
-  // Auto-refresh traffic
-  useEffect(() => {
-    if (trafficAuto && activeTab === 'traffic') {
-      const interval = setInterval(loadTraffic, 4000);
-      return () => clearInterval(interval);
+    if (!trafficAuto || activeTab !== 'traffic' || document.hidden) {
+      return;
     }
+
+    const interval = setInterval(() => {
+      // Double-check visibility before making requests
+      if (!document.hidden && trafficAuto && activeTab === 'traffic') {
+        loadTraffic();
+      }
+    }, 4000); // Refresh every 4 seconds
+
+    // Listen to visibility changes
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(interval);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [trafficAuto, activeTab]);
 
   useEffect(() => {

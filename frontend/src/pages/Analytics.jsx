@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Activity, Globe, Zap, Database, TrendingUp, AlertCircle,
   RefreshCw, Monitor, Shield, Clock, ChevronDown
@@ -34,7 +34,7 @@ const STATUS_COLOR = {
 };
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
+const StatCard = React.memo(function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
   return (
     <div className="group bg-[#1A1B28]/40 backdrop-blur-xl border border-white/[0.08] rounded-xl p-4 hover:bg-[#1A1B28]/60 hover:border-white/[0.14] transition-all duration-400">
       <div className="flex items-center gap-4">
@@ -50,10 +50,10 @@ function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
       </div>
     </div>
   );
-}
+});
 
-// ─── Panel container ──────────────────────────────────────────────────────────
-function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
+// ─── Panel container ──────────────────────────────────────────────────────
+const Panel = React.memo(function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
   return (
     <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]">
@@ -69,10 +69,10 @@ function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
       <div className="p-4">{children}</div>
     </div>
   );
-}
+});
 
-// ─── Horizontal bar row ───────────────────────────────────────────────────────
-function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
+// ─── Horizontal bar row ───────────────────────────────────────────────────
+const HBar = React.memo(function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
   const pctVal = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="space-y-1.5">
@@ -88,7 +88,7 @@ function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Analytics() {
@@ -148,11 +148,12 @@ export default function Analytics() {
     }
   };
 
-  const maxReq = Math.max(...topDomains.map(d => d.requests), 1);
-  const maxIpReq = Math.max(...topIps.map(d => d.requests), 1);
-  const maxPathReq = Math.max(...topPaths.map(d => d.requests), 1);
-  const maxAgent = Math.max(...topAgents.map(d => d.requests), 1);
-  const totalStatus = Object.values(statusCodes.groups || {}).reduce((s, v) => s + v, 0);
+  // Memoize expensive calculations to prevent unnecessary re-renders
+  const maxReq = useMemo(() => Math.max(...topDomains.map(d => d.requests), 1), [topDomains]);
+  const maxIpReq = useMemo(() => Math.max(...topIps.map(d => d.requests), 1), [topIps]);
+  const maxPathReq = useMemo(() => Math.max(...topPaths.map(d => d.requests), 1), [topPaths]);
+  const maxAgent = useMemo(() => Math.max(...topAgents.map(d => d.requests), 1), [topAgents]);
+  const totalStatus = useMemo(() => Object.values(statusCodes.groups || {}).reduce((s, v) => s + v, 0), [statusCodes]);
 
   return (
     <div className="page-shell">
