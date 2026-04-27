@@ -851,6 +851,7 @@ const escapeHtml = (value) => String(value ?? '')
         let handshakeBuffer = Buffer.alloc(0);
         let handshakeComplete = false;
         let handshakeTimeout = null;
+        let connectTimeout = null;
         let targetSocket = null;
         let isClosing = false;
 
