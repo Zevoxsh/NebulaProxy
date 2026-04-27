@@ -1028,22 +1028,6 @@ const escapeHtml = (value) => String(value ?? '')
           // Live traffic tracking (fire-and-forget)
           { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
 
-          // Select backend (with load balancing if enabled)
-          let backendHost, backendPort;
-          try {
-            const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
-            backendHost = target.hostname;
-            backendPort = target.port;
-          } catch (err) {
-            errorMessage = `Backend selection failed: ${err.message}`;
-            console.error(`[MinecraftProxy] ${errorMessage}`);
-            cleanup();
-            return;
-          }
-
-          // Live traffic tracking (fire-and-forget)
-          { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
-
           console.log(`[MinecraftProxy] Routing ${hostname} -> ${backendHost}:${backendPort}`);
           targetSocket.on('error', (err) => {
             if (connectTimeout) {
