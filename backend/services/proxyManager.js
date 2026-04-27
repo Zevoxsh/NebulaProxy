@@ -1029,6 +1029,46 @@ const escapeHtml = (value) => String(value ?? '')
           { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
 
           console.log(`[MinecraftProxy] Routing ${hostname} -> ${backendHost}:${backendPort}`);
+
+          // Connect to backend
+          targetSocket = net.connect({
+            host: backendHost,
+            port: backendPort
+          });
+
+          targetSocket.setNoDelay(true);
+          if (this.MINECRAFT_KEEPALIVE_MS > 0) {
+            targetSocket.setKeepAlive(true, this.MINECRAFT_KEEPALIVE_MS);
+          }
+
+          if (this.MINECRAFT_CONNECT_TIMEOUT > 0) {
+            connectTimeout = setTimeout(() => {
+              if (targetSocket && targetSocket.connecting) {
+                errorMessage = 'Backend connection timeout';
+                cleanup();
+              }
+            }, this.MINECRAFT_CONNECT_TIMEOUT);
+          }
+
+          if (this.MINECRAFT_TIMEOUT > 0) {
+            targetSocket.setTimeout(this.MINECRAFT_TIMEOUT);
+          }
+
+          targetSocket.on('connect', () => {
+            if (connectTimeout) {
+              clearTimeout(connectTimeout);
+              connectTimeout = null;
+            }
+
+            // Send the buffered handshake packet, then forward live traffic.
+            if (handshakeBuffer.length > 0) {
+              targetSocket.write(handshakeBuffer);
+            }
+
+            clientSocket.pipe(targetSocket);
+            targetSocket.pipe(clientSocket);
+          });
+
           targetSocket.on('error', (err) => {
             if (connectTimeout) {
               clearTimeout(connectTimeout);
