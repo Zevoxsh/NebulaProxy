@@ -169,7 +169,7 @@ export const config = {
       return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
     },
     get requestTimeoutMs() {
-      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '60000'), 10);
     },
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
@@ -228,7 +228,7 @@ export const config = {
     get idleTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_IDLE_TIMEOUT_MS', '300000'), 10); },
     get connectTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_CONNECT_TIMEOUT_MS', '10000'), 10); },
     get keepAliveMs() { return parseInt(getConfig('MINECRAFT_PROXY_KEEPALIVE_MS', '30000'), 10); },
-    get handshakeTimeoutMs() { return parseInt(getConfig('MINECRAFT_HANDSHAKE_TIMEOUT_MS', '5000'), 10); },
+    get handshakeTimeoutMs() { return parseInt(getConfig('MINECRAFT_HANDSHAKE_TIMEOUT_MS', '15000'), 10); },
     get maxPacketSize() { return parseInt(getConfig('MINECRAFT_MAX_PACKET_SIZE', '65535'), 10); },
     get backlog() { return parseInt(getConfig('MINECRAFT_PROXY_BACKLOG', '4096'), 10); },
     get maxConnections() { return parseInt(getConfig('MINECRAFT_PROXY_MAX_CONNECTIONS', '0'), 10); }

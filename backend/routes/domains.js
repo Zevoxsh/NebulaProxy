@@ -3,6 +3,7 @@ import { liveTrafficService } from '../services/liveTrafficService.js';
 import { checkDomainQuota } from '../middleware/quotaCheck.js';
 import { proxyManager } from '../services/proxyManager.js';
 import { acmeManager } from '../services/acmeManager.js';
+import { multiProxySyncService } from '../services/multiProxySyncService.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../utils/security.js';
 import { PermissionChecker } from '../utils/permissions.js';
 import { config } from '../config/config.js';
@@ -457,6 +458,16 @@ export async function domainRoutes(fastify, options) {
         try {
           await proxyManager.startProxy(domain);
           fastify.log.info({ domainId: domain.id, hostname }, 'Proxy started');
+
+          // Notify other proxy instances if multi-proxy is configured
+          try {
+            await multiProxySyncService.publishDomainChange('created', domain, {
+              userId,
+              timestamp: Date.now()
+            });
+          } catch (err) {
+            fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain creation');
+          }
         } catch (error) {
           fastify.log.error({ error, domainId: domain.id }, 'Failed to start proxy');
           // Don't fail the request - proxy can be started manually
@@ -823,7 +834,15 @@ export async function domainRoutes(fastify, options) {
         ipAddress: request.ip
       });
 
-
+      // Notify other proxy instances about deletion
+      try {
+        await multiProxySyncService.publishDomainChange('deleted', domain, {
+          userId,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain deletion');
+      }
 
       fastify.log.info({ username: request.user.username, domainId, hostname: domain.hostname }, 'Domain deleted');
 
@@ -888,6 +907,17 @@ export async function domainRoutes(fastify, options) {
         } else {
           await proxyManager.stopProxy(domainId);
           fastify.log.info({ domainId }, 'Proxy stopped');
+        }
+        
+        // Notify other proxy instances about the change
+        try {
+          await multiProxySyncService.publishDomainChange('modified', updatedDomain, {
+            userId,
+            action: updatedDomain.is_active ? 'enabled' : 'disabled',
+            timestamp: Date.now()
+          });
+        } catch (err) {
+          fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain toggle');
         }
       } catch (error) {
         fastify.log.error({ error, domainId }, 'Failed to toggle proxy');

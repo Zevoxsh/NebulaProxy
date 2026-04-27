@@ -45,6 +45,7 @@ import { smtpProxyRoutes } from './routes/smtpProxy.js';
 import BackupScheduler from './services/backupScheduler.js';
 import { proxyManager } from './services/proxyManager.js';
 import { acmeManager } from './services/acmeManager.js';
+import { multiProxySyncService } from './services/multiProxySyncService.js';
 import { queueService } from './services/queueService.js';
 import { retryWorker } from './services/retryWorker.js';
 import updateService from './services/updateService.js';
@@ -875,6 +876,21 @@ const start = async () => {
     fastify.log.info('Proxy manager initialized');
     if (config.logging.startupSummary) {
       logStep('Proxy Manager', 'OK', 'initialized');
+    }
+
+    // 4.5. Initialize multi-proxy sync service (for multiple proxy instances)
+    multiProxySyncService.init(redisService.redis || null, proxyManager, database);
+    try {
+      await multiProxySyncService.startListening();
+      fastify.log.info('Multi-proxy sync service initialized');
+      if (config.logging.startupSummary) {
+        logStep('Multi-Proxy Sync', 'OK', 'listening');
+      }
+    } catch (error) {
+      fastify.log.warn({ error }, 'Multi-proxy sync service not available - running in single-instance mode');
+      if (config.logging.startupSummary) {
+        logStep('Multi-Proxy Sync', 'INFO', 'single-instance mode');
+      }
     }
 
     // 5. Start all active proxies

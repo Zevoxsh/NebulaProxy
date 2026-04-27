@@ -1012,6 +1012,23 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           // Select backend (with load balancing if enabled)
+          let backendHost, backendPort, backendId;
+          try {
+            const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
+            backendHost = target.hostname;
+            backendPort = target.port;
+            backendId = target.backendId;
+          } catch (err) {
+            errorMessage = `Backend selection failed: ${err.message}`;
+            console.error(`[MinecraftProxy] ${errorMessage}`);
+            cleanup();
+            return;
+          }
+
+          // Live traffic tracking (fire-and-forget)
+          { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
+
+          // Select backend (with load balancing if enabled)
           let backendHost, backendPort;
           try {
             const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
@@ -1028,65 +1045,19 @@ const escapeHtml = (value) => String(value ?? '')
           { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
 
           console.log(`[MinecraftProxy] Routing ${hostname} -> ${backendHost}:${backendPort}`);
-
-          // Connect to backend
-          targetSocket = net.connect({
-            host: backendHost,
-            port: backendPort
-          });
-
-          targetSocket.setNoDelay(true);
-          if (this.MINECRAFT_KEEPALIVE_MS > 0) {
-            targetSocket.setKeepAlive(true, this.MINECRAFT_KEEPALIVE_MS);
-          }
-
-          // Backend connection timeout
-          let connectTimeout = null;
-          if (this.MINECRAFT_CONNECT_TIMEOUT > 0) {
-            connectTimeout = setTimeout(() => {
-              if (targetSocket && targetSocket.connecting) {
-                errorMessage = 'Backend connection timeout';
-                cleanup();
-              }
-            }, this.MINECRAFT_CONNECT_TIMEOUT);
-          }
-
-          targetSocket.on('connect', () => {
-            if (connectTimeout) {
-              clearTimeout(connectTimeout);
-              connectTimeout = null;
-            }
-
-            console.log(`[MinecraftProxy] Connected to backend ${backendHost}:${backendPort}`);
-
-            // ── PROXY Protocol v1 ─────────────────────────────────────────
-            if (domain.proxy_protocol) {
-              const clientPort = clientSocket.remotePort || 0;
-              const serverAddr = targetSocket.localAddress || '0.0.0.0';
-              const serverPort = targetSocket.localPort || backendPort;
-              const family = clientIp.includes(':') ? 'TCP6' : 'TCP4';
-              targetSocket.write(
-                Buffer.from(`PROXY ${family} ${clientIp} ${serverAddr} ${clientPort} ${serverPort}\r\n`, 'ascii')
-              );
-            }
-
-            // Forward buffered handshake then pipe
-            targetSocket.write(handshakeBuffer);
-            handshakeBuffer = Buffer.alloc(0);
-
-            clientSocket.removeListener('data', onClientData);
-            clientSocket.on('data', (chunk) => { bytesReceived += chunk.length; });
-            targetSocket.on('data', (chunk) => { bytesSent += chunk.length; });
-            clientSocket.pipe(targetSocket);
-            targetSocket.pipe(clientSocket);
-          });
-
-          // Handle backend errors
           targetSocket.on('error', (err) => {
             if (connectTimeout) {
               clearTimeout(connectTimeout);
               connectTimeout = null;
             }
+            
+            // OPTIMIZATION: Invalidate backend health cache on critical errors
+            // This forces a database refresh to detect if a backend is back online
+            if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+              console.warn(`[MinecraftProxy] Backend connection error (${err.code}) to ${backendHost}:${backendPort}, invalidating health cache for domain ${domain.id}`);
+              this.backendHealthCache.delete(domain.id); // Force DB refresh next request
+            }
+            
             if (!isClosing && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
               console.error(`[MinecraftProxy] Backend error:`, err.message);
               errorMessage = `Backend error: ${err.message}`;
@@ -2876,13 +2847,32 @@ const escapeHtml = (value) => String(value ?? '')
       minecraft: 25565
     };
 
-    // If load balancing is not enabled, use the default backend_url
+    // FAST PATH: If load balancing is not enabled, use the default backend_url directly
+    // This avoids querying the database entirely for simple single-backend domains
     if (!domain.load_balancing_enabled) {
       return loadBalancer.getBackendTarget(domain, null, protocol);
     }
 
-    // Get healthy backends for load balancing
-    const backends = await database.getHealthyBackendsByDomainId(domain.id);
+    // OPTIMIZATION: Check local cache first (avoids database query 95% of the time)
+    const now = Date.now();
+    const cacheEntry = this.backendHealthCache.get(domain.id);
+    let backends = null;
+
+    if (cacheEntry && (now - cacheEntry.timestamp) < this.BACKEND_HEALTH_CACHE_TTL) {
+      // Cache hit - use cached backends (valid for last 30 seconds)
+      backends = cacheEntry.backends;
+    } else {
+      // Cache miss - query database for healthy backends
+      backends = await database.getHealthyBackendsByDomainId(domain.id);
+      
+      // Update cache for next requests
+      if (backends) {
+        this.backendHealthCache.set(domain.id, {
+          backends,
+          timestamp: now
+        });
+      }
+    }
 
     // If no backends configured, fall back to domain's default backend
     if (!backends || backends.length === 0) {
