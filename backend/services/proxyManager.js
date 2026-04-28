@@ -949,9 +949,17 @@ const escapeHtml = (value) => String(value ?? '')
 
         // Handle client data BEFORE handshake complete
         const onClientData = async (chunk) => {
-          // SECURITY FIX: Check total bytes BEFORE accumulating
-          totalBytesBuffered += chunk.length;
           bytesReceived += chunk.length;
+
+          // Handshake already parsed; buffer until backend connects
+          if (handshakeComplete) {
+            // Don't count in DOS limit after handshake is complete
+            handshakeBuffer = Buffer.concat([handshakeBuffer, chunk]);
+            return;
+          }
+
+          // SECURITY FIX: Check total bytes BEFORE accumulating (only pre-handshake)
+          totalBytesBuffered += chunk.length;
 
           if (totalBytesBuffered > MAX_HANDSHAKE_BYTES) {
             errorMessage = 'Handshake too large - possible DOS attack';
@@ -968,11 +976,6 @@ const escapeHtml = (value) => String(value ?? '')
             errorMessage = 'Buffer overflow protection';
             console.error(`[MinecraftProxy] Buffer size protection triggered: ${handshakeBuffer.length} bytes`);
             cleanup();
-            return;
-          }
-
-          // Handshake already parsed; buffer until backend connects
-          if (handshakeComplete) {
             return;
           }
 
