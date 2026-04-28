@@ -23,6 +23,18 @@ function getConfig(key, defaultValue) {
   return defaultValue;
 }
 
+function normalizeDbValue(key, value) {
+  if (key === 'DB_USER' && String(value || '').trim() === 'nebula') {
+    return 'nebulaproxy';
+  }
+
+  if (key === 'DB_NAME' && String(value || '').trim() === 'nebula_proxy') {
+    return 'nebulaproxy';
+  }
+
+  return value;
+}
+
 // Initialize config from Redis
 let configInitialized = false;
 
@@ -144,8 +156,8 @@ export const config = {
     get type() { return getConfig('DB_TYPE', 'postgresql'); },
     get host() { return getConfig('DB_HOST', 'localhost'); },
     get port() { return parseInt(getConfig('DB_PORT', '5432'), 10); },
-    get name() { return getConfig('DB_NAME', 'nebulaproxy'); },
-    get user() { return getConfig('DB_USER', 'nebulaproxy'); },
+    get name() { return normalizeDbValue('DB_NAME', getConfig('DB_NAME', 'nebulaproxy')); },
+    get user() { return normalizeDbValue('DB_USER', getConfig('DB_USER', 'nebulaproxy')); },
     get password() { return getConfig('DB_PASSWORD', ''); },
     get path() { return getConfig('DB_PATH') || join(__dirname, 'database.db'); }
   },
