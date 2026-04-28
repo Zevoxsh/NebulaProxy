@@ -57,6 +57,26 @@ class ConfigManager {
 
       if (configJson) {
         this.config = JSON.parse(configJson);
+        let migrated = false;
+
+        // Legacy compose/installer defaults used nebula + nebula_proxy.
+        // Normalize them to the actual Compose service credentials.
+        if (this.config.DB_USER === 'nebula') {
+          this.config.DB_USER = 'nebulaproxy';
+          migrated = true;
+        }
+
+        if (this.config.DB_NAME === 'nebula_proxy') {
+          this.config.DB_NAME = 'nebulaproxy';
+          migrated = true;
+        }
+
+        if (migrated) {
+          await this.redis.set(CONFIG_KEY, JSON.stringify(this.config));
+          await this.redis.incr(CONFIG_VERSION_KEY);
+          console.log('Configuration migrated to current PostgreSQL defaults');
+        }
+
         console.log('Configuration loaded from Redis');
       } else {
         // No config in Redis, load defaults from .env.example

@@ -144,8 +144,8 @@ export const config = {
     get type() { return getConfig('DB_TYPE', 'postgresql'); },
     get host() { return getConfig('DB_HOST', 'localhost'); },
     get port() { return parseInt(getConfig('DB_PORT', '5432'), 10); },
-    get name() { return getConfig('DB_NAME', 'nebula_proxy'); },
-    get user() { return getConfig('DB_USER', 'nebula'); },
+    get name() { return getConfig('DB_NAME', 'nebulaproxy'); },
+    get user() { return getConfig('DB_USER', 'nebulaproxy'); },
     get password() { return getConfig('DB_PASSWORD', ''); },
     get path() { return getConfig('DB_PATH') || join(__dirname, 'database.db'); }
   },

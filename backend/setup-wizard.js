@@ -552,8 +552,8 @@ async function buildFinalConfig() {
   if (config.DB_MODE === 'manual') {
     config.DB_HOST = document.getElementById('dbHost').value;
     config.DB_PORT = document.getElementById('dbPort').value || '5432';
-    config.DB_NAME = document.getElementById('dbName').value || 'nebula_proxy';
-    config.DB_USER = document.getElementById('dbUser').value || 'nebula';
+    config.DB_NAME = document.getElementById('dbName').value || 'nebulaproxy';
+    config.DB_USER = document.getElementById('dbUser').value || 'nebulaproxy';
     config.DB_PASSWORD = document.getElementById('dbPassword').value;
   }
 
