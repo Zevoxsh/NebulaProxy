@@ -122,6 +122,16 @@ function generateDefaults() {
   };
 }
 
+function readPgSecret() {
+  const secretPath = '/run/pg-secret/postgres.secret';
+  try {
+    const value = readFileSync(secretPath, 'utf-8').trim();
+    return value || '';
+  } catch {
+    return '';
+  }
+}
+
 // Parse .env.example to get all variables with comments
 function parseEnvExample() {
   const examplePath = join(__dirname, '.env.example');
@@ -210,6 +220,18 @@ const server = createServer(async (req, res) => {
   const isAllowedOrigin = isAllowedSetupOrigin(origin, requestHostHeader);
   const setupQueryToken = String(url.searchParams.get('token') || '');
   const hasSetupSession = hasValidSetupSession(req);
+
+  // Public health endpoint so Docker can keep the container healthy while setup is pending.
+  if (url.pathname === '/health' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({
+      status: 'healthy',
+      configured: false,
+      setupRequired: true,
+      mode: 'setup'
+    }));
+    return;
+  }
 
   if (!isAllowedOrigin) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -410,16 +432,21 @@ const server = createServer(async (req, res) => {
 
         // If auto database mode, create PostgreSQL container
         if (config.DB_MODE === 'auto') {
-          console.log('🐳 Creating PostgreSQL container...');
-          const dbConfig = await DockerHelper.createPostgresContainer(DockerHelper.getProjectName());
+          // In the Compose-based deployment, the PostgreSQL service already exists.
+          // Reuse its shared secret instead of spawning a second server with different credentials.
+          const composePassword = readPgSecret() || process.env.DB_PASSWORD || '';
 
-          config.DB_HOST = dbConfig.host;
-          config.DB_PORT = dbConfig.port;
-          config.DB_NAME = dbConfig.database;
-          config.DB_USER = dbConfig.user;
-          config.DB_PASSWORD = dbConfig.password;
+          config.DB_HOST = '127.0.0.1';
+          config.DB_PORT = '5432';
+          config.DB_NAME = 'nebulaproxy';
+          config.DB_USER = 'nebulaproxy';
+          config.DB_PASSWORD = composePassword;
 
-          console.log(`SUCCESS: PostgreSQL container created: ${dbConfig.containerName}`);
+          if (!composePassword) {
+            throw new Error('Unable to load PostgreSQL password from /run/pg-secret/postgres.secret');
+          }
+
+          console.log('SUCCESS: PostgreSQL configuration loaded from Compose secret');
         }
 
         // Remove DB_MODE from final config
