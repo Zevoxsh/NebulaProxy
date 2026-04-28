@@ -886,11 +886,25 @@ const escapeHtml = (value) => String(value ?? '')
             handshakeTimeout = null;
           }
 
-          // Unpipe if connected
+          // Remove all listeners to prevent memory leaks
+          try {
+            clientSocket.removeAllListeners('data');
+            clientSocket.removeAllListeners('drain');
+            clientSocket.removeAllListeners('error');
+            clientSocket.removeAllListeners('timeout');
+            clientSocket.removeAllListeners('end');
+            clientSocket.removeAllListeners('close');
+          } catch (e) {}
+
           try {
             if (targetSocket) {
-              clientSocket.unpipe(targetSocket);
-              targetSocket.unpipe(clientSocket);
+              targetSocket.removeAllListeners('data');
+              targetSocket.removeAllListeners('drain');
+              targetSocket.removeAllListeners('error');
+              targetSocket.removeAllListeners('timeout');
+              targetSocket.removeAllListeners('end');
+              targetSocket.removeAllListeners('close');
+              targetSocket.removeAllListeners('connect');
             }
           } catch (e) {}
 
@@ -1063,8 +1077,43 @@ const escapeHtml = (value) => String(value ?? '')
               targetSocket.write(handshakeBuffer);
             }
 
-            clientSocket.pipe(targetSocket);
-            targetSocket.pipe(clientSocket);
+            // FIXED: Replace direct piping with manual relay for better error handling
+            // and back-pressure management, especially critical for VPN connections
+            const relayClientToBackend = (chunk) => {
+              if (!targetSocket.destroyed) {
+                bytesReceived += chunk.length; // Count bytes received from client
+                if (!targetSocket.write(chunk)) {
+                  // Back-pressure: pause client socket if backend buffer is full
+                  clientSocket.pause();
+                }
+              }
+            };
+
+            const relayBackendToClient = (chunk) => {
+              if (!clientSocket.destroyed) {
+                bytesSent += chunk.length; // Count bytes sent to client
+                if (!clientSocket.write(chunk)) {
+                  // Back-pressure: pause backend socket if client buffer is full
+                  targetSocket.pause();
+                }
+              }
+            };
+
+            clientSocket.on('data', relayClientToBackend);
+            targetSocket.on('data', relayBackendToClient);
+
+            // Resume on drain when back-pressure eases
+            clientSocket.on('drain', () => {
+              if (!targetSocket.destroyed && targetSocket.isPaused?.()) {
+                targetSocket.resume();
+              }
+            });
+
+            targetSocket.on('drain', () => {
+              if (!clientSocket.destroyed && clientSocket.isPaused?.()) {
+                clientSocket.resume();
+              }
+            });
           });
 
           targetSocket.on('error', (err) => {
@@ -1080,8 +1129,13 @@ const escapeHtml = (value) => String(value ?? '')
               this.backendHealthCache.delete(domain.id); // Force DB refresh next request
             }
             
-            if (!isClosing && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
-              console.error(`[MinecraftProxy] Backend error:`, err.message);
+            // Log connection errors with more detail for VPN debugging
+            if (!isClosing) {
+              if (err.code === 'EPIPE' || err.code === 'ECONNRESET') {
+                console.warn(`[MinecraftProxy] Backend connection closed (${err.code}) to ${backendHost}:${backendPort} - This may indicate VPN/network issues between proxy and backend`);
+              } else {
+                console.error(`[MinecraftProxy] Backend error (${err.code || err.message}):`, err.message);
+              }
               errorMessage = `Backend error: ${err.message}`;
             }
             cleanup();

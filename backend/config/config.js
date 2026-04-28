@@ -237,9 +237,12 @@ export const config = {
 
   minecraftProxy: {
     get port() { return parseInt(getConfig('MINECRAFT_PROXY_PORT', '25565'), 10); },
-    get idleTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_IDLE_TIMEOUT_MS', '300000'), 10); },
-    get connectTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_CONNECT_TIMEOUT_MS', '10000'), 10); },
-    get keepAliveMs() { return parseInt(getConfig('MINECRAFT_PROXY_KEEPALIVE_MS', '30000'), 10); },
+    // Increased idle timeout from 5min to 30min to handle VPN latency better
+    get idleTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_IDLE_TIMEOUT_MS', '1800000'), 10); },
+    // Increased connect timeout from 10s to 20s for slow VPN backends
+    get connectTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_CONNECT_TIMEOUT_MS', '20000'), 10); },
+    // Increased keep-alive from 30s to 45s to prevent idle disconnects
+    get keepAliveMs() { return parseInt(getConfig('MINECRAFT_PROXY_KEEPALIVE_MS', '45000'), 10); },
     get handshakeTimeoutMs() { return parseInt(getConfig('MINECRAFT_HANDSHAKE_TIMEOUT_MS', '15000'), 10); },
     get maxPacketSize() { return parseInt(getConfig('MINECRAFT_MAX_PACKET_SIZE', '65535'), 10); },
     get backlog() { return parseInt(getConfig('MINECRAFT_PROXY_BACKLOG', '4096'), 10); },
