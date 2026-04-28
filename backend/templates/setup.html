@@ -650,8 +650,13 @@
         document.getElementById('successBox').classList.add('show');
 
         setTimeout(() => {
-          // Redirect to the root after setup
-          window.location.href = '/';
+          // Redirect to frontend after setup
+          const url = new URL(window.location.href);
+          url.port = '3001';
+          url.pathname = '/';
+          url.search = '';
+          url.hash = '';
+          window.location.href = url.toString();
         }, 3000);
       } catch (error) {
         showError(['Failed to save: ' + error.message]);
