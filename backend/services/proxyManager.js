@@ -942,7 +942,9 @@ const escapeHtml = (value) => String(value ?? '')
         };
 
         // SECURITY: Per-connection byte limit (DOS prevention)
-        const MAX_HANDSHAKE_BYTES = Math.min(this.MINECRAFT_MAX_PACKET_SIZE, 4096); // 4KB max
+        // Increased from 4KB to 16KB to accommodate various client handshake formats
+        // Actual Minecraft handshakes are typically 50-200 bytes, well below this limit
+        const MAX_HANDSHAKE_BYTES = Math.min(this.MINECRAFT_MAX_PACKET_SIZE, 16384); // 16KB max
         let totalBytesBuffered = 0;
 
         // Handle client data BEFORE handshake complete
