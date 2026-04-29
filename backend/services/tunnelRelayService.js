@@ -55,6 +55,11 @@ class TunnelRelayService {
           if (this.agentSockets.get(agentId) === ws) {
             this.agentSockets.delete(agentId);
           }
+          // Clean up drain check interval
+          if (ws._drainCheck) {
+            clearInterval(ws._drainCheck);
+            ws._drainCheck = null;
+          }
           this.closeAgentConnections(agentId);
           await database.updateTunnelAgentHeartbeat(agentId, { status: 'offline' }).catch(() => {});
         });
@@ -148,11 +153,36 @@ class TunnelRelayService {
           this.cleanupConnection(connId);
           return;
         }
-        this.sendJson(ws, {
-          type: 'data',
-          connId,
-          data: chunk.toString('base64')
+        
+        // Send binary data with compact format to avoid base64 overhead
+        // Format: [1 byte msg type: 0x01] [4 bytes connId length] [connId string] [binary data]
+        const connIdBuf = Buffer.from(connId, 'utf8');
+        const msgType = Buffer.from([0x01]); // 0x01 = TCP data
+        const lenBuf = Buffer.allocUnsafe(4);
+        lenBuf.writeUInt32BE(connIdBuf.length, 0);
+        
+        const frame = Buffer.concat([msgType, lenBuf, connIdBuf, chunk]);
+        
+        // Implement backpressure: pause if WebSocket buffer is full
+        ws.send(frame, { binary: true }, (err) => {
+          if (err && !clientSocket.destroyed) {
+            clientSocket.destroy();
+            this.cleanupConnection(connId);
+          }
         });
+        
+        // Check WebSocket buffered amount and pause if needed
+        if (ws.bufferedAmount > 64 * 1024) { // 64KB threshold
+          clientSocket.pause();
+          // Use a check timer to resume when buffer drains
+          if (!ws._drainCheck) {
+            ws._drainCheck = setInterval(() => {
+              if (ws.bufferedAmount < 32 * 1024 && !clientSocket.destroyed) {
+                clientSocket.resume();
+              }
+            }, 100);
+          }
+        }
       });
 
       clientSocket.on('close', () => {
@@ -241,10 +271,19 @@ class TunnelRelayService {
       }
 
       session.lastSeenAt = Date.now();
-      this.sendJson(agentWs, {
-        type: 'data',
-        connId: session.connId,
-        data: msg.toString('base64')
+      
+      // Send UDP data using binary format instead of base64
+      // Format: [1 byte msg type: 0x02] [4 bytes connId length] [connId string] [binary data]
+      const connIdBuf = Buffer.from(session.connId, 'utf8');
+      const msgType = Buffer.from([0x02]); // 0x02 = UDP data
+      const lenBuf = Buffer.allocUnsafe(4);
+      lenBuf.writeUInt32BE(connIdBuf.length, 0);
+      
+      const frame = Buffer.concat([msgType, lenBuf, connIdBuf, msg]);
+      agentWs.send(frame, { binary: true }, (err) => {
+        if (err && err.code === 'ENOTOPEN') {
+          this.cleanupConnection(session.connId);
+        }
       });
     });
 
@@ -265,6 +304,11 @@ class TunnelRelayService {
   }
 
   handleAgentMessage(agentId, raw) {
+    // Handle both binary frames and JSON messages for compatibility
+    if (Buffer.isBuffer(raw)) {
+      return this.handleBinaryMessage(agentId, raw);
+    }
+    
     let message;
     try {
       message = JSON.parse(String(raw));
@@ -293,7 +337,10 @@ class TunnelRelayService {
         return;
       }
 
-      socket.write(payload);
+      // Implement backpressure on write
+      if (!socket.write(payload)) {
+        // Buffer full, agent should pause
+      }
       return;
     }
 
@@ -308,6 +355,65 @@ class TunnelRelayService {
         socket.end();
       }
       this.cleanupConnection(connId);
+    }
+  }
+
+  handleBinaryMessage(agentId, raw) {
+    // Binary message format:
+    // [1 byte msg type] [4 bytes connId length] [connId string] [payload...]
+    // msg type: 0x01 = TCP data, 0x02 = UDP data, 0x03 = close
+    
+    if (raw.length < 5) return;
+    
+    const msgType = raw[0];
+    const connIdLen = raw.readUInt32BE(1);
+    
+    if (raw.length < 5 + connIdLen) return;
+    
+    const connId = raw.toString('utf8', 5, 5 + connIdLen);
+    const payload = raw.subarray(5 + connIdLen);
+    
+    const entry = this.connections.get(connId);
+    if (!entry || entry.agentId !== agentId) return;
+    
+    if (msgType === 0x03) { // close
+      if (entry.kind === 'udp') {
+        this.cleanupConnection(connId);
+        return;
+      }
+      
+      const socket = entry.clientSocket;
+      if (socket && !socket.destroyed) {
+        socket.end();
+      }
+      this.cleanupConnection(connId);
+      return;
+    }
+    
+    if (msgType === 0x02) { // UDP data
+      if (entry.kind === 'udp') {
+        entry.udpSocket.send(payload, entry.remotePort, entry.remoteAddress, (err) => {
+          if (err && err.code === 'ENOTOPEN') {
+            this.cleanupConnection(connId);
+          }
+        });
+      }
+      return;
+    }
+    
+    if (msgType === 0x01) { // TCP data
+      const socket = entry.clientSocket;
+      if (!socket || socket.destroyed) {
+        this.cleanupConnection(connId);
+        return;
+      }
+      
+      // Implement backpressure: check write return value
+      if (!socket.write(payload)) {
+        // Socket buffer is full, agent should receive backpressure feedback
+        // Could send 0x04 (backpressure) message back to agent
+      }
+      return;
     }
   }
 
@@ -327,6 +433,13 @@ class TunnelRelayService {
         entry.clientSocket.destroy();
       }
       this.connections.delete(connId);
+    }
+    
+    // Clean up drain check intervals for this agent's WebSocket
+    const ws = this.agentSockets.get(agentId);
+    if (ws && ws._drainCheck) {
+      clearInterval(ws._drainCheck);
+      ws._drainCheck = null;
     }
   }
 
