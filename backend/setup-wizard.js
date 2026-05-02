@@ -9,6 +9,15 @@ let config = {
   advanced: {}
 };
 
+function getFrontendUrl() {
+  const url = new URL(window.location.href);
+  url.port = '3001';
+  url.pathname = '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
 // Initialize on load
 window.addEventListener('DOMContentLoaded', async () => {
   generateSecrets();
@@ -123,7 +132,7 @@ async function applyAndFinish(importedConfig) {
     if (result.success) {
       showNotification('Configuration imported successfully! Starting services...', 'success');
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = getFrontendUrl();
       }, 2000);
     } else {
       showNotification(`Import failed: ${getSetupErrorMessage(result, 'Unknown import error')}`, 'error');
@@ -478,7 +487,7 @@ async function finishSetup() {
       `;
 
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = getFrontendUrl();
       }, 2000);
     } else {
       statusDiv.innerHTML = `
@@ -552,8 +561,8 @@ async function buildFinalConfig() {
   if (config.DB_MODE === 'manual') {
     config.DB_HOST = document.getElementById('dbHost').value;
     config.DB_PORT = document.getElementById('dbPort').value || '5432';
-    config.DB_NAME = document.getElementById('dbName').value || 'nebula_proxy';
-    config.DB_USER = document.getElementById('dbUser').value || 'nebula';
+    config.DB_NAME = document.getElementById('dbName').value || 'nebulaproxy';
+    config.DB_USER = document.getElementById('dbUser').value || 'nebulaproxy';
     config.DB_PASSWORD = document.getElementById('dbPassword').value;
   }
 

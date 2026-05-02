@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Activity, Globe, Zap, Database, TrendingUp, AlertCircle,
-  RefreshCw, BarChart3, Monitor, Shield, Clock, ChevronDown
+  RefreshCw, Monitor, Shield, Clock, ChevronDown
 } from 'lucide-react';
 import { analyticsAPI, logsAPI } from '../api/client';
 
@@ -34,7 +34,7 @@ const STATUS_COLOR = {
 };
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
+const StatCard = React.memo(function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
   return (
     <div className="group bg-[#1A1B28]/40 backdrop-blur-xl border border-white/[0.08] rounded-xl p-4 hover:bg-[#1A1B28]/60 hover:border-white/[0.14] transition-all duration-400">
       <div className="flex items-center gap-4">
@@ -50,10 +50,10 @@ function StatCard({ icon: Icon, label, value, sub, color = '#9D4EDD' }) {
       </div>
     </div>
   );
-}
+});
 
-// ─── Panel container ──────────────────────────────────────────────────────────
-function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
+// ─── Panel container ──────────────────────────────────────────────────────
+const Panel = React.memo(function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
   return (
     <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]">
@@ -69,31 +69,10 @@ function Panel({ title, icon: Icon, children, action, color = '#9D4EDD' }) {
       <div className="p-4">{children}</div>
     </div>
   );
-}
+});
 
-// ─── Mini bar chart for traffic ───────────────────────────────────────────────
-function MiniBarChart({ data, valueKey = 'requests' }) {
-  if (!data || data.length === 0) return <p className="text-xs text-white/40 text-center py-4">Aucune donnée</p>;
-  const max = Math.max(...data.map(d => d[valueKey] || 0), 1);
-  return (
-    <div className="flex items-end gap-0.5 h-24 w-full">
-      {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-          <div
-            className="w-full bg-[#9D4EDD]/40 hover:bg-[#C77DFF]/60 rounded-sm transition-colors duration-200 cursor-default"
-            style={{ height: `${Math.max(2, (d[valueKey] / max) * 100)}%` }}
-          />
-          <div className="absolute bottom-full mb-1 bg-[#1A1B28] border border-white/[0.12] rounded px-2 py-1 text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10 left-1/2 -translate-x-1/2">
-            {d.time}: {d[valueKey]}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Horizontal bar row ───────────────────────────────────────────────────────
-function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
+// ─── Horizontal bar row ───────────────────────────────────────────────────
+const HBar = React.memo(function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
   const pctVal = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="space-y-1.5">
@@ -109,7 +88,7 @@ function HBar({ label, value, max, sub, color = 'bg-[#9D4EDD]', badge }) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Analytics() {
@@ -119,7 +98,6 @@ export default function Analytics() {
   const [exporting, setExporting] = useState(false);
 
   const [stats, setStats] = useState(null);
-  const [traffic, setTraffic] = useState([]);
   const [topDomains, setTopDomains] = useState([]);
   const [topIps, setTopIps] = useState([]);
   const [topPaths, setTopPaths] = useState([]);
@@ -130,9 +108,8 @@ export default function Analytics() {
     setLoading(true);
     setError('');
     try {
-      const [statsR, trafficR, domainsR, ipsR, pathsR, statusR, agentsR] = await Promise.all([
+      const [statsR, domainsR, ipsR, pathsR, statusR, agentsR] = await Promise.all([
         analyticsAPI.getStats(timeRange),
-        analyticsAPI.getTraffic(timeRange),
         analyticsAPI.getTopDomains(timeRange, 10),
         analyticsAPI.getTopIps(timeRange, 15),
         analyticsAPI.getTopPaths(timeRange, 15),
@@ -140,7 +117,6 @@ export default function Analytics() {
         analyticsAPI.getTopUserAgents(timeRange, 10)
       ]);
       setStats(statsR.data);
-      setTraffic(trafficR.data.data || []);
       setTopDomains(domainsR.data.domains || []);
       setTopIps(ipsR.data.ips || []);
       setTopPaths(pathsR.data.paths || []);
@@ -172,11 +148,12 @@ export default function Analytics() {
     }
   };
 
-  const maxReq = Math.max(...topDomains.map(d => d.requests), 1);
-  const maxIpReq = Math.max(...topIps.map(d => d.requests), 1);
-  const maxPathReq = Math.max(...topPaths.map(d => d.requests), 1);
-  const maxAgent = Math.max(...topAgents.map(d => d.requests), 1);
-  const totalStatus = Object.values(statusCodes.groups || {}).reduce((s, v) => s + v, 0);
+  // Memoize expensive calculations to prevent unnecessary re-renders
+  const maxReq = useMemo(() => Math.max(...topDomains.map(d => d.requests), 1), [topDomains]);
+  const maxIpReq = useMemo(() => Math.max(...topIps.map(d => d.requests), 1), [topIps]);
+  const maxPathReq = useMemo(() => Math.max(...topPaths.map(d => d.requests), 1), [topPaths]);
+  const maxAgent = useMemo(() => Math.max(...topAgents.map(d => d.requests), 1), [topAgents]);
+  const totalStatus = useMemo(() => Object.values(statusCodes.groups || {}).reduce((s, v) => s + v, 0), [statusCodes]);
 
   return (
     <div className="page-shell">
@@ -255,25 +232,6 @@ export default function Analytics() {
             <StatCard icon={TrendingUp} label="Taux d'erreur" value={`${stats.errorRate ?? 0}%`} sub={`Uptime ${stats.uptime ?? 100}%`} color={parseFloat(stats.errorRate) > 5 ? '#EF4444' : '#10B981'} />
           </div>
         )}
-
-        {/* Traffic chart */}
-        <Panel title="Trafic dans le temps" icon={BarChart3} color="#9D4EDD">
-          {loading
-            ? <div className="h-24 bg-white/[0.02] rounded animate-pulse" />
-            : traffic.length === 0
-              ? <p className="text-xs text-white/40 text-center py-8">Aucune donnée pour cette période</p>
-              : (
-                <>
-                  <MiniBarChart data={traffic} valueKey="requests" />
-                  <div className="flex items-end justify-between mt-2 text-[10px] text-white/30 overflow-hidden">
-                    {traffic.filter((_, i) => i % Math.ceil(traffic.length / 6) === 0).map((d, i) => (
-                      <span key={i}>{d.time}</span>
-                    ))}
-                  </div>
-                </>
-              )
-          }
-        </Panel>
 
         {/* Status codes + Top domains */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

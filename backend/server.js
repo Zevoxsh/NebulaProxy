@@ -45,8 +45,10 @@ import { smtpProxyRoutes } from './routes/smtpProxy.js';
 import BackupScheduler from './services/backupScheduler.js';
 import { proxyManager } from './services/proxyManager.js';
 import { acmeManager } from './services/acmeManager.js';
+import { multiProxySyncService } from './services/multiProxySyncService.js';
 import { queueService } from './services/queueService.js';
 import { retryWorker } from './services/retryWorker.js';
+import { logBatchQueue } from './services/logBatchQueue.js';
 import updateService from './services/updateService.js';
 import { healthCheckService } from './services/healthCheckService.js';
 import WebSocketManager from './services/websocketManager.js';
@@ -877,6 +879,27 @@ const start = async () => {
       logStep('Proxy Manager', 'OK', 'initialized');
     }
 
+    // 4.5. Initialize multi-proxy sync service (for multiple proxy instances)
+    multiProxySyncService.init(proxyManager, database);
+    try {
+      await multiProxySyncService.startListening();
+      fastify.log.info('Multi-proxy sync service initialized');
+      if (config.logging.startupSummary) {
+        logStep('Multi-Proxy Sync', 'OK', 'listening');
+      }
+    } catch (error) {
+      fastify.log.warn({ error }, 'Multi-proxy sync service not available - running in single-instance mode');
+      if (config.logging.startupSummary) {
+        logStep('Multi-Proxy Sync', 'INFO', 'single-instance mode');
+      }
+    }
+
+    // 4.6. Initialize log batch queue (for request/proxy log batching)
+    logBatchQueue.start();
+    if (config.logging.startupSummary) {
+      logStep('Log Batch Queue', 'OK', 'started');
+    }
+
     // 5. Start all active proxies
     const activeDomains = await database.getAllActiveDomains();
     let successCount = 0;
@@ -1128,6 +1151,10 @@ process.on('SIGTERM', async () => {
     await proxyManager.stopAll();
     fastify.log.info('All proxies stopped');
 
+    // Stop log batch queue (flush remaining logs)
+    await logBatchQueue.stop();
+    fastify.log.info('Log batch queue stopped');
+
     // Stop SMTP proxy service
     await smtpProxyService.stop();
     fastify.log.info('SMTP proxy service stopped');
@@ -1208,6 +1235,10 @@ process.on('SIGINT', async () => {
       await retryWorker.stop();
     }
     await proxyManager.stopAll();
+    
+    // Stop log batch queue (flush remaining logs)
+    await logBatchQueue.stop();
+    
     acmeManager.stopRenewalCron();
     updateService.stopCron();
 

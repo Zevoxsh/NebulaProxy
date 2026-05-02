@@ -23,6 +23,18 @@ function getConfig(key, defaultValue) {
   return defaultValue;
 }
 
+function normalizeDbValue(key, value) {
+  if (key === 'DB_USER' && String(value || '').trim() === 'nebula') {
+    return 'nebulaproxy';
+  }
+
+  if (key === 'DB_NAME' && String(value || '').trim() === 'nebula_proxy') {
+    return 'nebulaproxy';
+  }
+
+  return value;
+}
+
 // Initialize config from Redis
 let configInitialized = false;
 
@@ -144,8 +156,8 @@ export const config = {
     get type() { return getConfig('DB_TYPE', 'postgresql'); },
     get host() { return getConfig('DB_HOST', 'localhost'); },
     get port() { return parseInt(getConfig('DB_PORT', '5432'), 10); },
-    get name() { return getConfig('DB_NAME', 'nebula_proxy'); },
-    get user() { return getConfig('DB_USER', 'nebula'); },
+    get name() { return normalizeDbValue('DB_NAME', getConfig('DB_NAME', 'nebulaproxy')); },
+    get user() { return normalizeDbValue('DB_USER', getConfig('DB_USER', 'nebulaproxy')); },
     get password() { return getConfig('DB_PASSWORD', ''); },
     get path() { return getConfig('DB_PATH') || join(__dirname, 'database.db'); }
   },
@@ -169,7 +181,7 @@ export const config = {
       return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
     },
     get requestTimeoutMs() {
-      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '60000'), 10);
     },
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
@@ -225,10 +237,13 @@ export const config = {
 
   minecraftProxy: {
     get port() { return parseInt(getConfig('MINECRAFT_PROXY_PORT', '25565'), 10); },
-    get idleTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_IDLE_TIMEOUT_MS', '300000'), 10); },
-    get connectTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_CONNECT_TIMEOUT_MS', '10000'), 10); },
-    get keepAliveMs() { return parseInt(getConfig('MINECRAFT_PROXY_KEEPALIVE_MS', '30000'), 10); },
-    get handshakeTimeoutMs() { return parseInt(getConfig('MINECRAFT_HANDSHAKE_TIMEOUT_MS', '5000'), 10); },
+    // Increased idle timeout from 5min to 30min to handle VPN latency better
+    get idleTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_IDLE_TIMEOUT_MS', '1800000'), 10); },
+    // Increased connect timeout from 10s to 20s for slow VPN backends
+    get connectTimeoutMs() { return parseInt(getConfig('MINECRAFT_PROXY_CONNECT_TIMEOUT_MS', '20000'), 10); },
+    // Increased keep-alive from 30s to 45s to prevent idle disconnects
+    get keepAliveMs() { return parseInt(getConfig('MINECRAFT_PROXY_KEEPALIVE_MS', '45000'), 10); },
+    get handshakeTimeoutMs() { return parseInt(getConfig('MINECRAFT_HANDSHAKE_TIMEOUT_MS', '15000'), 10); },
     get maxPacketSize() { return parseInt(getConfig('MINECRAFT_MAX_PACKET_SIZE', '65535'), 10); },
     get backlog() { return parseInt(getConfig('MINECRAFT_PROXY_BACKLOG', '4096'), 10); },
     get maxConnections() { return parseInt(getConfig('MINECRAFT_PROXY_MAX_CONNECTIONS', '0'), 10); }

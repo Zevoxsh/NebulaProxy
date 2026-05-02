@@ -195,7 +195,8 @@ class HealthCheckService {
     }
 
     const elapsed = Date.now() - t0;
-    console.log(`[HealthCheck] Checked ${checked} domains in ${elapsed}ms`);
+    // Disabled verbose summary logging to reduce console clutter
+    // console.log(`[HealthCheck] Checked ${checked} domains in ${elapsed}ms`);
   }
 
   async _checkDomain(domain, timeoutMs) {
@@ -237,11 +238,13 @@ class HealthCheckService {
 
     const status = result.success ? 'success' : 'failed';
 
-    console.log(
-      `[HealthCheck] ${domain.hostname} (${proxyType}) → ${result.success ? 'UP' : 'DOWN'}`
-      + (result.error ? ` [${result.error}]` : '')
-      + (result.responseTime != null ? ` ${result.responseTime}ms` : '')
-    );
+    // Disabled verbose health check logging to reduce console clutter
+    // Uncomment below to see individual health check results
+    // console.log(
+    //   `[HealthCheck] ${domain.hostname} (${proxyType}) → ${result.success ? 'UP' : 'DOWN'}`
+    //   + (result.error ? ` [${result.error}]` : '')
+    //   + (result.responseTime != null ? ` ${result.responseTime}ms` : '')
+    // );
 
     try {
       await database.recordHealthCheck(

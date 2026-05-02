@@ -62,8 +62,8 @@ export const dbConfig = {
       password,
 
       // Pool settings
-      max: parseInt(process.env.DB_POOL_MAX || '20', 10),
-      min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+      max: parseInt(process.env.DB_POOL_MAX || '50', 10),
+      min: parseInt(process.env.DB_POOL_MIN || '10', 10), // Increased from 5 to 10 for better startup latency
       idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
       connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
 

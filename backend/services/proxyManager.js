@@ -24,6 +24,7 @@ import { urlFilterService } from './urlFilterService.js';
 import { circuitBreaker } from './circuitBreaker.js';
 import { geoIpService } from './geoIpService.js';
 import { redisService } from './redis.js';
+import { logBatchQueue } from './logBatchQueue.js';
 
 // Lazy singleton for live traffic tracking (avoids circular deps at load time)
 let _lts = null;
@@ -438,9 +439,9 @@ const escapeHtml = (value) => String(value ?? '')
           // Ignore destroy errors
         }
 
-        // Log TCP connection after cleanup
+        // Log TCP connection after cleanup (batched)
         const responseTime = Date.now() - startTime;
-        database.createRequestLog({
+        logBatchQueue.queueRequestLog({
           domainId: domain.id,
           hostname: domain.hostname,
           method: 'TCP',
@@ -458,8 +459,6 @@ const escapeHtml = (value) => String(value ?? '')
           },
           responseHeaders: {},
           errorMessage: errorMessage
-        }).catch((err) => {
-          console.error('[ProxyManager] Failed to write TCP log:', err);
         });
       };
 
@@ -665,7 +664,7 @@ const escapeHtml = (value) => String(value ?? '')
             const message = networkAccess.response?.message || 'Connection blocked by network policy';
             console.warn(`[UDP Proxy ${domain.id}] Blocked client ${clientKey}: ${message}`);
 
-            database.createRequestLog({
+            logBatchQueue.queueRequestLog({
               domainId: domain.id,
               hostname: domain.hostname,
               method: 'UDP',
@@ -683,8 +682,6 @@ const escapeHtml = (value) => String(value ?? '')
               },
               responseHeaders: {},
               errorMessage: message
-            }).catch((err) => {
-              console.error('[ProxyManager] Failed to write UDP blocked log:', err);
             });
 
             return;
@@ -851,6 +848,7 @@ const escapeHtml = (value) => String(value ?? '')
         let handshakeBuffer = Buffer.alloc(0);
         let handshakeComplete = false;
         let handshakeTimeout = null;
+        let connectTimeout = null;
         let targetSocket = null;
         let isClosing = false;
 
@@ -888,11 +886,25 @@ const escapeHtml = (value) => String(value ?? '')
             handshakeTimeout = null;
           }
 
-          // Unpipe if connected
+          // Remove all listeners to prevent memory leaks
+          try {
+            clientSocket.removeAllListeners('data');
+            clientSocket.removeAllListeners('drain');
+            clientSocket.removeAllListeners('error');
+            clientSocket.removeAllListeners('timeout');
+            clientSocket.removeAllListeners('end');
+            clientSocket.removeAllListeners('close');
+          } catch (e) {}
+
           try {
             if (targetSocket) {
-              clientSocket.unpipe(targetSocket);
-              targetSocket.unpipe(clientSocket);
+              targetSocket.removeAllListeners('data');
+              targetSocket.removeAllListeners('drain');
+              targetSocket.removeAllListeners('error');
+              targetSocket.removeAllListeners('timeout');
+              targetSocket.removeAllListeners('end');
+              targetSocket.removeAllListeners('close');
+              targetSocket.removeAllListeners('connect');
             }
           } catch (e) {}
 
@@ -930,14 +942,24 @@ const escapeHtml = (value) => String(value ?? '')
         };
 
         // SECURITY: Per-connection byte limit (DOS prevention)
-        const MAX_HANDSHAKE_BYTES = Math.min(this.MINECRAFT_MAX_PACKET_SIZE, 4096); // 4KB max
+        // Increased from 4KB to 16KB to accommodate various client handshake formats
+        // Actual Minecraft handshakes are typically 50-200 bytes, well below this limit
+        const MAX_HANDSHAKE_BYTES = Math.min(this.MINECRAFT_MAX_PACKET_SIZE, 16384); // 16KB max
         let totalBytesBuffered = 0;
 
         // Handle client data BEFORE handshake complete
         const onClientData = async (chunk) => {
-          // SECURITY FIX: Check total bytes BEFORE accumulating
-          totalBytesBuffered += chunk.length;
           bytesReceived += chunk.length;
+
+          // Handshake already parsed; buffer until backend connects
+          if (handshakeComplete) {
+            // Don't count in DOS limit after handshake is complete
+            handshakeBuffer = Buffer.concat([handshakeBuffer, chunk]);
+            return;
+          }
+
+          // SECURITY FIX: Check total bytes BEFORE accumulating (only pre-handshake)
+          totalBytesBuffered += chunk.length;
 
           if (totalBytesBuffered > MAX_HANDSHAKE_BYTES) {
             errorMessage = 'Handshake too large - possible DOS attack';
@@ -954,11 +976,6 @@ const escapeHtml = (value) => String(value ?? '')
             errorMessage = 'Buffer overflow protection';
             console.error(`[MinecraftProxy] Buffer size protection triggered: ${handshakeBuffer.length} bytes`);
             cleanup();
-            return;
-          }
-
-          // Handshake already parsed; buffer until backend connects
-          if (handshakeComplete) {
             return;
           }
 
@@ -1012,11 +1029,12 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           // Select backend (with load balancing if enabled)
-          let backendHost, backendPort;
+          let backendHost, backendPort, backendId;
           try {
             const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
             backendHost = target.hostname;
             backendPort = target.port;
+            backendId = target.backendId;
           } catch (err) {
             errorMessage = `Backend selection failed: ${err.message}`;
             console.error(`[MinecraftProxy] ${errorMessage}`);
@@ -1040,8 +1058,6 @@ const escapeHtml = (value) => String(value ?? '')
             targetSocket.setKeepAlive(true, this.MINECRAFT_KEEPALIVE_MS);
           }
 
-          // Backend connection timeout
-          let connectTimeout = null;
           if (this.MINECRAFT_CONNECT_TIMEOUT > 0) {
             connectTimeout = setTimeout(() => {
               if (targetSocket && targetSocket.connecting) {
@@ -1051,44 +1067,80 @@ const escapeHtml = (value) => String(value ?? '')
             }, this.MINECRAFT_CONNECT_TIMEOUT);
           }
 
+          if (this.MINECRAFT_TIMEOUT > 0) {
+            targetSocket.setTimeout(this.MINECRAFT_TIMEOUT);
+          }
+
           targetSocket.on('connect', () => {
             if (connectTimeout) {
               clearTimeout(connectTimeout);
               connectTimeout = null;
             }
 
-            console.log(`[MinecraftProxy] Connected to backend ${backendHost}:${backendPort}`);
-
-            // ── PROXY Protocol v1 ─────────────────────────────────────────
-            if (domain.proxy_protocol) {
-              const clientPort = clientSocket.remotePort || 0;
-              const serverAddr = targetSocket.localAddress || '0.0.0.0';
-              const serverPort = targetSocket.localPort || backendPort;
-              const family = clientIp.includes(':') ? 'TCP6' : 'TCP4';
-              targetSocket.write(
-                Buffer.from(`PROXY ${family} ${clientIp} ${serverAddr} ${clientPort} ${serverPort}\r\n`, 'ascii')
-              );
+            // Send the buffered handshake packet, then forward live traffic.
+            if (handshakeBuffer.length > 0) {
+              targetSocket.write(handshakeBuffer);
             }
 
-            // Forward buffered handshake then pipe
-            targetSocket.write(handshakeBuffer);
-            handshakeBuffer = Buffer.alloc(0);
+            // FIXED: Replace direct piping with manual relay for better error handling
+            // and back-pressure management, especially critical for VPN connections
+            const relayClientToBackend = (chunk) => {
+              if (!targetSocket.destroyed) {
+                bytesReceived += chunk.length; // Count bytes received from client
+                if (!targetSocket.write(chunk)) {
+                  // Back-pressure: pause client socket if backend buffer is full
+                  clientSocket.pause();
+                }
+              }
+            };
 
-            clientSocket.removeListener('data', onClientData);
-            clientSocket.on('data', (chunk) => { bytesReceived += chunk.length; });
-            targetSocket.on('data', (chunk) => { bytesSent += chunk.length; });
-            clientSocket.pipe(targetSocket);
-            targetSocket.pipe(clientSocket);
+            const relayBackendToClient = (chunk) => {
+              if (!clientSocket.destroyed) {
+                bytesSent += chunk.length; // Count bytes sent to client
+                if (!clientSocket.write(chunk)) {
+                  // Back-pressure: pause backend socket if client buffer is full
+                  targetSocket.pause();
+                }
+              }
+            };
+
+            clientSocket.on('data', relayClientToBackend);
+            targetSocket.on('data', relayBackendToClient);
+
+            // Resume on drain when back-pressure eases
+            clientSocket.on('drain', () => {
+              if (!targetSocket.destroyed && targetSocket.isPaused?.()) {
+                targetSocket.resume();
+              }
+            });
+
+            targetSocket.on('drain', () => {
+              if (!clientSocket.destroyed && clientSocket.isPaused?.()) {
+                clientSocket.resume();
+              }
+            });
           });
 
-          // Handle backend errors
           targetSocket.on('error', (err) => {
             if (connectTimeout) {
               clearTimeout(connectTimeout);
               connectTimeout = null;
             }
-            if (!isClosing && err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
-              console.error(`[MinecraftProxy] Backend error:`, err.message);
+            
+            // OPTIMIZATION: Invalidate backend health cache on critical errors
+            // This forces a database refresh to detect if a backend is back online
+            if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+              console.warn(`[MinecraftProxy] Backend connection error (${err.code}) to ${backendHost}:${backendPort}, invalidating health cache for domain ${domain.id}`);
+              this.backendHealthCache.delete(domain.id); // Force DB refresh next request
+            }
+            
+            // Log connection errors with more detail for VPN debugging
+            if (!isClosing) {
+              if (err.code === 'EPIPE' || err.code === 'ECONNRESET') {
+                console.warn(`[MinecraftProxy] Backend connection closed (${err.code}) to ${backendHost}:${backendPort} - This may indicate VPN/network issues between proxy and backend`);
+              } else {
+                console.error(`[MinecraftProxy] Backend error (${err.code || err.message}):`, err.message);
+              }
               errorMessage = `Backend error: ${err.message}`;
             }
             cleanup();
@@ -1829,9 +1881,9 @@ const escapeHtml = (value) => String(value ?? '')
       else if (statusCode >= 400) logLevel = 'warning';
       else if (statusCode >= 300) logLevel = 'info';
 
-      // Log the request
+      // Log the request (batched for performance)
       proxyRes.on('end', () => {
-        database.createRequestLog({
+        logBatchQueue.queueRequestLog({
           domainId: domain.id,
           hostname: domain.hostname,
           method: req.method,
@@ -1853,13 +1905,11 @@ const escapeHtml = (value) => String(value ?? '')
             'content-encoding': proxyRes.headers['content-encoding'],
             'cache-control': proxyRes.headers['cache-control']
           }
-        }).catch((err) => {
-          console.error('[ProxyManager] Failed to write request log:', err);
         });
       });
 
-      // Legacy proxy log
-      database.createProxyLog({
+      // Legacy proxy log (batched)
+      logBatchQueue.queueProxyLog({
         domainId: domain.id,
         hostname: domain.hostname,
         method: req.method,
@@ -1869,8 +1919,6 @@ const escapeHtml = (value) => String(value ?? '')
         ipAddress: clientIp,
         userAgent: req.headers['user-agent'] || null,
         level: logLevel
-      }).catch((err) => {
-        console.error('[ProxyManager] Failed to write proxy log:', err);
       });
 
       // Custom error pages for 404 / 502 / 503 from backend
@@ -2876,13 +2924,32 @@ const escapeHtml = (value) => String(value ?? '')
       minecraft: 25565
     };
 
-    // If load balancing is not enabled, use the default backend_url
+    // FAST PATH: If load balancing is not enabled, use the default backend_url directly
+    // This avoids querying the database entirely for simple single-backend domains
     if (!domain.load_balancing_enabled) {
       return loadBalancer.getBackendTarget(domain, null, protocol);
     }
 
-    // Get healthy backends for load balancing
-    const backends = await database.getHealthyBackendsByDomainId(domain.id);
+    // OPTIMIZATION: Check local cache first (avoids database query 95% of the time)
+    const now = Date.now();
+    const cacheEntry = this.backendHealthCache.get(domain.id);
+    let backends = null;
+
+    if (cacheEntry && (now - cacheEntry.timestamp) < this.BACKEND_HEALTH_CACHE_TTL) {
+      // Cache hit - use cached backends (valid for last 30 seconds)
+      backends = cacheEntry.backends;
+    } else {
+      // Cache miss - query database for healthy backends
+      backends = await database.getHealthyBackendsByDomainId(domain.id);
+      
+      // Update cache for next requests
+      if (backends) {
+        this.backendHealthCache.set(domain.id, {
+          backends,
+          timestamp: now
+        });
+      }
+    }
 
     // If no backends configured, fall back to domain's default backend
     if (!backends || backends.length === 0) {

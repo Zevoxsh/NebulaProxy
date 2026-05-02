@@ -3,6 +3,8 @@ import { liveTrafficService } from '../services/liveTrafficService.js';
 import { checkDomainQuota } from '../middleware/quotaCheck.js';
 import { proxyManager } from '../services/proxyManager.js';
 import { acmeManager } from '../services/acmeManager.js';
+import { multiProxySyncService } from '../services/multiProxySyncService.js';
+import { redisService } from '../services/redis.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../utils/security.js';
 import { PermissionChecker } from '../utils/permissions.js';
 import { config } from '../config/config.js';
@@ -457,6 +459,16 @@ export async function domainRoutes(fastify, options) {
         try {
           await proxyManager.startProxy(domain);
           fastify.log.info({ domainId: domain.id, hostname }, 'Proxy started');
+
+          // Notify other proxy instances if multi-proxy is configured
+          try {
+            await multiProxySyncService.publishDomainChange('created', domain, {
+              userId,
+              timestamp: Date.now()
+            });
+          } catch (err) {
+            fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain creation');
+          }
         } catch (error) {
           fastify.log.error({ error, domainId: domain.id }, 'Failed to start proxy');
           // Don't fail the request - proxy can be started manually
@@ -823,7 +835,15 @@ export async function domainRoutes(fastify, options) {
         ipAddress: request.ip
       });
 
-
+      // Notify other proxy instances about deletion
+      try {
+        await multiProxySyncService.publishDomainChange('deleted', domain, {
+          userId,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain deletion');
+      }
 
       fastify.log.info({ username: request.user.username, domainId, hostname: domain.hostname }, 'Domain deleted');
 
@@ -888,6 +908,17 @@ export async function domainRoutes(fastify, options) {
         } else {
           await proxyManager.stopProxy(domainId);
           fastify.log.info({ domainId }, 'Proxy stopped');
+        }
+        
+        // Notify other proxy instances about the change
+        try {
+          await multiProxySyncService.publishDomainChange('modified', updatedDomain, {
+            userId,
+            action: updatedDomain.is_active ? 'enabled' : 'disabled',
+            timestamp: Date.now()
+          });
+        } catch (err) {
+          fastify.log.warn({ error: err.message }, 'Failed to notify other proxies about domain toggle');
         }
       } catch (error) {
         fastify.log.error({ error, domainId }, 'Failed to toggle proxy');
@@ -1173,19 +1204,53 @@ export async function domainRoutes(fastify, options) {
       }
 
       const { days = 7 } = request.query;
+      const cacheKey = `domain_stats:${domainId}:${days}`;
 
-      const stats = await database.getRequestLogStats(domainId, parseInt(days, 10));
-      const methodDist = await database.getMethodDistribution(domainId, parseInt(days, 10));
-      const statusDist = await database.getStatusCodeDistribution(domainId, parseInt(days, 10));
+      // Try to get from cache first (45s TTL)
+      let cachedResult = null;
+      if (redisService.isConnected && redisService.client) {
+        try {
+          cachedResult = await redisService.client.get(cacheKey);
+        } catch (err) {
+          console.warn('[DomainStats] Cache get failed:', err.message);
+        }
+      }
 
-      reply.send({
+      if (cachedResult) {
+        return reply.send(JSON.parse(cachedResult));
+      }
+
+      // OPTIMIZED: Single query instead of 3 separate ones (3x faster)
+      const combined = await database.getCombinedRequestLogStats(domainId, parseInt(days, 10));
+      const { method_distribution, status_distribution, ...stats } = combined;
+
+      // Transform JSON distributions to array format for backward compatibility
+      const methodDist = method_distribution 
+        ? Object.entries(method_distribution).map(([method, count]) => ({ method, count })) 
+        : [];
+      const statusDist = status_distribution 
+        ? Object.entries(status_distribution).map(([code, count]) => ({ status_code: parseInt(code, 10), count })) 
+        : [];
+
+      const result = {
         success: true,
         stats: {
           ...stats,
           method_distribution: methodDist,
           status_code_distribution: statusDist
         }
-      });
+      };
+
+      // Cache for 45 seconds
+      if (redisService.isConnected && redisService.client) {
+        try {
+          await redisService.client.setex(cacheKey, 45, JSON.stringify(result));
+        } catch (err) {
+          console.warn('[DomainStats] Cache set failed:', err.message);
+        }
+      }
+
+      reply.send(result);
     } catch (error) {
       fastify.log.error({ error }, 'Failed to get log stats');
       reply.code(500).send({

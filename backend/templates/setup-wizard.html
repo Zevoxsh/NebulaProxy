@@ -772,7 +772,12 @@ async function applyAndFinish(importedConfig) {
     if (result.success) {
       showNotification('Configuration imported successfully! Starting services...', 'success');
       setTimeout(() => {
-        window.location.href = '/';
+        const url = new URL(window.location.href);
+        url.port = '3001';
+        url.pathname = '/';
+        url.search = '';
+        url.hash = '';
+        window.location.href = url.toString();
       }, 2000);
     } else {
       showNotification(`Import failed: ${getSetupErrorMessage(result, 'Unknown import error')}`, 'error');
@@ -1109,7 +1114,12 @@ async function finishSetup() {
       `;
 
       setTimeout(() => {
-        window.location.href = '/';
+        const url = new URL(window.location.href);
+        url.port = '3001';
+        url.pathname = '/';
+        url.search = '';
+        url.hash = '';
+        window.location.href = url.toString();
       }, 2000);
     } else {
       statusDiv.innerHTML = `
