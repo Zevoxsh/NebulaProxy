@@ -389,9 +389,13 @@ const escapeHtml = (value) => String(value ?? '')
         let blockedByPolicy = false;
         let backendHost, backendPort;
 
+        console.log(`[DEBUG:TCP] domain=${domain.id} (${domain.hostname}) client=${clientIp}:${clientSocket.remotePort} NEW CONNECTION`);
+
         // Check IP/CIDR network blocking rules before opening backend connection
+        const policyStart = Date.now();
         try {
           const networkAccess = await urlFilterService.checkNetworkAccess(domain.id, clientIp);
+          console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} policy check ${Date.now() - policyStart}ms blocked=${networkAccess.blocked}`);
           if (networkAccess.blocked) {
             blockedByPolicy = true;
             errorMessage = networkAccess.response?.message || 'Connection blocked by network policy';
@@ -400,16 +404,18 @@ const escapeHtml = (value) => String(value ?? '')
             return;
           }
         } catch (err) {
-          console.error(`[TCP Proxy ${domain.id}] Network policy check failed:`, err.message);
+          console.error(`[TCP Proxy ${domain.id}] Network policy check failed (${Date.now() - policyStart}ms):`, err.message);
         }
 
         // Load balancing: select backend
+        const backendSelStart = Date.now();
         try {
           const target = await this._selectBackendForDomain(domain, clientIp, 'tcp');
           backendHost = target.hostname;
           backendPort = target.port;
+          console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend selected ${backendHost}:${backendPort} in ${Date.now() - backendSelStart}ms t+${Date.now() - startTime}ms`);
         } catch (err) {
-          console.error(`[TCP Proxy ${domain.id}] Backend selection failed:`, err.message);
+          console.error(`[TCP Proxy ${domain.id}] Backend selection failed (${Date.now() - backendSelStart}ms):`, err.message);
           clientSocket.destroy();
           return;
         }
@@ -452,6 +458,7 @@ const escapeHtml = (value) => String(value ?? '')
 
         // Log TCP connection after cleanup (batched)
         const responseTime = Date.now() - startTime;
+        console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} CLOSED duration=${responseTime}ms sent=${bytesSent}B recv=${bytesReceived}B${errorMessage ? ' error='+errorMessage : ''}`);
         logBatchQueue.queueRequestLog({
           domainId: domain.id,
           hostname: domain.hostname,
@@ -475,11 +482,13 @@ const escapeHtml = (value) => String(value ?? '')
 
       // Client timeout
         clientSocket.on('timeout', () => {
-          console.warn(`[TCP Proxy ${domain.id}] Client socket timeout`);
+          console.warn(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} CLIENT IDLE TIMEOUT`);
           cleanup();
         });
 
         // Connect to backend
+        console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} TCP connect -> ${backendHost}:${backendPort} t+${Date.now() - startTime}ms`);
+        const tcpConnectStart = Date.now();
         targetSocket = net.connect({
           host: backendHost,
           port: backendPort
@@ -494,12 +503,16 @@ const escapeHtml = (value) => String(value ?? '')
           connectTimeout = setTimeout(() => {
             if (targetSocket && targetSocket.connecting) {
               errorMessage = 'Backend connection timeout';
+              console.error(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend ${backendHost}:${backendPort} TCP TIMEOUT after ${this.TCP_CONNECT_TIMEOUT}ms`);
               cleanup();
             }
           }, this.TCP_CONNECT_TIMEOUT);
         }
 
         targetSocket.on('connect', () => {
+          const tcpConnectMs = Date.now() - tcpConnectStart;
+          console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend ${backendHost}:${backendPort} TCP CONNECTED in ${tcpConnectMs}ms t+${Date.now() - startTime}ms`);
+
           if (connectTimeout) {
             clearTimeout(connectTimeout);
             connectTimeout = null;
@@ -520,13 +533,14 @@ const escapeHtml = (value) => String(value ?? '')
           targetSocket.on('data', (chunk) => { bytesSent += chunk.length; });
           clientSocket.pipe(targetSocket);
           targetSocket.pipe(clientSocket);
+          console.log(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} relay ACTIVE (pipe mode)`);
         });
 
         // Backend timeout
         if (this.TCP_TIMEOUT > 0) {
           targetSocket.setTimeout(this.TCP_TIMEOUT);
           targetSocket.on('timeout', () => {
-            console.warn(`[TCP Proxy ${domain.id}] Backend timeout`);
+            console.warn(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend ${backendHost}:${backendPort} IDLE TIMEOUT`);
             errorMessage = 'Backend timeout';
             cleanup();
           });
@@ -539,7 +553,7 @@ const escapeHtml = (value) => String(value ?? '')
             connectTimeout = null;
           }
           if (!isClosing && err.code !== 'EPIPE' && err.code !== 'ECONNRESET' && err.code !== 'ETIMEDOUT') {
-            console.error(`[TCP Proxy ${domain.id}] Backend error:`, err.message);
+            console.error(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend ERROR ${err.code}: ${err.message}`);
             errorMessage = `Backend error: ${err.message}`;
           }
           cleanup();
@@ -888,9 +902,13 @@ const escapeHtml = (value) => String(value ?? '')
           cleanup();
         }, this.MINECRAFT_HANDSHAKE_TIMEOUT);
 
+        let silenceTimer = null;
+
         const cleanup = () => {
           if (isClosing) return;
           isClosing = true;
+
+          if (silenceTimer) { clearInterval(silenceTimer); silenceTimer = null; }
 
           if (handshakeTimeout) {
             clearTimeout(handshakeTimeout);
@@ -991,15 +1009,16 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           // Try to parse handshake
+          const parseStart = Date.now();
           const result = parseHandshake(handshakeBuffer);
+          const parseMs = Date.now() - parseStart;
 
           if (result.incomplete) {
-            // Wait for more data
+            console.log(`[DEBUG:MC] client=${clientIp} handshake incomplete (${handshakeBuffer.length}B so far, parse=${parseMs}ms)`);
             return;
           }
 
           if (!result.success) {
-            // Parse error
             errorMessage = result.error;
             console.error(`[MinecraftProxy] Handshake parse error:`, result.error);
             cleanup();
@@ -1013,8 +1032,8 @@ const escapeHtml = (value) => String(value ?? '')
 
           const hostname = result.hostname;
           routedHostname = hostname;
-
-          console.log(`[MinecraftProxy] Handshake parsed: ${hostname}`);
+          const t0 = Date.now();
+          console.log(`[DEBUG:MC] client=${clientIp} handshake OK hostname="${hostname}" parse=${parseMs}ms bufLen=${handshakeBuffer.length}B t+${t0 - startTime}ms`);
 
           // Route to domain — filter by 'minecraft' so an HTTP domain
           // with the same hostname doesn't intercept MC connections.
@@ -1025,9 +1044,12 @@ const escapeHtml = (value) => String(value ?? '')
             cleanup();
             return;
           }
+          console.log(`[DEBUG:MC] client=${clientIp} domain found id=${domain.id} t+${Date.now() - startTime}ms`);
 
+          const policyStart = Date.now();
           try {
             const networkAccess = await urlFilterService.checkNetworkAccess(domain.id, clientIp);
+            console.log(`[DEBUG:MC] client=${clientIp} policy check ${Date.now() - policyStart}ms blocked=${networkAccess.blocked}`);
             if (networkAccess.blocked) {
               blockedByPolicy = true;
               errorMessage = networkAccess.response?.message || 'Connection blocked by network policy';
@@ -1036,19 +1058,21 @@ const escapeHtml = (value) => String(value ?? '')
               return;
             }
           } catch (err) {
-            console.error(`[MinecraftProxy] Network policy check failed:`, err.message);
+            console.error(`[MinecraftProxy] Network policy check failed (${Date.now() - policyStart}ms):`, err.message);
           }
 
           // Select backend (with load balancing if enabled)
           let backendHost, backendPort, backendId;
+          const backendSelStart = Date.now();
           try {
             const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
             backendHost = target.hostname;
             backendPort = target.port;
             backendId = target.backendId;
+            console.log(`[DEBUG:MC] client=${clientIp} backend selected ${backendHost}:${backendPort} in ${Date.now() - backendSelStart}ms t+${Date.now() - startTime}ms`);
           } catch (err) {
             errorMessage = `Backend selection failed: ${err.message}`;
-            console.error(`[MinecraftProxy] ${errorMessage}`);
+            console.error(`[MinecraftProxy] ${errorMessage} (${Date.now() - backendSelStart}ms)`);
             cleanup();
             return;
           }
@@ -1056,7 +1080,8 @@ const escapeHtml = (value) => String(value ?? '')
           // Live traffic tracking (fire-and-forget)
           { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
 
-          console.log(`[MinecraftProxy] Routing ${hostname} -> ${backendHost}:${backendPort}`);
+          console.log(`[DEBUG:MC] client=${clientIp} connecting to backend ${backendHost}:${backendPort} t+${Date.now() - startTime}ms`);
+          const tcpConnectStart = Date.now();
 
           // Connect to backend
           targetSocket = net.connect({
@@ -1073,6 +1098,7 @@ const escapeHtml = (value) => String(value ?? '')
             connectTimeout = setTimeout(() => {
               if (targetSocket && targetSocket.connecting) {
                 errorMessage = 'Backend connection timeout';
+                console.error(`[DEBUG:MC] client=${clientIp} backend ${backendHost}:${backendPort} TIMEOUT after ${this.MINECRAFT_CONNECT_TIMEOUT}ms`);
                 cleanup();
               }
             }, this.MINECRAFT_CONNECT_TIMEOUT);
@@ -1083,6 +1109,9 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           targetSocket.on('connect', () => {
+            const tcpConnectMs = Date.now() - tcpConnectStart;
+            console.log(`[DEBUG:MC] client=${clientIp} backend ${backendHost}:${backendPort} TCP CONNECTED in ${tcpConnectMs}ms t+${Date.now() - startTime}ms`);
+
             if (connectTimeout) {
               clearTimeout(connectTimeout);
               connectTimeout = null;
@@ -1091,15 +1120,40 @@ const escapeHtml = (value) => String(value ?? '')
             // Send the buffered handshake packet, then forward live traffic.
             if (handshakeBuffer.length > 0) {
               targetSocket.write(handshakeBuffer);
+              console.log(`[DEBUG:MC] client=${clientIp} flushed handshake buffer ${handshakeBuffer.length}B to backend`);
             }
+
+            let mcBpClientCount = 0;
+            let mcBpBackendCount = 0;
+            let mcBpClientAt = 0;
+            let mcBpBackendAt = 0;
+            let lastDataFromBackend = Date.now();
+            let lastDataFromClient = Date.now();
+
+            // Silence detector: log if no data from backend for > 500ms (indicates VPN/backend stall)
+            const silenceTimer = setInterval(() => {
+              if (isClosing) { clearInterval(silenceTimer); return; }
+              const now = Date.now();
+              const backendSilence = now - lastDataFromBackend;
+              const clientSilence  = now - lastDataFromClient;
+              if (backendSilence > 500) {
+                console.warn(`[DEBUG:MC] client=${clientIp} SILENCE backend->client for ${backendSilence}ms (sent=${bytesSent}B recv=${bytesReceived}B)`);
+              }
+              if (clientSilence > 500) {
+                console.warn(`[DEBUG:MC] client=${clientIp} SILENCE client->backend for ${clientSilence}ms`);
+              }
+            }, 500);
 
             // FIXED: Replace direct piping with manual relay for better error handling
             // and back-pressure management, especially critical for VPN connections
             const relayClientToBackend = (chunk) => {
               if (!targetSocket.destroyed) {
+                lastDataFromClient = Date.now();
                 bytesReceived += chunk.length; // Count bytes received from client
                 if (!targetSocket.write(chunk)) {
-                  // Back-pressure: pause client socket if backend buffer is full
+                  mcBpClientCount++;
+                  mcBpClientAt = Date.now();
+                  console.warn(`[DEBUG:MC] client=${clientIp} BACKPRESSURE #${mcBpClientCount} client->backend: pausing client (chunk=${chunk.length}B)`);
                   clientSocket.pause();
                 }
               }
@@ -1107,9 +1161,12 @@ const escapeHtml = (value) => String(value ?? '')
 
             const relayBackendToClient = (chunk) => {
               if (!clientSocket.destroyed) {
+                lastDataFromBackend = Date.now();
                 bytesSent += chunk.length; // Count bytes sent to client
                 if (!clientSocket.write(chunk)) {
-                  // Back-pressure: pause backend socket if client buffer is full
+                  mcBpBackendCount++;
+                  mcBpBackendAt = Date.now();
+                  console.warn(`[DEBUG:MC] client=${clientIp} BACKPRESSURE #${mcBpBackendCount} backend->client: pausing backend (chunk=${chunk.length}B)`);
                   targetSocket.pause();
                 }
               }
@@ -1121,12 +1178,20 @@ const escapeHtml = (value) => String(value ?? '')
             // Resume on drain when back-pressure eases
             clientSocket.on('drain', () => {
               if (!targetSocket.destroyed && targetSocket.isPaused?.()) {
+                if (mcBpBackendAt) {
+                  console.log(`[DEBUG:MC] client=${clientIp} DRAIN client socket after ${Date.now() - mcBpBackendAt}ms -> resuming backend`);
+                  mcBpBackendAt = 0;
+                }
                 targetSocket.resume();
               }
             });
 
             targetSocket.on('drain', () => {
               if (!clientSocket.destroyed && clientSocket.isPaused?.()) {
+                if (mcBpClientAt) {
+                  console.log(`[DEBUG:MC] client=${clientIp} DRAIN backend socket after ${Date.now() - mcBpClientAt}ms -> resuming client`);
+                  mcBpClientAt = 0;
+                }
                 clientSocket.resume();
               }
             });
