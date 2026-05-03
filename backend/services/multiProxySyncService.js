@@ -23,6 +23,8 @@ export class MultiProxySyncService {
     this.isSubscribed = false;
     this.subscriptionChannel = 'nebula_proxy_sync';
     this.notificationHandler = null;
+    this._reconnectTimer = null;
+    this._stopping = false;
   }
 
   /**
@@ -68,6 +70,13 @@ export class MultiProxySyncService {
     this.pgClient.on('notification', this.notificationHandler);
     this.pgClient.on('error', (err) => {
       console.error('[MultiProxySync] PostgreSQL listener error:', err.message);
+      this._scheduleReconnect();
+    });
+    this.pgClient.on('end', () => {
+      if (!this._stopping) {
+        console.warn('[MultiProxySync] PostgreSQL listener connection ended unexpectedly, reconnecting...');
+        this._scheduleReconnect();
+      }
     });
 
     await this.pgClient.query(`LISTEN ${this.subscriptionChannel}`);
@@ -80,6 +89,13 @@ export class MultiProxySyncService {
    * Stop listening to sync events
    */
   async stopListening() {
+    this._stopping = true;
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     if (this.pgClient) {
       try {
         await this.pgClient.query(`UNLISTEN ${this.subscriptionChannel}`);
@@ -92,11 +108,36 @@ export class MultiProxySyncService {
         this.notificationHandler = null;
       }
 
-      this.pgClient.release();
+      try { this.pgClient.release(); } catch (_) {}
       this.pgClient = null;
     }
     this.isSubscribed = false;
     console.log(`[MultiProxySync] Stopped listening`);
+  }
+
+  /**
+   * Schedule a reconnection attempt after the connection drops
+   */
+  _scheduleReconnect(delayMs = 5000) {
+    if (this._reconnectTimer || this._stopping) return;
+
+    this.isSubscribed = false;
+    if (this.pgClient) {
+      try { this.pgClient.release(true); } catch (_) {}
+      this.pgClient = null;
+    }
+
+    this._reconnectTimer = setTimeout(async () => {
+      this._reconnectTimer = null;
+      if (this._stopping) return;
+      try {
+        await this.startListening();
+        console.log('[MultiProxySync] Reconnected to PostgreSQL listener successfully');
+      } catch (err) {
+        console.error('[MultiProxySync] Reconnect failed:', err.message);
+        this._scheduleReconnect(10000);
+      }
+    }, delayMs);
   }
 
   /**
