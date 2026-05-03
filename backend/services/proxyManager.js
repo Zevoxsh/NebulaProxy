@@ -37,6 +37,17 @@ const lts = () => {
   return _lts;
 };
 
+// Lazy singleton for DDoS protection (avoids dynamic import on every request)
+let _ddos = null;
+const getDdos = () => {
+  if (!_ddos) {
+    import('./ddosProtectionService.js')
+      .then(m => { _ddos = m.ddosProtectionService; })
+      .catch(() => {});
+  }
+  return _ddos;
+};
+
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -1681,7 +1692,7 @@ const escapeHtml = (value) => String(value ?? '')
     // ── 3.5. DDOS PROTECTION ─────────────────────────────────────────────────
     if (domain?.ddos_protection_enabled) {
       try {
-        const { ddosProtectionService } = await import('./ddosProtectionService.js');
+        const ddosProtectionService = getDdos();
 
         // Challenge mode: serve JS challenge directly (no redirect — avoids loops)
         if (domain.ddos_challenge_mode) {

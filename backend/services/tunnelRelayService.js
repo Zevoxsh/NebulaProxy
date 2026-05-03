@@ -55,9 +55,9 @@ class TunnelRelayService {
           if (this.agentSockets.get(agentId) === ws) {
             this.agentSockets.delete(agentId);
           }
-          // Clean up drain check interval
-          if (ws._drainCheck) {
-            clearInterval(ws._drainCheck);
+          // Clean up drain listener
+          if (ws._drainCheck && ws._socket) {
+            ws._socket.removeListener('drain', ws._drainCheck);
             ws._drainCheck = null;
           }
           this.closeAgentConnections(agentId);
@@ -171,17 +171,20 @@ class TunnelRelayService {
           }
         });
         
-        // Check WebSocket buffered amount and pause if needed
-        if (ws.bufferedAmount > 64 * 1024) { // 64KB threshold
+        // Backpressure: pause client socket until WS underlying socket drains.
+        // Event-driven via the TCP socket's 'drain' event — no polling interval.
+        if (ws.bufferedAmount > 64 * 1024 && !ws._drainCheck) {
           clientSocket.pause();
-          // Use a check timer to resume when buffer drains
-          if (!ws._drainCheck) {
-            ws._drainCheck = setInterval(() => {
-              if (ws.bufferedAmount < 32 * 1024 && !clientSocket.destroyed) {
-                clientSocket.resume();
-              }
-            }, 100);
-          }
+          const onDrain = () => {
+            if (ws.bufferedAmount < 32 * 1024 && !clientSocket.destroyed) {
+              clientSocket.resume();
+              ws._socket?.removeListener('drain', onDrain);
+              ws._drainCheck = null;
+            }
+            // If still above threshold, keep the listener for the next drain event
+          };
+          ws._drainCheck = onDrain;
+          ws._socket?.on('drain', onDrain);
         }
       });
 
@@ -435,10 +438,10 @@ class TunnelRelayService {
       this.connections.delete(connId);
     }
     
-    // Clean up drain check intervals for this agent's WebSocket
+    // Clean up drain listener for this agent's WebSocket
     const ws = this.agentSockets.get(agentId);
-    if (ws && ws._drainCheck) {
-      clearInterval(ws._drainCheck);
+    if (ws && ws._drainCheck && ws._socket) {
+      ws._socket.removeListener('drain', ws._drainCheck);
       ws._drainCheck = null;
     }
   }
