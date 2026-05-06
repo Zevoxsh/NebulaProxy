@@ -1905,27 +1905,19 @@ const escapeHtml = (value) => String(value ?? '')
       'X-Forwarded-Proto': req.socket.encrypted ? 'https' : 'http',
       'X-Forwarded-Host': req.headers.host,
       'X-Real-IP': clientIp,
-      'User-Agent': req.headers['user-agent'],
-      'Accept': req.headers['accept'],
-      'Accept-Language': req.headers['accept-language'],
-      'Accept-Encoding': req.headers['accept-encoding'],
       // CRITICAL: Set the Host header to what the backend expects.
       'Host': `${backendHost}:${backendPort}`
     };
 
     // Add other relevant headers if they exist
-    if (req.headers['content-type']) {
-      headers['Content-Type'] = req.headers['content-type'];
-    }
-    if (req.headers['content-length']) {
-      headers['Content-Length'] = req.headers['content-length'];
-    }
-    if (req.headers.authorization) {
-      headers.Authorization = req.headers.authorization;
-    }
-    if (req.headers.cookie) {
-      headers.Cookie = req.headers.cookie;
-    }
+    if (req.headers['user-agent'])      headers['User-Agent']       = req.headers['user-agent'];
+    if (req.headers['accept'])          headers['Accept']           = req.headers['accept'];
+    if (req.headers['accept-language']) headers['Accept-Language']  = req.headers['accept-language'];
+    if (req.headers['accept-encoding']) headers['Accept-Encoding']  = req.headers['accept-encoding'];
+    if (req.headers['content-type'])    headers['Content-Type']     = req.headers['content-type'];
+    if (req.headers['content-length'])  headers['Content-Length']   = req.headers['content-length'];
+    if (req.headers.authorization)      headers.Authorization       = req.headers.authorization;
+    if (req.headers.cookie)             headers.Cookie              = req.headers.cookie;
 
     const options = {
       hostname: backendHost,
