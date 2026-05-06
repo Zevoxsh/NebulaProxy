@@ -1892,17 +1892,39 @@ const escapeHtml = (value) => String(value ?? '')
     // ── 6. CIRCUIT BREAKER CHECK ─────────────────────────────────────────────
     const cbKey = `${domain.id}:${backendHost}:${backendPort}`;
     if (!circuitBreaker.isAvailable(cbKey)) {
-      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Allowing one-time pass-through for potential cold start.`);
-      // The breaker is open, but we will allow this single attempt to pass through.
-      // If this attempt also fails, the `proxyReq.on('error', ...)` logic below
-      // will correctly report the failure to the circuit breaker, keeping it open.
-      // If it succeeds, the `proxyRes.on('end', ...)` logic will reset the breaker.
-      // This effectively handles the "first request fails" scenario on a cold start
-      // without disabling the protection for subsequent, genuine failures.
-    } else {
-      // This block is intentionally left empty. If the circuit breaker is NOT open,
-      // we simply proceed with the request. The original logic that returned a 503
-      // error has been removed to implement the one-time pass-through.
+      // Breaker is open. Log it, but allow one attempt to pass through.
+      // This helps with "cold start" where the backend might be slow on first request.
+      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Allowing a pass-through attempt.`);
+    }
+
+    // ── 7. PROXY REQUEST SETUP ───────────────────────────────────────────────
+    // Create a clean header object instead of copying all incoming headers.
+    // This prevents issues with headers like 'Host', 'Connection', etc.
+    const headers = {
+      'X-Forwarded-For': clientIp,
+      'X-Forwarded-Proto': req.socket.encrypted ? 'https' : 'http',
+      'X-Forwarded-Host': req.headers.host,
+      'X-Real-IP': clientIp,
+      'User-Agent': req.headers['user-agent'],
+      'Accept': req.headers['accept'],
+      'Accept-Language': req.headers['accept-language'],
+      'Accept-Encoding': req.headers['accept-encoding'],
+      // CRITICAL: Set the Host header to what the backend expects.
+      'Host': `${backendHost}:${backendPort}`
+    };
+
+    // Add other relevant headers if they exist
+    if (req.headers['content-type']) {
+      headers['Content-Type'] = req.headers['content-type'];
+    }
+    if (req.headers['content-length']) {
+      headers['Content-Length'] = req.headers['content-length'];
+    }
+    if (req.headers.authorization) {
+      headers.Authorization = req.headers.authorization;
+    }
+    if (req.headers.cookie) {
+      headers.Cookie = req.headers.cookie;
     }
 
     const options = {
@@ -1911,21 +1933,8 @@ const escapeHtml = (value) => String(value ?? '')
       path: req.url,
       method: req.method,
       agent: false, // Use a new agent for each request
-      headers: { ...req.headers } // Start with a copy of client headers
+      headers: headers
     };
-
-    // Add essential proxy headers
-    options.headers['X-Forwarded-For'] = clientIp;
-    options.headers['X-Forwarded-Proto'] = req.socket.encrypted ? 'https' : 'http';
-    options.headers['X-Real-IP'] = clientIp;
-
-    // CRITICAL FIX: Set Host header to backend's actual address.
-    // This is required by many applications like Jellyfin.
-    options.headers.host = `${backendHost}:${backendPort}`;
-
-    // Remove connection-specific headers that should not be forwarded
-    delete options.headers.connection;
-    delete options.headers['keep-alive'];
 
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
