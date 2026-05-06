@@ -252,7 +252,7 @@ class WebSocketProxy {
     }
 
     // Set required WebSocket headers
-    headers['host'] = `${backend.target_host}:${backend.target_port}`;
+    headers['host'] = req.headers.host || `${backend.target_host}:${backend.target_port}`;
     headers['upgrade'] = 'websocket';
     headers['connection'] = 'Upgrade';
 

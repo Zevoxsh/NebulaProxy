@@ -1823,6 +1823,7 @@ const escapeHtml = (value) => String(value ?? '')
       port: backendPort,
       path: req.url,
       method: req.method,
+      agent: false,
       headers: {
         ...req.headers,
         'X-Forwarded-For': clientIp,
