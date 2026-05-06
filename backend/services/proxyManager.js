@@ -1910,19 +1910,14 @@ const escapeHtml = (value) => String(value ?? '')
       port: backendPort,
       path: req.url,
       method: req.method,
-      agent: false,
-      headers: { ...req.headers } // On commence avec une copie des en-têtes du client
+      agent: false, // Use a new agent for each request
+      headers: { ...req.headers } // Start with a copy of client headers
     };
 
-    // On écrase l'en-tête 'host' pour qu'il corresponde au backend. C'est la clé.
-    options.headers.host = `${backendHost}:${backendPort}`;
-
-    // On ajoute les en-têtes de proxy essentiels
+    // Add essential proxy headers
     options.headers['X-Forwarded-For'] = clientIp;
-    options.headers['X-Forwarded-Proto'] = req.connection.encrypted ? 'https' : 'http';
-    options.headers['X-Forwarded-Host'] = req.headers.host; // On préserve le host original ici
+    options.headers['X-Forwarded-Proto'] = req.socket.encrypted ? 'https' : 'http';
     options.headers['X-Real-IP'] = clientIp;
-    options.headers['X-Forwarded-Port'] = req.connection.encrypted ? '443' : '80';
 
     // CRITICAL FIX: Set Host header to backend's actual address.
     // This is required by many applications like Jellyfin.
