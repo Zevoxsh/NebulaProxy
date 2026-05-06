@@ -1349,8 +1349,13 @@ const escapeHtml = (value) => String(value ?? '')
         // Find domain in proxies
         const domain = this._findDomainByHostname(hostname, 'http');
         if (!domain) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('Domain not found');
+          console.warn(`[HTTP Server] Domain not found for hostname: ${hostname}`);
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Not Found',
+            message: `No proxy configured for hostname: ${hostname}`,
+            detail: 'Please ensure the domain is configured in NebulaProxy'
+          }));
           return;
         }
 
@@ -1421,8 +1426,13 @@ const escapeHtml = (value) => String(value ?? '')
         // Find domain in proxies
         const domain = this._findDomainByHostname(hostname, 'http');
         if (!domain) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('Domain not found');
+          console.warn(`[HTTPS Server] Domain not found for hostname: ${hostname}`);
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Not Found',
+            message: `No proxy configured for hostname: ${hostname}`,
+            detail: 'Please ensure the domain is configured in NebulaProxy'
+          }));
           return;
         }
 
@@ -1856,6 +1866,12 @@ const escapeHtml = (value) => String(value ?? '')
       backendPort     = target.port;
       backendProtocol = target.protocol || 'http:';
       backendId       = target.backendId || null;
+      
+      // Debug logging for troubleshooting connection issues
+      if (req.url.includes('/System/') || req.url.includes('/Branding/') || req.url.includes('/QuickConnect/')) {
+        console.log(`[HTTP Proxy] Forwarding ${req.method} ${req.url} to ${backendProtocol}//${backendHost}:${backendPort}`);
+      }
+      
       // Live traffic tracking (fire-and-forget)
       { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'http', `${backendHost}:${backendPort}`); }
     } catch (err) {
@@ -2073,7 +2089,7 @@ const escapeHtml = (value) => String(value ?? '')
       // Circuit breaker: failure
       circuitBreaker.onFailure(cbKey);
 
-      console.error(`[ProxyManager] Backend error for ${domain.hostname}:`, error.message);
+      console.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`, `Failed to connect to ${backendHost}:${backendPort} (${backendProtocol})`, error.message);
 
       database.createRequestLog({
         domainId: domain.id,

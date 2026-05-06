@@ -220,8 +220,9 @@ class LoadBalancer {
     } else if (url.port) {
       port = parseInt(url.port);
     } else {
-      // Default ports based on protocol
-      switch (defaultProtocol) {
+      // Default ports based on actual protocol from the parsed URL
+      const actualProtocol = url.protocol.replace(':', ''); // Remove colon for comparison
+      switch (actualProtocol) {
         case 'https':
           port = 443;
           break;
