@@ -1921,12 +1921,13 @@ const escapeHtml = (value) => String(value ?? '')
         'X-Forwarded-For': clientIp,
         'X-Forwarded-Proto': req.connection.encrypted ? 'https' : 'http',
         'X-Forwarded-Host': req.headers.host,
-        'X-Real-IP': clientIp
+        'X-Real-IP': clientIp,
+        'X-Forwarded-Port': req.connection.encrypted ? '443' : '80'
       }
     };
 
-    // Set Host header to original domain if request has one (standard reverse proxy behavior)
-    // The X-Forwarded-* headers allow the backend to recognize the original request
+    // Preserve original Host header for the backend
+    // This is important for applications like Jellyfin that may validate the Host header
     if (req.headers.host) {
       options.headers.host = req.headers.host;
     }
