@@ -1905,21 +1905,23 @@ const escapeHtml = (value) => String(value ?? '')
         'X-Forwarded-For': clientIp,
         'X-Forwarded-Proto': req.connection.encrypted ? 'https' : 'http',
         'X-Forwarded-Host': req.headers.host,
-        'X-Real-IP': clientIp
+        'X-Real-IP': clientIp,
+        // Set Host header to backend hostname to avoid mismatch issues
+        // The backend needs to see a Host header matching where it's listening
+        'host': `${backendHost}${backendPort && ((backendProtocol === 'https:' && backendPort !== 443) || (backendProtocol === 'http:' && backendPort !== 80)) ? `:${backendPort}` : ''}`
       }
     };
 
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
-      if (!this._isIpAddress(domain.hostname)) {
-        options.servername = domain.hostname;
+      // Use backend hostname for SNI, not the frontend domain
+      if (!this._isIpAddress(backendHost)) {
+        options.servername = backendHost;
+      } else if (req.headers.host) {
+        // If backend is an IP, try using the frontend domain for SNI as fallback
+        options.servername = req.headers.host.split(':')[0];
       }
       options.rejectUnauthorized = !config.proxy.allowInsecureBackends;
-    }
-
-    // Preserve the original host for virtual host routing
-    if (req.headers.host) {
-      options.headers.host = req.headers.host;
     }
 
     const acceptsHtml = String(req.headers.accept || '').includes('text/html');
