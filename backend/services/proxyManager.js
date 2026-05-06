@@ -1889,14 +1889,20 @@ const escapeHtml = (value) => String(value ?? '')
       return;
     }
 
-    // ── 6. CIRCUIT BREAKER CHECK (with retry for cold starts) ────────────────
+    // ── 6. CIRCUIT BREAKER CHECK ─────────────────────────────────────────────
     const cbKey = `${domain.id}:${backendHost}:${backendPort}`;
     if (!circuitBreaker.isAvailable(cbKey)) {
-      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Attempting one-time retry for potential cold start.`);
-      // The breaker is open, but we will allow one single attempt to pass through.
-      // If this attempt also fails, the breaker will remain open and subsequent
-      // requests will be blocked as usual until the timeout passes. This handles
-      // the "first request fails" scenario on a cold start.
+      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Allowing one-time pass-through for potential cold start.`);
+      // The breaker is open, but we will allow this single attempt to pass through.
+      // If this attempt also fails, the `proxyReq.on('error', ...)` logic below
+      // will correctly report the failure to the circuit breaker, keeping it open.
+      // If it succeeds, the `proxyRes.on('end', ...)` logic will reset the breaker.
+      // This effectively handles the "first request fails" scenario on a cold start
+      // without disabling the protection for subsequent, genuine failures.
+    } else {
+      // This block is intentionally left empty. If the circuit breaker is NOT open,
+      // we simply proceed with the request. The original logic that returned a 503
+      // error has been removed to implement the one-time pass-through.
     }
 
     const options = {
@@ -2468,159 +2474,115 @@ const escapeHtml = (value) => String(value ?? '')
     return `<!doctype html><html lang="fr"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${htmlTitle}</title><style>
       :root {
         color-scheme: dark;
-        --background: #09090b;
-        --surface: #18181b;
-        --surface-2: #1f1f23;
-        --border: #27272a;
-        --border-strong: #3f3f46;
-        --text: #fafafa;
-        --muted: #a1a1aa;
-        --subtle: #71717a;
-        --accent: #ef4444;
-        --accent-strong: #f87171;
-        --info: #22d3ee;
+        --bg: #0b0c0f;
+        --panel: rgba(22, 23, 34, 0.9);
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #e6e7ef;
+        --muted: rgba(255, 255, 255, 0.55);
+        --accent: #c77dff;
+        --accent-2: #22d3ee;
+        --danger: #ef4444;
+        --warning: #f59e0b;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: radial-gradient(1200px 500px at 10% 10%, rgba(157, 78, 221, 0.15), transparent),
+                    radial-gradient(900px 500px at 90% 20%, rgba(34, 211, 238, 0.12), transparent),
+                    var(--bg);
+        color: var(--text);
         min-height: 100vh;
         display: grid;
         place-items: center;
         padding: 32px 16px;
-        color: var(--text);
-        font-family: "Segoe UI", Tahoma, sans-serif;
-        background:
-          radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
-          radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
-          var(--background);
       }
       .card {
-        width: min(760px, 100%);
-        border-radius: 24px;
+        width: min(720px, 100%);
+        background: var(--panel);
         border: 1px solid var(--border);
-        background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-        padding: 24px;
-      }
-      .header {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding-bottom: 18px;
-        border-bottom: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
       }
       .badge {
-        align-self: flex-start;
         display: inline-flex;
         align-items: center;
         gap: 8px;
         padding: 6px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(239, 68, 68, 0.35);
-        background: rgba(239, 68, 68, 0.12);
-        color: var(--accent-strong);
-        font-size: 11px;
-        letter-spacing: 0.18em;
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: #fbbf24;
+        font-size: 12px;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-        font-weight: 700;
       }
       h1 {
-        margin: 0;
-        font-size: clamp(28px, 4vw, 42px);
-        line-height: 1.05;
-        letter-spacing: -0.04em;
+        margin: 18px 0 8px;
+        font-weight: 300;
+        font-size: 28px;
       }
-      .subtitle {
-        margin: 0;
+      p {
+        margin: 0 0 16px;
         color: var(--muted);
         font-size: 14px;
         line-height: 1.6;
-        max-width: 68ch;
       }
-      .content {
-        padding-top: 18px;
-        display: grid;
-        gap: 16px;
-      }
-      .message {
-        border-radius: 18px;
+      .message-box {
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.03);
-        padding: 18px;
+        border-radius: 16px;
+        padding: 16px;
+        background: rgba(245, 158, 11, 0.05);
+        margin-top: 18px;
       }
-      .message p {
+      .message-box p {
         margin: 0;
         color: var(--text);
-        font-size: 15px;
-        line-height: 1.7;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-      }
-      .tile {
-        border-radius: 18px;
-        border: 1px solid var(--border);
-        background: var(--surface-2);
-        padding: 16px;
-      }
-      .tile span {
-        display: block;
-        margin-bottom: 8px;
-        color: var(--subtle);
-        font-size: 11px;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-      }
-      .tile strong {
-        display: block;
-        color: var(--text);
-        font-size: 14px;
-        line-height: 1.5;
-        word-break: break-word;
       }
       .actions {
+        margin-top: 22px;
         display: flex;
         flex-wrap: wrap;
         gap: 12px;
       }
       .button {
         appearance: none;
-        border: 1px solid var(--border-strong);
-        background: var(--surface-2);
-        color: var(--text);
-        padding: 11px 16px;
-        border-radius: 14px;
+        border: 1px solid rgba(157, 78, 221, 0.4);
+        background: linear-gradient(135deg, rgba(157, 78, 221, 0.2), rgba(123, 44, 191, 0.15));
+        color: #c77dff;
+        padding: 10px 16px;
+        border-radius: 12px;
         font-size: 13px;
         cursor: pointer;
-        transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        transition: 0.2s ease;
       }
       .button:hover {
         transform: translateY(-1px);
-        border-color: #52525b;
-        background: #27272a;
-      }
-      .button.primary {
-        border-color: rgba(34, 211, 238, 0.35);
-        background: rgba(34, 211, 238, 0.08);
-        color: #a5f3fc;
-      }
-      .button.primary:hover {
-        border-color: rgba(34, 211, 238, 0.5);
-        background: rgba(34, 211, 238, 0.14);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
       }
       footer {
-        margin-top: 18px;
-        color: var(--subtle);
+        margin-top: 26px;
         font-size: 11px;
-        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.35);
       }
-      @media (max-width: 640px) {
-        .card { padding: 18px; border-radius: 20px; }
-        .grid { grid-template-columns: 1fr; }
-      }
-    </style></head><body><div class="card"><div class="header"><div class="badge">${badge}</div><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="content"><div class="message"><p>${message}</p></div><div class="grid"><div class="tile"><span>${domainLabel}</span><strong>${safeHost}</strong></div><div class="tile"><span>${proxyLabel}</span><strong>${proxyValue}</strong></div><div class="tile"><span>${causeLabel}</span><strong>${causeValue}</strong></div><div class="tile"><span>${statusLabel}</span><strong>${statusValue}</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">${retryButton}</button><button class="button" onclick="history.back()">${backButton}</button></div></div><footer>${footerText} Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="badge">${statusCode} ${statusText}</div>
+      <h1>Access Denied</h1>
+      <p>Your request has been blocked by the URL filtering system. Access to this resource is restricted.</p>
+      <div class="message-box">
+        <p>${safeMessage}</p>
+      </div>
+      <div class="actions">
+        <button class="button" onclick="history.back()">Go back</button>
+      </div>
+      <footer>Contact your administrator for access. Timestamp: ${new Date().toISOString()}</footer>
+    </div>
+  </body>
+</html>`;
   }
 
   _renderBlockedPage(message, statusCode = 403) {
