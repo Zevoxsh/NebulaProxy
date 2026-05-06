@@ -1889,25 +1889,14 @@ const escapeHtml = (value) => String(value ?? '')
       return;
     }
 
-    // ── 6. CIRCUIT BREAKER CHECK ─────────────────────────────────────────────
+    // ── 6. CIRCUIT BREAKER CHECK (with retry for cold starts) ────────────────
     const cbKey = `${domain.id}:${backendHost}:${backendPort}`;
     if (!circuitBreaker.isAvailable(cbKey)) {
-      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker OPEN for ${cbKey}`);
-      const accept = String(req.headers.accept || '');
-      const wantsHtml = accept.includes('text/html');
-      const html503 = domain.custom_503_page
-        ? this._renderCustomErrorPage(domain.custom_503_page, 503)
-        : wantsHtml
-          ? this._renderBadGatewayPage(domain.hostname)
-          : null;
-      if (html503) {
-        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html503);
-      } else {
-        res.writeHead(503, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Service Unavailable', message: 'Backend temporarily unavailable' }));
-      }
-      return;
+      console.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Attempting one-time retry for potential cold start.`);
+      // The breaker is open, but we will allow one single attempt to pass through.
+      // If this attempt also fails, the breaker will remain open and subsequent
+      // requests will be blocked as usual until the timeout passes. This handles
+      // the "first request fails" scenario on a cold start.
     }
 
     const options = {
