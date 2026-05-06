@@ -1959,6 +1959,18 @@ const escapeHtml = (value) => String(value ?? '')
     const consoleMessage = `var np=${JSON.stringify(consolePayload)};console.groupCollapsed('%cNebulaProxy %c// live route','color:#C77DFF;font-size:16px;font-weight:800;letter-spacing:0.02em;','color:#8b5cf6;font-size:11px;font-weight:700;letter-spacing:0.08em;');console.log('%cDomain:%c '+np.host,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPath:%c '+np.path,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cTimestamp:%c '+np.timestamp,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPowered by NebulaProxy','color:#22d3ee;font-size:12px;font-weight:700;');console.groupEnd();`;
     const consoleScript = `<script>(function(){try{${consoleMessage}}catch(e){}})();</script>`;
 
+    // Debug logging: show request details for Jellyfin
+    if (req.url.includes('/System/') || req.url.includes('/Branding/') || req.url.includes('/MediaBar/') || req.url.includes('/QuickConnect/')) {
+      console.log(`[DEBUG:HTTP] Sending to ${backendProtocol}//${backendHost}:${backendPort}${req.url}`);
+      console.log(`  Method: ${req.method}`);
+      console.log(`  Headers: ${JSON.stringify({
+        host: options.headers.host,
+        'x-forwarded-for': options.headers['x-forwarded-for'],
+        'x-forwarded-proto': options.headers['x-forwarded-proto'],
+        'x-real-ip': options.headers['x-real-ip']
+      })}`);
+    }
+
     const proxyReq = protocol.request(options, (proxyRes) => {
       const responseTime = Date.now() - startTime;
       const statusCode = proxyRes.statusCode;
@@ -2089,7 +2101,11 @@ const escapeHtml = (value) => String(value ?? '')
       // Circuit breaker: failure
       circuitBreaker.onFailure(cbKey);
 
-      console.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`, `Failed to connect to ${backendHost}:${backendPort} (${backendProtocol})`, error.message);
+      console.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`);
+      console.error(`  Target: ${backendProtocol}//${backendHost}:${backendPort}`);
+      console.error(`  Error: ${error.code} - ${error.message}`);
+      console.error(`  Client IP: ${clientIp}`);
+      console.error(`  Host header: ${req.headers.host}`);
 
       database.createRequestLog({
         domainId: domain.id,
