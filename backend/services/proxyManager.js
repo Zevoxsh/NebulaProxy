@@ -1905,17 +1905,23 @@ const escapeHtml = (value) => String(value ?? '')
       path: req.url,
       method: req.method,
       agent: false,
-      headers: req.headers
+      headers: { ...req.headers } // Create a copy of incoming headers
     };
 
-    // The 'host' header is overwritten to match the backend address, as many applications
-    // (like Jellyfin) validate this header. The original host is preserved in 'X-Forwarded-Host'.
-    options.headers['host'] = `${backendHost}:${backendPort}`;
+    // Set essential forwarding headers
     options.headers['X-Forwarded-For'] = clientIp;
     options.headers['X-Forwarded-Proto'] = req.connection.encrypted ? 'https' : 'http';
     options.headers['X-Forwarded-Host'] = req.headers.host;
     options.headers['X-Real-IP'] = clientIp;
     options.headers['X-Forwarded-Port'] = req.connection.encrypted ? '443' : '80';
+
+    // CRITICAL FIX: Set Host header to backend's actual address.
+    // This is required by many applications like Jellyfin.
+    options.headers.host = `${backendHost}:${backendPort}`;
+
+    // Remove connection-specific headers that should not be forwarded
+    delete options.headers.connection;
+    delete options.headers['keep-alive'];
 
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
