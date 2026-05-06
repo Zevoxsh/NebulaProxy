@@ -1905,21 +1905,25 @@ const escapeHtml = (value) => String(value ?? '')
         'X-Forwarded-For': clientIp,
         'X-Forwarded-Proto': req.connection.encrypted ? 'https' : 'http',
         'X-Forwarded-Host': req.headers.host,
-        'X-Real-IP': clientIp,
-        // Set Host header to backend hostname to avoid mismatch issues
-        // The backend needs to see a Host header matching where it's listening
-        'host': `${backendHost}${backendPort && ((backendProtocol === 'https:' && backendPort !== 443) || (backendProtocol === 'http:' && backendPort !== 80)) ? `:${backendPort}` : ''}`
+        'X-Real-IP': clientIp
       }
     };
 
+    // Set Host header to original domain if request has one (standard reverse proxy behavior)
+    // The X-Forwarded-* headers allow the backend to recognize the original request
+    if (req.headers.host) {
+      options.headers.host = req.headers.host;
+    }
+
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
-      // Use backend hostname for SNI, not the frontend domain
-      if (!this._isIpAddress(backendHost)) {
+      // Use the requested domain for SNI when connecting to HTTPS backend
+      // This is correct for most use cases (backend has cert for domain)
+      if (!this._isIpAddress(req.headers.host?.split(':')[0])) {
+        options.servername = req.headers.host?.split(':')[0] || backendHost;
+      } else {
+        // IP address in request header - fall back to backend host for SNI
         options.servername = backendHost;
-      } else if (req.headers.host) {
-        // If backend is an IP, try using the frontend domain for SNI as fallback
-        options.servername = req.headers.host.split(':')[0];
       }
       options.rejectUnauthorized = !config.proxy.allowInsecureBackends;
     }
