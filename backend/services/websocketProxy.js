@@ -131,6 +131,10 @@ class WebSocketProxy {
           port: backend.target_port
         });
 
+    // Set socket timeouts
+    backendSocket.setTimeout(30000); // 30 second idle timeout
+    socket.setTimeout(30000);
+
     let backendConnected = false;
 
     const sendUpgradeRequest = () => {
@@ -170,7 +174,8 @@ class WebSocketProxy {
     });
 
     backendSocket.on('error', (error) => {
-      console.error(`[WebSocketProxy] Backend socket error for ${connectionId}:`, error.message);
+      console.error(`[WebSocketProxy] Backend socket error for ${connectionId} (${backend.target_host}:${backend.target_port}):`, error.message);
+      console.error(`[WebSocketProxy] Error code:`, error.code);
       if (!socket.destroyed) {
         socket.destroy();
       }
@@ -201,11 +206,11 @@ class WebSocketProxy {
 
     const timeout = setTimeout(() => {
       if (!backendConnected) {
-        console.error(`[WebSocketProxy] Backend connection timeout for ${connectionId}`);
+        console.error(`[WebSocketProxy] Backend connection timeout for ${connectionId} (${backend.target_host}:${backend.target_port})`);
         backendSocket.destroy();
         socket.destroy();
       }
-    }, 10000);
+    }, 15000); // Increased to 15 seconds
 
     if (isSecure) {
       backendSocket.on('secureConnect', () => clearTimeout(timeout));
@@ -252,7 +257,9 @@ class WebSocketProxy {
     }
 
     // Set required WebSocket headers
-    headers['host'] = req.headers.host || `${backend.target_host}:${backend.target_port}`;
+    // IMPORTANT: Use backend host for proper server-side routing
+    const backendPort = backend.target_port === 80 || backend.target_port === 443 ? '' : `:${backend.target_port}`;
+    headers['host'] = `${backend.target_host}${backendPort}`;
     headers['upgrade'] = 'websocket';
     headers['connection'] = 'Upgrade';
 
