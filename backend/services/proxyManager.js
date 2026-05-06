@@ -1911,13 +1911,16 @@ const escapeHtml = (value) => String(value ?? '')
       path: req.url,
       method: req.method,
       agent: false,
-      headers: { ...req.headers } // Create a copy of incoming headers
+      headers: { ...req.headers } // On commence avec une copie des en-têtes du client
     };
 
-    // Set essential forwarding headers
+    // On écrase l'en-tête 'host' pour qu'il corresponde au backend. C'est la clé.
+    options.headers.host = `${backendHost}:${backendPort}`;
+
+    // On ajoute les en-têtes de proxy essentiels
     options.headers['X-Forwarded-For'] = clientIp;
     options.headers['X-Forwarded-Proto'] = req.connection.encrypted ? 'https' : 'http';
-    options.headers['X-Forwarded-Host'] = req.headers.host;
+    options.headers['X-Forwarded-Host'] = req.headers.host; // On préserve le host original ici
     options.headers['X-Real-IP'] = clientIp;
     options.headers['X-Forwarded-Port'] = req.connection.encrypted ? '443' : '80';
 
