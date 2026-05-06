@@ -1916,22 +1916,17 @@ const escapeHtml = (value) => String(value ?? '')
       path: req.url,
       method: req.method,
       agent: false,
-      headers: {
-        ...req.headers,
-        'X-Forwarded-For': clientIp,
-        'X-Forwarded-Proto': req.connection.encrypted ? 'https' : 'http',
-        'X-Forwarded-Host': req.headers.host,
-        'X-Real-IP': clientIp,
-        'X-Forwarded-Port': req.connection.encrypted ? '443' : '80'
-      }
+      headers: req.headers
     };
 
-    // CRITICAL FIX: Set Host header to backend's actual address, not the client's requested domain
-    // Jellyfin and many applications validate the Host header against their listening address
-    // The X-Forwarded-Host header above preserves the original client request domain
-    options.headers.host = backendPort === 80 || backendPort === 443 
-      ? backendHost 
-      : `${backendHost}:${backendPort}`;
+    // The 'host' header is overwritten to match the backend address, as many applications
+    // (like Jellyfin) validate this header. The original host is preserved in 'X-Forwarded-Host'.
+    options.headers['host'] = `${backendHost}:${backendPort}`;
+    options.headers['X-Forwarded-For'] = clientIp;
+    options.headers['X-Forwarded-Proto'] = req.connection.encrypted ? 'https' : 'http';
+    options.headers['X-Forwarded-Host'] = req.headers.host;
+    options.headers['X-Real-IP'] = clientIp;
+    options.headers['X-Forwarded-Port'] = req.connection.encrypted ? '443' : '80';
 
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
@@ -2100,8 +2095,16 @@ const escapeHtml = (value) => String(value ?? '')
     proxyReq.on('error', (error) => {
       const responseTime = Date.now() - startTime;
 
-      // Circuit breaker: failure
-      circuitBreaker.onFailure(cbKey);
+      // Circuit breaker: failure (but not for ECONNRESET which might be normal close)
+      if (error.code !== 'ECONNRESET') {
+        circuitBreaker.onFailure(cbKey);
+      }
+
+      // Suppress ECONNRESET errors if response was already started (client received data)
+      if (error.code === 'ECONNRESET' && res.headersSent) {
+        console.debug(`[DEBUG:HTTP] Backend closed connection after sending response (normal): ${domain.hostname} ${req.method} ${req.url}`);
+        return;
+      }
 
       console.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`);
       console.error(`  Target: ${backendProtocol}//${backendHost}:${backendPort}`);
