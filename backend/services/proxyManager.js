@@ -1926,11 +1926,12 @@ const escapeHtml = (value) => String(value ?? '')
       }
     };
 
-    // Preserve original Host header for the backend
-    // This is important for applications like Jellyfin that may validate the Host header
-    if (req.headers.host) {
-      options.headers.host = req.headers.host;
-    }
+    // CRITICAL FIX: Set Host header to backend's actual address, not the client's requested domain
+    // Jellyfin and many applications validate the Host header against their listening address
+    // The X-Forwarded-Host header above preserves the original client request domain
+    options.headers.host = backendPort === 80 || backendPort === 443 
+      ? backendHost 
+      : `${backendHost}:${backendPort}`;
 
     // If backend is https, configure TLS
     if (backendProtocol === 'https:') {
