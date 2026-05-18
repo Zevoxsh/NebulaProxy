@@ -2065,6 +2065,29 @@ const escapeHtml = (value) => String(value ?? '')
       // Build response headers (copy from backend)
       const responseHeaders = { ...proxyRes.headers };
 
+      const requestedHost = String(req.headers.host || '').trim();
+      const upstreamLocation = responseHeaders.location || responseHeaders.Location;
+      if (upstreamLocation && requestedHost) {
+        try {
+          const parsedLocation = new URL(upstreamLocation, `${backendProtocol}//${backendHost}:${backendPort}`);
+          const upstreamHost = parsedLocation.hostname.toLowerCase();
+          const requestedHostname = requestedHost.split(':')[0].toLowerCase();
+
+          if (parsedLocation.origin && upstreamHost === String(backendHost).toLowerCase() && requestedHostname && requestedHostname !== upstreamHost) {
+            parsedLocation.hostname = requestedHostname;
+            if (req.headers.host && req.headers.host.includes(':')) {
+              parsedLocation.port = req.headers.host.split(':')[1] || parsedLocation.port;
+            }
+            const rewrittenLocation = parsedLocation.toString();
+            responseHeaders.location = rewrittenLocation;
+            delete responseHeaders.Location;
+            console.log(`[HTTP Proxy ${domain.id}] rewrote Location ${upstreamLocation} -> ${rewrittenLocation} requestedHost=${requestedHost}`);
+          }
+        } catch (err) {
+          console.warn(`[HTTP Proxy ${domain.id}] failed to inspect Location header ${String(upstreamLocation)}: ${err.message}`);
+        }
+      }
+
       if (isHtmlResponse && config.proxy.injectConsoleScript) {
         delete responseHeaders['content-length'];
         delete responseHeaders['content-encoding'];
