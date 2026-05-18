@@ -1317,6 +1317,7 @@ const escapeHtml = (value) => String(value ?? '')
     });
 
     console.log(`[ProxyManager] HTTP${domain.ssl_enabled ? 'S' : ''} proxy registered for ${domain.hostname} -> ${domain.backend_url}`);
+    console.log(`[ProxyManager] HTTP proxy state id=${domain.id} hostname=${domain.hostname} ssl=${domain.ssl_enabled ? 'on' : 'off'} active=${domain.is_active ? 'yes' : 'no'} total=${this.proxies.size}`);
 
     // Load SSL certificate if enabled
     if (domain.ssl_enabled) {
@@ -1336,6 +1337,8 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           const hostname = this._extractHostname(req.headers.host);
+          const normalizedHostname = this._normalizeHostname(hostname);
+          console.log(`[HTTP Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
           if (this._shouldHandleRedirection(hostname) && this._handlePublicRedirection(req, res)) {
             return;
           }
@@ -1349,7 +1352,12 @@ const escapeHtml = (value) => String(value ?? '')
         // Find domain in proxies
         const domain = this._findDomainByHostname(hostname, 'http');
         if (!domain) {
-          console.warn(`[HTTP Server] Domain not found for hostname: ${hostname}`);
+          console.warn(`[HTTP Server] Domain not found for hostname: ${hostname} normalized=${normalizedHostname || '-'} registered=${this.proxies.size}`);
+          for (const [id, entry] of this.proxies) {
+            if (entry?.type === 'http') {
+              console.warn(`[HTTP Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+            }
+          }
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             error: 'Not Found',
@@ -1419,6 +1427,8 @@ const escapeHtml = (value) => String(value ?? '')
           }
 
           const hostname = this._extractHostname(req.headers.host);
+          const normalizedHostname = this._normalizeHostname(hostname);
+          console.log(`[HTTPS Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
           if (this._shouldHandleRedirection(hostname) && this._handlePublicRedirection(req, res)) {
             return;
           }
@@ -1426,7 +1436,12 @@ const escapeHtml = (value) => String(value ?? '')
         // Find domain in proxies
         const domain = this._findDomainByHostname(hostname, 'http');
         if (!domain) {
-          console.warn(`[HTTPS Server] Domain not found for hostname: ${hostname}`);
+          console.warn(`[HTTPS Server] Domain not found for hostname: ${hostname} normalized=${normalizedHostname || '-'} registered=${this.proxies.size}`);
+          for (const [id, entry] of this.proxies) {
+            if (entry?.type === 'http') {
+              console.warn(`[HTTPS Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+            }
+          }
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             error: 'Not Found',
@@ -2761,6 +2776,8 @@ const escapeHtml = (value) => String(value ?? '')
     const normalizedHostname = this._normalizeHostname(hostname);
     if (!normalizedHostname) return null;
 
+    console.log(`[ProxyManager] lookup hostname=${hostname || ''} normalized=${normalizedHostname} proxyType=${proxyType || 'any'} cacheSize=${this.domainCache.size} proxyCount=${this.proxies.size}`);
+
     // Cache key includes type when specified so HTTP and Minecraft
     // domains with the same hostname don't collide in cache.
     const cacheKey = proxyType ? `${proxyType}:${normalizedHostname}` : normalizedHostname;
@@ -2768,6 +2785,7 @@ const escapeHtml = (value) => String(value ?? '')
     // Check cache first
     const cached = this.domainCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.DOMAIN_CACHE_TTL) {
+      console.log(`[ProxyManager] lookup cache hit key=${cacheKey} domainId=${cached.domain?.id || 'n/a'} hostname=${cached.domain?.hostname || 'n/a'}`);
       return cached.domain;
     }
 
@@ -2778,8 +2796,10 @@ const escapeHtml = (value) => String(value ?? '')
         ? entry.type === proxyType
         : (entry.type === 'http' || entry.type === 'minecraft');
       const entryHostname = this._normalizeHostname(entry?.meta?.hostname);
+      console.log(`[ProxyManager] lookup candidate id=${domainId} type=${entry?.type || 'n/a'} stored=${entryHostname || '-'} requested=${normalizedHostname} typeMatch=${typeMatch ? 'yes' : 'no'}`);
       if (typeMatch && this._matchesHostname(entryHostname, normalizedHostname)) {
         found = entry.meta;
+        console.log(`[ProxyManager] lookup matched id=${domainId} stored=${entry.meta?.hostname || '-'} requested=${normalizedHostname}`);
         break;
       }
     }
@@ -2790,6 +2810,8 @@ const escapeHtml = (value) => String(value ?? '')
         domain: found,
         timestamp: Date.now()
       });
+    } else {
+      console.warn(`[ProxyManager] lookup miss hostname=${normalizedHostname} proxyType=${proxyType || 'any'}`);
     }
 
     return found;
@@ -2835,20 +2857,25 @@ const escapeHtml = (value) => String(value ?? '')
     if (!registeredHostname || !requestedHostname) return false;
 
     if (registeredHostname === requestedHostname) {
+      console.log(`[ProxyManager] hostname exact match registered=${registeredHostname} requested=${requestedHostname}`);
       return true;
     }
 
     if (!registeredHostname.startsWith('*.')) {
+      console.log(`[ProxyManager] hostname no wildcard registered=${registeredHostname} requested=${requestedHostname}`);
       return false;
     }
 
     const wildcardBase = registeredHostname.slice(2);
     if (!wildcardBase || !requestedHostname.endsWith(`.${wildcardBase}`)) {
+      console.log(`[ProxyManager] hostname wildcard base mismatch registered=${registeredHostname} requested=${requestedHostname}`);
       return false;
     }
 
     const subdomainPart = requestedHostname.slice(0, -(wildcardBase.length + 1));
-    return subdomainPart.length > 0 && !subdomainPart.includes('.');
+    const matched = subdomainPart.length > 0 && !subdomainPart.includes('.');
+    console.log(`[ProxyManager] hostname wildcard check registered=${registeredHostname} requested=${requestedHostname} subdomain=${subdomainPart || '-'} match=${matched ? 'yes' : 'no'}`);
+    return matched;
   }
 
     _extractHostname(hostHeader) {
