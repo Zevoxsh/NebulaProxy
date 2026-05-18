@@ -1983,12 +1983,16 @@ const escapeHtml = (value) => String(value ?? '')
       })}`);
     }
 
+    console.log(`[HTTP Proxy ${domain.id}] upstream request ${req.method || 'GET'} ${req.url || '/'} -> ${backendProtocol}//${backendHost}:${backendPort} host=${req.headers.host || '-'} client=${clientIp}`);
+
     const proxyReq = protocol.request(options, (proxyRes) => {
       const responseTime = Date.now() - startTime;
       const statusCode = proxyRes.statusCode;
       let responseSize = 0;
       const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
       const isHtmlResponse = contentType.includes('text/html');
+
+      console.log(`[HTTP Proxy ${domain.id}] upstream response ${statusCode} ${req.method || 'GET'} ${req.url || '/'} -> ${backendHost}:${backendPort} in ${responseTime}ms contentType=${contentType || '-'} client=${clientIp}`);
 
       // Circuit breaker: success
       circuitBreaker.onSuccess(cbKey);
