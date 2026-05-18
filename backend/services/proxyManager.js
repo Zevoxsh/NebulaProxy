@@ -2758,11 +2758,12 @@ const escapeHtml = (value) => String(value ?? '')
    * @param {string} [proxyType] - optional filter ('http', 'minecraft', etc.)
    */
   _findDomainByHostname(hostname, proxyType = null) {
-    if (!hostname) return null;
+    const normalizedHostname = this._normalizeHostname(hostname);
+    if (!normalizedHostname) return null;
 
     // Cache key includes type when specified so HTTP and Minecraft
     // domains with the same hostname don't collide in cache.
-    const cacheKey = proxyType ? `${proxyType}:${hostname}` : hostname;
+    const cacheKey = proxyType ? `${proxyType}:${normalizedHostname}` : normalizedHostname;
 
     // Check cache first
     const cached = this.domainCache.get(cacheKey);
@@ -2776,7 +2777,8 @@ const escapeHtml = (value) => String(value ?? '')
       const typeMatch = proxyType
         ? entry.type === proxyType
         : (entry.type === 'http' || entry.type === 'minecraft');
-      if (typeMatch && entry.meta.hostname === hostname) {
+      const entryHostname = this._normalizeHostname(entry?.meta?.hostname);
+      if (typeMatch && this._matchesHostname(entryHostname, normalizedHostname)) {
         found = entry.meta;
         break;
       }
@@ -2798,10 +2800,11 @@ const escapeHtml = (value) => String(value ?? '')
    */
   _invalidateDomainCache(hostname) {
     if (hostname) {
+      const normalizedHostname = this._normalizeHostname(hostname);
       // Remove both the plain key and all type-prefixed keys for this hostname
-      this.domainCache.delete(hostname);
+      this.domainCache.delete(normalizedHostname);
       for (const key of this.domainCache.keys()) {
-        if (key.endsWith(`:${hostname}`)) {
+        if (key.endsWith(`:${normalizedHostname}`)) {
           this.domainCache.delete(key);
         }
       }
@@ -2821,6 +2824,31 @@ const escapeHtml = (value) => String(value ?? '')
     if (ip.startsWith('::ffff:')) return ip.replace('::ffff:', '');
     if (ip === '::1') return '127.0.0.1';
     return ip;
+  }
+
+  _normalizeHostname(hostname) {
+    if (!hostname || typeof hostname !== 'string') return '';
+    return hostname.trim().toLowerCase().replace(/\.$/, '');
+  }
+
+  _matchesHostname(registeredHostname, requestedHostname) {
+    if (!registeredHostname || !requestedHostname) return false;
+
+    if (registeredHostname === requestedHostname) {
+      return true;
+    }
+
+    if (!registeredHostname.startsWith('*.')) {
+      return false;
+    }
+
+    const wildcardBase = registeredHostname.slice(2);
+    if (!wildcardBase || !requestedHostname.endsWith(`.${wildcardBase}`)) {
+      return false;
+    }
+
+    const subdomainPart = requestedHostname.slice(0, -(wildcardBase.length + 1));
+    return subdomainPart.length > 0 && !subdomainPart.includes('.');
   }
 
     _extractHostname(hostHeader) {
