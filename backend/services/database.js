@@ -2507,8 +2507,8 @@ class DatabaseService {
       )
       SELECT
         date_filter.*,
-        COALESCE(method_dist.methods, '{}'::jsonb) as method_distribution,
-        COALESCE(status_dist.statuses, '{}'::jsonb) as status_distribution
+        COALESCE(method_dist.methods, '{}'::json) as method_distribution,
+        COALESCE(status_dist.statuses, '{}'::json) as status_distribution
       FROM date_filter, method_dist, status_dist
     `, [domainId, days, domainId, days, domainId, days]);
     
