@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, AlertCircle, Loader2, Search, Filter, Users, X, CheckCircle, Shield, RefreshCw, BarChart3, ArrowLeft, Folder, MoreVertical, Edit, Trash2, Settings, Globe } from 'lucide-react';
 import { domainAPI, sslAPI, domainGroupAPI, teamAPI } from '../api/client';
@@ -39,6 +39,7 @@ export default function Domains() {
   const [showForm, setShowForm] = useState(false);
   const [editingDomain, setEditingDomain] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [quota, setQuota] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -467,6 +468,8 @@ export default function Domains() {
   };
 
   const handleAddDomain = async (formData) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     try {
       setSubmitting(true);
       setError('');
@@ -501,14 +504,15 @@ export default function Domains() {
       }
 
       const response = await domainAPI.create(payload);
-      const newDomainId = response.data.domain.id;
+      const newDomain = response.data?.domain;
+      const newDomainId = newDomain?.id;
 
-      if (response.data.quota) {
+      if (response.data?.quota) {
         setQuota(response.data.quota);
       }
 
-      setDomains([response.data.domain, ...domains]);
       setShowForm(false);
+      setDomains(prev => newDomain ? [newDomain, ...prev] : prev);
 
       // If we're currently viewing a group, automatically add the new domain to it
       if (selectedGroup) {
@@ -526,7 +530,7 @@ export default function Domains() {
       setTimeout(() => setSuccess(''), 3000);
 
       // Refresh groups list
-      await fetchGroups();
+      try { await fetchGroups(); } catch (e) { console.error('Failed to refresh groups after create:', e); }
 
       // Handle Load Balancing after domain creation
       if (formData.loadBalancingEnabled || formData.additionalBackends?.length > 0) {
@@ -574,6 +578,7 @@ export default function Domains() {
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create domain');
     } finally {
+      isSubmittingRef.current = false;
       setSubmitting(false);
     }
   };
