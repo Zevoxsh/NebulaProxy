@@ -1920,8 +1920,8 @@ const escapeHtml = (value) => String(value ?? '')
       'X-Forwarded-Proto': req.socket.encrypted ? 'https' : 'http',
       'X-Forwarded-Host': req.headers.host,
       'X-Real-IP': clientIp,
-      // CRITICAL: Set the Host header to what the backend expects.
-      'Host': `${backendHost}:${backendPort}`
+      // Use the original domain name as Host so SNI-based backends (Plesk, nginx vhosts) route correctly.
+      'Host': req.headers.host || domain.hostname
     };
 
     // Add other relevant headers if they exist
