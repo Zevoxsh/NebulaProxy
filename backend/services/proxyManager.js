@@ -1934,6 +1934,16 @@ const escapeHtml = (value) => String(value ?? '')
     if (req.headers.authorization)      headers.Authorization       = req.headers.authorization;
     if (req.headers.cookie)             headers.Cookie              = req.headers.cookie;
 
+    // Forward custom application headers (CSRF tokens, API keys, etc.)
+    const hopByHopHeaders = new Set(['host','connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','transfer-encoding','upgrade']);
+    const alreadySet = new Set(Object.keys(headers).map(h => h.toLowerCase()));
+    for (const [key, val] of Object.entries(req.headers)) {
+      const lkey = key.toLowerCase();
+      if (!hopByHopHeaders.has(lkey) && !alreadySet.has(lkey)) {
+        headers[key] = val;
+      }
+    }
+
     const options = {
       hostname: backendHost,
       port: backendPort,
@@ -2073,15 +2083,18 @@ const escapeHtml = (value) => String(value ?? '')
           const upstreamHost = parsedLocation.hostname.toLowerCase();
           const requestedHostname = requestedHost.split(':')[0].toLowerCase();
 
-          if (parsedLocation.origin && upstreamHost === String(backendHost).toLowerCase() && requestedHostname && requestedHostname !== upstreamHost) {
+          const publicPort = req.socket.encrypted ? 443 : 80;
+          const locPort = parsedLocation.port ? parseInt(parsedLocation.port, 10) : (parsedLocation.protocol === "https:" ? 443 : 80);
+          const hostnameNeedsRewrite = parsedLocation.origin && upstreamHost === String(backendHost).toLowerCase() && requestedHostname && requestedHostname !== upstreamHost;
+          const portNeedsRewrite = parsedLocation.origin && upstreamHost === requestedHostname && locPort === parseInt(String(backendPort), 10) && locPort !== publicPort;
+
+          if (hostnameNeedsRewrite || portNeedsRewrite) {
             parsedLocation.hostname = requestedHostname;
-            if (req.headers.host && req.headers.host.includes(':')) {
-              parsedLocation.port = req.headers.host.split(':')[1] || parsedLocation.port;
-            }
+            parsedLocation.port = (publicPort === 443 || publicPort === 80) ? "" : String(publicPort);
             const rewrittenLocation = parsedLocation.toString();
             responseHeaders.location = rewrittenLocation;
             delete responseHeaders.Location;
-            console.log(`[HTTP Proxy ${domain.id}] rewrote Location ${upstreamLocation} -> ${rewrittenLocation} requestedHost=${requestedHost}`);
+            console.log("[HTTP Proxy " + domain.id + "] rewrote Location " + upstreamLocation + " -> " + rewrittenLocation + " requestedHost=" + requestedHost);
           }
         } catch (err) {
           console.warn(`[HTTP Proxy ${domain.id}] failed to inspect Location header ${String(upstreamLocation)}: ${err.message}`);
@@ -2611,16 +2624,17 @@ const escapeHtml = (value) => String(value ?? '')
   </head>
   <body>
     <div class="card">
-      <div class="badge">${statusCode} ${statusText}</div>
-      <h1>Access Denied</h1>
-      <p>Your request has been blocked by the URL filtering system. Access to this resource is restricted.</p>
+      <div class="badge">${badge}</div>
+      <h1>${title}</h1>
+      <p>${subtitle}</p>
       <div class="message-box">
-        <p>${safeMessage}</p>
+        <p>${message}</p>
       </div>
       <div class="actions">
-        <button class="button" onclick="history.back()">Go back</button>
+        <button class="button" onclick="location.reload()">${retryButton}</button>
+        <button class="button" onclick="history.back()">${backButton}</button>
       </div>
-      <footer>Contact your administrator for access. Timestamp: ${new Date().toISOString()}</footer>
+      <footer>${footerText} &mdash; ${domainLabel}: ${safeHost}</footer>
     </div>
   </body>
 </html>`;

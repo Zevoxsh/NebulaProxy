@@ -100,6 +100,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/www/letsencrypt:/var/www/letsencrypt
+      - /opt/mailcow-dockerized/data/web/.well-known:/var/www/letsencrypt/.well-known
       - /etc/NebulaProxy:/repo
       - backups:/app/backups
       - uploads:/app/uploads
