@@ -96,6 +96,7 @@ export const adminAPI = {
   getNotificationConfig: () => api.get('/admin/notifications/config'),
   updateNotificationConfig: (data) => api.put('/admin/notifications/config', data),
   testNotification: (type) => api.post(`/admin/notifications/test/${type}`),
+  testZabbixConnection: () => api.post('/admin/notifications/test/zabbix'),
 
   // User creation (local mode only)
   createUser: (data) => api.post('/admin/users', data),

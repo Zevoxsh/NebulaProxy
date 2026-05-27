@@ -35,6 +35,7 @@ import AdminServices from './pages/admin/AdminServices';
 import AdminMonitoring from './pages/admin/AdminMonitoring';
 import AdminSmtp from './pages/admin/AdminSmtp';
 import AdminSmtpProxy from './pages/admin/AdminSmtpProxy';
+import AdminZabbix from './pages/admin/AdminZabbix';
 import AdminUpdates from './pages/admin/AdminUpdates';
 import UrlBlockingRules from './pages/admin/UrlBlockingRules';
 import AdminAudit from './pages/admin/AdminAudit';
@@ -297,6 +298,7 @@ function App() {
           <Route path="/admin/monitoring" element={<AdminMonitoring />} />
           <Route path="/admin/smtp" element={<AdminSmtp />} />
           <Route path="/admin/smtp-proxy" element={<AdminSmtpProxy />} />
+          <Route path="/admin/zabbix" element={<AdminZabbix />} />
           <Route path="/admin/backups" element={<AdminBackups />} />
           <Route path="/admin/updates" element={<AdminUpdates />} />
           <Route path="/admin/url-blocking" element={<UrlBlockingRules />} />

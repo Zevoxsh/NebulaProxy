@@ -1,11 +1,13 @@
 import nodemailer from 'nodemailer';
 import { pool } from '../config/database.js';
+import { zabbixService } from './zabbixService.js';
 
 class NotificationService {
   constructor(logger, websocketManager) {
     this.logger = logger;
     this.websocketManager = websocketManager;
     this.config = null;
+    zabbixService.logger = logger;
   }
 
   async initialize() {
@@ -62,7 +64,47 @@ class NotificationService {
       promises.push(this.sendClientWebhooks(notification));
     }
 
+    // Send via Zabbix
+    if (!channelSet || channelSet.has('zabbix')) {
+      promises.push(this.sendZabbixEvent(notification));
+    }
+
     await Promise.allSettled(promises);
+  }
+
+  async sendZabbixEvent(notification) {
+    try {
+      const { event = 'general', severity = 'info', metadata = {} } = notification;
+
+      // Map notification events to Zabbix trapper keys
+      if (event === 'domain_down' && metadata.domain) {
+        await zabbixService.sendDomainStatus(metadata.domain, 'down', 0);
+        return;
+      }
+
+      if (event === 'domain_restored' && metadata.domain) {
+        await zabbixService.sendDomainStatus(metadata.domain, 'up', metadata.responseTime || 0);
+        return;
+      }
+
+      if (event === 'certificate_expiry' && metadata.domain) {
+        await zabbixService.sendSslExpiry(metadata.domain, metadata.daysUntilExpiry || 0);
+        return;
+      }
+
+      if (event === 'resource_alert' && metadata.type) {
+        await zabbixService.sendResourceAlert(metadata.type, metadata.value || 0);
+        return;
+      }
+
+      if (event === 'proxy_startup' || event === 'proxy_shutdown' || event === 'proxy_maintenance') {
+        const state = event === 'proxy_startup' ? 'started' : 'stopping';
+        await zabbixService.sendProxyLifecycle(state);
+        return;
+      }
+    } catch (error) {
+      this.logger.error('Failed to send Zabbix notification:', error);
+    }
   }
 
   isDiscordWebhookUrl(url) {
