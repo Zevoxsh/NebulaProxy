@@ -1775,11 +1775,14 @@ const escapeHtml = (value) => String(value ?? '')
         if (quotaBytes > 0) {
           const { exceeded } = await bandwidthTracker.checkQuota(domain.user_id, quotaBytes);
           if (exceeded) {
-            res.writeHead(429, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              error: 'Bandwidth Quota Exceeded',
-              message: 'Daily bandwidth limit reached for this account.'
-            }));
+            const wantsHtml = (req.headers.accept || '').includes('text/html');
+            if (wantsHtml) {
+              res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '3600' });
+              res.end(this._renderBandwidthExceededPage(domain));
+            } else {
+              res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '3600' });
+              res.end(JSON.stringify({ error: 'Bandwidth Quota Exceeded', message: 'Monthly bandwidth limit reached.' }));
+            }
             return;
           }
         }
@@ -2494,6 +2497,32 @@ const escapeHtml = (value) => String(value ?? '')
    */
   _renderCustomErrorPage(html, code) {
     return html;
+  }
+
+  _renderBandwidthExceededPage(domain) {
+    const host = (domain?.hostname || 'this service').replace(/[<>"&]/g, '');
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bandwidth Limit Reached — ${host}</title>
+<style>
+  :root { color-scheme: dark; --bg:#09090b; --surface:#18181b; --border:#27272a; --text:#fafafa; --muted:#a1a1aa; --accent:#f59e0b; }
+  *{box-sizing:border-box;} body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 40px;max-width:480px;width:100%;text-align:center;}
+  .icon{font-size:48px;margin-bottom:20px;}
+  h1{font-size:22px;font-weight:600;margin:0 0 12px;color:var(--text);}
+  p{font-size:14px;color:var(--muted);line-height:1.6;margin:0 0 12px;}
+  .badge{display:inline-block;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--accent);font-size:12px;font-weight:500;padding:4px 12px;border-radius:20px;margin-bottom:24px;}
+  .footer{font-size:11px;color:#52525b;margin-top:24px;padding-top:20px;border-top:1px solid var(--border);}
+</style></head><body>
+<div class="card">
+  <div class="icon">📊</div>
+  <div class="badge">429 Bandwidth Limit</div>
+  <h1>Data Limit Reached</h1>
+  <p>The monthly bandwidth quota for <strong>${host}</strong> has been reached.</p>
+  <p>Service will resume automatically when the quota resets. If you are the account owner, contact your administrator to increase your limit.</p>
+  <div class="footer">Powered by NebulaProxy</div>
+</div>
+</body></html>`;
   }
 
   /**

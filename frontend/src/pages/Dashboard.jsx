@@ -1,10 +1,142 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Globe, Shield, Settings, ArrowRight, Plus, Activity, Folder, Cable } from 'lucide-react';
+import { Globe, Shield, Settings, ArrowRight, Plus, Activity, Folder, Cable, CheckCircle2, Circle, ChevronRight, X } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useBrandingStore } from '../store/brandingStore';
 import { domainAPI, domainGroupAPI } from '../api/client';
 import StatsCard from '../components/ui/StatsCard';
+
+// ── Onboarding checklist ──────────────────────────────────────────────────────
+function OnboardingChecklist({ domains, groups, sslDomains, userId, onDismiss }) {
+  const navigate = useNavigate();
+
+  const steps = [
+    {
+      id:    'domain',
+      title: 'Create your first domain',
+      desc:  'Set up a reverse proxy — point a hostname to your backend server.',
+      done:  domains.length > 0,
+      cta:   'Add domain',
+      action: () => navigate('/domains'),
+    },
+    {
+      id:    'ssl',
+      title: 'Enable SSL on a domain',
+      desc:  "Secure your proxy with a free Let's Encrypt certificate in one click.",
+      done:  sslDomains > 0,
+      cta:   'Manage domains',
+      action: () => navigate('/domains'),
+    },
+    {
+      id:    'group',
+      title: 'Organise domains into groups',
+      desc:  'Group related domains together for easier management and bulk actions.',
+      done:  groups.length > 0,
+      cta:   'Create a group',
+      action: () => navigate('/domains'),
+    },
+    {
+      id:    'notifications',
+      title: 'Configure alert notifications',
+      desc:  'Get notified by email, webhook, or Discord when a domain goes down.',
+      done:  false,
+      cta:   'Notification settings',
+      action: () => navigate('/notification-settings'),
+    },
+    {
+      id:    'monitoring',
+      title: 'Explore health monitoring',
+      desc:  'Check live uptime, response times, and SSL certificate status.',
+      done:  false,
+      cta:   'View monitoring',
+      action: () => navigate('/monitoring'),
+    },
+  ];
+
+  const completedCount = steps.filter(s => s.done).length;
+  const progress = Math.round((completedCount / steps.length) * 100);
+  const allDone = completedCount === steps.length;
+
+  return (
+    <div className="mb-8 card-standard p-5 animate-fade-in" style={{ animationDelay: '0.4s' }}>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-medium text-admin-text">
+              {allDone ? '🎉 Setup complete!' : 'Getting started'}
+            </h2>
+            <span className="text-xs text-admin-text-muted">
+              {completedCount}/{steps.length} done
+            </span>
+          </div>
+          <p className="text-xs text-admin-text-muted">
+            {allDone
+              ? 'Your proxy is fully configured. You can dismiss this guide.'
+              : 'Follow these steps to get the most out of your proxy.'}
+          </p>
+          {/* Progress bar */}
+          <div className="mt-3 h-1.5 rounded-full bg-admin-border overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#9D4EDD] transition-all duration-700"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="ml-4 text-admin-text-muted hover:text-admin-text transition-colors"
+          title="Dismiss guide"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Steps */}
+      <div className="space-y-2">
+        {steps.map((step) => (
+          <div
+            key={step.id}
+            className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+              step.done
+                ? 'bg-[#10B981]/5 border-[#10B981]/15'
+                : 'bg-admin-surface border-admin-border hover:border-admin-border-strong'
+            }`}
+          >
+            <div className="flex-shrink-0">
+              {step.done
+                ? <CheckCircle2 className="w-4.5 h-4.5 text-[#10B981]" />
+                : <Circle className="w-4.5 h-4.5 text-admin-text-muted" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-medium ${step.done ? 'text-admin-text-muted line-through' : 'text-admin-text'}`}>
+                {step.title}
+              </p>
+              {!step.done && (
+                <p className="text-[11px] text-admin-text-muted mt-0.5 leading-relaxed">{step.desc}</p>
+              )}
+            </div>
+            {!step.done && (
+              <button
+                onClick={step.action}
+                className="flex-shrink-0 flex items-center gap-1 text-[11px] text-[#C77DFF] hover:text-white transition-colors"
+              >
+                {step.cta}
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-admin-text-muted mt-3 text-right">
+        <button onClick={onDismiss} className="hover:text-admin-text transition-colors underline underline-offset-2">
+          Dismiss guide
+        </button>
+      </p>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -13,7 +145,16 @@ export default function Dashboard() {
   const [domains, setDomains] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showQuickStart, setShowQuickStart] = useState(false);
+
+  const dismissKey = `nebula_onboarding_${user?.id}_dismissed`;
+  const [showChecklist, setShowChecklist] = useState(
+    () => localStorage.getItem(dismissKey) !== '1'
+  );
+
+  const handleDismiss = useCallback(() => {
+    localStorage.setItem(dismissKey, '1');
+    setShowChecklist(false);
+  }, [dismissKey]);
 
   useEffect(() => {
     fetchDomains();
@@ -24,9 +165,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const response = await domainAPI.list();
-      const fetchedDomains = response.data.domains;
-      setDomains(fetchedDomains);
-      if (fetchedDomains.length === 0) setShowQuickStart(true);
+      setDomains(response.data.domains);
     } catch (err) {
       console.error('Failed to load domains:', err);
     } finally {
@@ -97,45 +236,14 @@ export default function Dashboard() {
           />
         </div>
 
-        {showQuickStart && domains.length === 0 && (
-          <div className="mb-8 animate-fade-in" style={{ animationDelay: '0.4s' }}>
-            <div className="card-standard p-5">
-              <div className="mb-5">
-                <h2 className="text-xl font-light text-admin-text tracking-tight mb-2">Get Started with {appName}</h2>
-                <p className="text-sm text-admin-text-muted font-light">Set up your first proxy in 3 easy steps</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-                {[
-                  { step: 1, title: 'Add a Domain', text: 'Create your first domain and configure backend URL' },
-                  { step: 2, title: 'Enable SSL', text: "Secure your proxy with automatic Let's Encrypt certificates" },
-                  { step: 3, title: 'Monitor Status', text: 'Track health and get notifications for changes' },
-                ].map((item) => (
-                  <div key={item.step} className="card-standard">
-                    <div className="w-12 h-12 rounded-lg bg-admin-surface2 border border-admin-border flex items-center justify-center mb-3">
-                      <span className="text-lg font-medium text-admin-text">{item.step}</span>
-                    </div>
-                    <h3 className="text-sm font-medium text-admin-text mb-2">{item.title}</h3>
-                    <p className="text-xs text-admin-text-muted leading-relaxed">{item.text}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => navigate('/domains')} className="btn-primary flex items-center gap-2">
-                  <Plus className="w-5 h-5" strokeWidth={1.5} />
-                  Add Your First Domain
-                </button>
-                <button onClick={() => navigate('/tunnels')} className="btn-secondary flex items-center gap-2">
-                  <Cable className="w-5 h-5" strokeWidth={1.5} />
-                  Open Tunnels
-                </button>
-                <button onClick={() => setShowQuickStart(false)} className="btn-secondary">
-                  Skip Guide
-                </button>
-              </div>
-            </div>
-          </div>
+        {showChecklist && (
+          <OnboardingChecklist
+            domains={domains}
+            groups={groups}
+            sslDomains={sslDomains}
+            userId={user?.id}
+            onDismiss={handleDismiss}
+          />
         )}
 
         {domains.length > 0 && (

@@ -1,15 +1,62 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server } from 'lucide-react';
+import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
 
 const LB_ALGORITHMS = [
-  { value: 'round-robin', label: 'Round Robin' },
-  { value: 'random', label: 'Random' },
-  { value: 'ip-hash', label: 'IP Hash' },
-  { value: 'least-connections', label: 'Least Conn.' }
+  {
+    value: 'round-robin',
+    label: 'Round Robin',
+    desc: 'Distributes requests evenly across all backends in rotation. Best for stateless APIs where all backends are equivalent.'
+  },
+  {
+    value: 'random',
+    label: 'Random',
+    desc: 'Picks a backend at random per request. Simpler than round-robin, useful when backends have identical capacity.'
+  },
+  {
+    value: 'ip-hash',
+    label: 'IP Hash',
+    desc: 'Same client IP always goes to the same backend (consistent hashing). Good for apps that store session data in memory.'
+  },
+  {
+    value: 'least-connections',
+    label: 'Least Conn.',
+    desc: 'Routes to the backend with the fewest active connections. Best when requests have very different processing times.'
+  },
+  {
+    value: 'sticky-session',
+    label: 'Sticky',
+    desc: 'Sets a cookie on first request and routes all subsequent requests from that browser to the same backend. Required for stateful apps (shopping carts, WebSockets).'
+  }
 ];
+
+// Minimal inline info tooltip — no external dependency.
+function Hint({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex items-center ml-1">
+      <button
+        type="button"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="text-white/30 hover:text-white/70 transition-colors"
+        tabIndex={-1}
+        aria-label="Help"
+      >
+        <Info className="w-3 h-3" />
+      </button>
+      {open && (
+        <span className="absolute left-5 top-0 z-50 w-60 text-[11px] leading-relaxed bg-[#1a1b24] border border-white/15 text-white/80 rounded-lg px-3 py-2 shadow-xl pointer-events-none">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export default function DomainForm({ domain, onSubmit, onClose, isLoading = false }) {
   const user = useAuthStore((state) => state.user);
@@ -448,8 +495,13 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
 
           {/* Backend URL/IP */}
           <div className="mb-3">
-            <label className="text-xs text-white/50 font-medium mb-2 block uppercase tracking-widest">
+            <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
               {formData.proxyType === 'http' ? 'Backend URL' : 'Backend IP/Hostname'}
+              <Hint text={
+                formData.proxyType === 'http'
+                  ? 'The URL of your server that NebulaProxy will forward requests to. Must be reachable from this machine. Include http:// or https://. IPv6 addresses must use brackets: http://[2a01::1].'
+                  : 'IP address or hostname of your backend server. Do NOT include the port here — use the Backend Port field below. Supports IPv4 (1.2.3.4) and IPv6 (2a01::1).'
+              } />
             </label>
             <input
               type="text"
@@ -464,7 +516,10 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
 
           {/* Backend Port */}
           <div className="mb-3">
-            <label className="text-xs text-white/50 font-medium mb-2 block uppercase tracking-widest">Backend Port</label>
+            <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
+              Backend Port
+              <Hint text="The port your backend server listens on. For HTTP proxies, omit the port from the Backend URL and set it here instead. Defaults: HTTP=80, HTTPS=443, Minecraft Java=25565, Bedrock=19132." />
+            </label>
             <input
               type="text"
               name="backendPort"
@@ -500,8 +555,11 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               <>
                 {/* Algorithm Selection */}
                 <div className="mb-3">
-                  <label className="text-xs text-white/50 font-medium mb-2 block">Algorithm</label>
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <label className="text-xs text-white/50 font-medium mb-2 flex items-center">
+                    Algorithm
+                    <Hint text="Choose how requests are distributed across your backend servers." />
+                  </label>
+                  <div className="grid grid-cols-5 gap-1.5">
                     {LB_ALGORITHMS.map((alg) => (
                       <button
                         key={alg.value}
@@ -518,6 +576,13 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                       </button>
                     ))}
                   </div>
+                  {/* Description of selected algorithm */}
+                  {(() => {
+                    const selected = LB_ALGORITHMS.find(a => a.value === formData.loadBalancingAlgorithm);
+                    return selected ? (
+                      <p className="text-[10px] text-white/40 mt-1.5 leading-relaxed">{selected.desc}</p>
+                    ) : null;
+                  })()}
                 </div>
 
                 {/* Additional Backends */}
@@ -592,7 +657,10 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
           {/* External Port (Admin only) */}
           {(formData.proxyType === 'tcp' || formData.proxyType === 'udp' || formData.proxyType === 'minecraft') && user?.role === 'admin' && (
             <div className="mb-3">
-              <label className="text-xs text-white/50 font-medium mb-2 block uppercase tracking-widest">External Listen Port</label>
+              <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
+                External Listen Port
+                <Hint text="The public port that clients connect to on this proxy server. Leave empty to use the shared default port. Set a custom port to give this domain its own dedicated port — required when two TCP/UDP domains need different public ports." />
+              </label>
               <input
                 type="text"
                 name="externalPort"
@@ -652,8 +720,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               {/* ACME Challenge Type Selection */}
               {formData.sslEnabled && (
                 <div className="mb-3">
-                  <label className="text-xs text-white/50 font-medium mb-2 block uppercase tracking-widest">
+                  <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
                     Certificate Method
+                    <Hint text="How NebulaProxy will obtain your SSL certificate from Let's Encrypt. HTTP-01 is automatic and works for most domains. DNS-01 is required for wildcard domains (*.example.com) and needs manual DNS configuration. Custom lets you upload an existing certificate." />
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     <button

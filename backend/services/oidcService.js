@@ -51,23 +51,38 @@ function verifyJwtSignature(token, publicKey, alg) {
   return crypto.verify(signingAlg, signingInput, publicKey, signature);
 }
 
+const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour — covers most rotation schedules
+
+async function fetchJwks(jwksUri, jwksCache) {
+  const cached = jwksCache.get(jwksUri);
+  if (cached && Date.now() - cached.fetchedAt < JWKS_TTL_MS) return cached.keys;
+
+  const res = await fetch(jwksUri, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`);
+  const keys = (await res.json()).keys;
+  jwksCache.set(jwksUri, { keys, fetchedAt: Date.now() });
+  return keys;
+}
+
 async function verifyIdToken(idToken, disc, cfg, jwksCache) {
   if (!idToken) throw new Error('No ID token returned by provider');
 
   const { header, payload } = parseJwtUnsafe(idToken);
 
-  // Fetch JWKS (use cache)
-  let jwks = jwksCache.get(disc.jwks_uri);
-  if (!jwks) {
-    const res = await fetch(disc.jwks_uri, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`);
-    jwks = (await res.json()).keys;
-    jwksCache.set(disc.jwks_uri, jwks);
-  }
+  // Fetch JWKS (cached with 1h TTL)
+  let jwks = await fetchJwks(disc.jwks_uri, jwksCache);
 
   // Find matching key (by kid, or first key)
-  const jwk = jwks.find(k => !header.kid || k.kid === header.kid) || jwks[0];
-  if (!jwk) throw new Error('No matching JWK found for ID token');
+  let jwk = jwks.find(k => !header.kid || k.kid === header.kid) || jwks[0];
+
+  // If no match and we have a kid, the provider may have rotated keys — retry once
+  if (!jwk && header.kid) {
+    jwksCache.delete(disc.jwks_uri);                          // bust cache
+    jwks = await fetchJwks(disc.jwks_uri, jwksCache);         // re-fetch
+    jwk = jwks.find(k => k.kid === header.kid) || jwks[0];
+  }
+
+  if (!jwk) throw new Error('No matching JWK found for ID token — provider may have rotated keys');
 
   const publicKey = jwkToPublicKey(jwk);
   const valid     = verifyJwtSignature(idToken, publicKey, header.alg);

@@ -20,7 +20,25 @@
 import { pool } from '../config/database.js';
 import { monitoringService } from '../services/monitoringService.js';
 
-const METRICS_TOKEN = process.env.METRICS_TOKEN || '';
+const METRICS_TOKEN    = process.env.METRICS_TOKEN || '';
+// Allow 1 scrape per 10s per IP (Prometheus default interval is 15s).
+// Prevents the LATERAL-JOIN SQL query from being used as a DoS vector.
+const SCRAPE_WINDOW_MS = 10_000;
+const scrapeLastSeen   = new Map(); // ip → timestamp
+
+function isRateLimited(ip) {
+  const now  = Date.now();
+  const last = scrapeLastSeen.get(ip) ?? 0;
+  if (now - last < SCRAPE_WINDOW_MS) return true;
+  scrapeLastSeen.set(ip, now);
+  // Prune old entries every ~100 requests so the Map doesn't grow forever
+  if (scrapeLastSeen.size > 500) {
+    for (const [k, v] of scrapeLastSeen) {
+      if (now - v > SCRAPE_WINDOW_MS * 6) scrapeLastSeen.delete(k);
+    }
+  }
+  return false;
+}
 
 // ── Prometheus text-format helpers ────────────────────────────────────────────
 
@@ -53,6 +71,18 @@ export async function metricsRoutes(fastify) {
       if (auth.slice(7) !== METRICS_TOKEN) {
         return reply.code(401).header('WWW-Authenticate', 'Bearer').send('Unauthorized');
       }
+    }
+
+    // Rate limit: 1 scrape per 10s per source IP
+    const clientIp = request.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || request.ip
+      || 'unknown';
+    if (isRateLimited(clientIp)) {
+      return reply
+        .code(429)
+        .header('Retry-After', '10')
+        .header('Content-Type', 'text/plain; version=0.0.4')
+        .send('# Too many requests — wait 10s between scrapes\n');
     }
 
     const out = [];
