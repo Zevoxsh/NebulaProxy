@@ -133,6 +133,16 @@ export function AdminLayout() {
     fetchAdminPinStatus();
   }, [user?.role]);
 
+  // Re-open the PIN dialog when any API call returns 423 (session expired server-side)
+  useEffect(() => {
+    const handler = () => {
+      setAdminPinVerified(false);
+      setAdminPinError('Votre session admin a expiré. Veuillez saisir à nouveau votre PIN.');
+    };
+    window.addEventListener('admin-pin-required', handler);
+    return () => window.removeEventListener('admin-pin-required', handler);
+  }, []);
+
   useEffect(() => {
     const fetchStats = async () => {
       if (!adminPinVerified) return;

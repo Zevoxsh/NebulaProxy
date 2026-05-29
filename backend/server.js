@@ -573,9 +573,12 @@ fastify.decorate('authorize', (roles) => {
 
     // Admin PIN: required + must have been verified within the last 4 hours.
     // adminPinVerifiedAt is a server-signed JWT claim — cannot be forged client-side.
+    // Fallback: tokens issued before this feature existed use iat (issued-at) as the
+    // verification time, so existing sessions aren't immediately invalidated.
     if (userRole === 'admin' && roles.includes('admin')) {
       const PIN_TTL_MS = 4 * 60 * 60 * 1000;
-      const verifiedAt = request.user.adminPinVerifiedAt;
+      const verifiedAt = request.user.adminPinVerifiedAt
+        ?? (request.user.iat ? request.user.iat * 1000 : null);
       const pinExpired = !verifiedAt || (Date.now() - verifiedAt) > PIN_TTL_MS;
 
       if (request.user.adminPinVerified !== true || pinExpired) {
@@ -606,7 +609,8 @@ fastify.decorate('requireAdmin', async function(request, reply) {
   }
 
   const PIN_TTL_MS  = 4 * 60 * 60 * 1000;
-  const verifiedAt  = request.user.adminPinVerifiedAt;
+  const verifiedAt  = request.user.adminPinVerifiedAt
+    ?? (request.user.iat ? request.user.iat * 1000 : null);
   const pinExpired  = !verifiedAt || (Date.now() - verifiedAt) > PIN_TTL_MS;
 
   if (request.user.adminPinVerified !== true || pinExpired) {

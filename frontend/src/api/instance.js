@@ -28,7 +28,11 @@ api.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
 
-    if (status === 401) {
+    if (status === 423) {
+      // Admin PIN required or expired — fire a custom event so AdminLayout
+      // can show the PIN dialog without prop-drilling through the component tree.
+      window.dispatchEvent(new CustomEvent('admin-pin-required'));
+    } else if (status === 401) {
       // Clear auth state and redirect to login
       useAuthStore.getState().logout();
 
