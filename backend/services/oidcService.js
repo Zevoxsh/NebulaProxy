@@ -8,6 +8,84 @@
 import crypto from 'crypto';
 import { pool } from '../config/database.js';
 
+// ── JWT / JWKS verification (no external deps) ────────────────────────────────
+
+function b64urlDecode(str) {
+  return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+function parseJwtUnsafe(token) {
+  const [h, p] = token.split('.');
+  const header  = JSON.parse(b64urlDecode(h));
+  const payload = JSON.parse(b64urlDecode(p));
+  return { header, payload };
+}
+
+function jwkToPublicKey(jwk) {
+  if (jwk.kty === 'RSA') {
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  }
+  if (jwk.kty === 'EC') {
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  }
+  throw new Error(`Unsupported JWK key type: ${jwk.kty}`);
+}
+
+const ALG_MAP = {
+  RS256: 'RSA-SHA256', RS384: 'RSA-SHA384', RS512: 'RSA-SHA512',
+  ES256: 'SHA256',     ES384: 'SHA384',     ES512: 'SHA512',
+  PS256: 'SHA256',     PS384: 'SHA384',     PS512: 'SHA512'
+};
+
+function verifyJwtSignature(token, publicKey, alg) {
+  const signingAlg = ALG_MAP[alg];
+  if (!signingAlg) throw new Error(`Unsupported JWT algorithm: ${alg}`);
+
+  const [headerB64, payloadB64, sigB64] = token.split('.');
+  const signingInput = Buffer.from(`${headerB64}.${payloadB64}`);
+  const signature    = b64urlDecode(sigB64);
+
+  if (alg.startsWith('PS')) {
+    return crypto.verify(signingAlg, signingInput, { key: publicKey, padding: crypto.constants.RSA_PKCS1_PSS_PADDING }, signature);
+  }
+  return crypto.verify(signingAlg, signingInput, publicKey, signature);
+}
+
+async function verifyIdToken(idToken, disc, cfg, jwksCache) {
+  if (!idToken) throw new Error('No ID token returned by provider');
+
+  const { header, payload } = parseJwtUnsafe(idToken);
+
+  // Fetch JWKS (use cache)
+  let jwks = jwksCache.get(disc.jwks_uri);
+  if (!jwks) {
+    const res = await fetch(disc.jwks_uri, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`);
+    jwks = (await res.json()).keys;
+    jwksCache.set(disc.jwks_uri, jwks);
+  }
+
+  // Find matching key (by kid, or first key)
+  const jwk = jwks.find(k => !header.kid || k.kid === header.kid) || jwks[0];
+  if (!jwk) throw new Error('No matching JWK found for ID token');
+
+  const publicKey = jwkToPublicKey(jwk);
+  const valid     = verifyJwtSignature(idToken, publicKey, header.alg);
+  if (!valid) throw new Error('ID token signature verification failed');
+
+  // Validate standard claims
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now)       throw new Error('ID token is expired');
+  if (payload.iat && payload.iat > now + 60)  throw new Error('ID token issued in the future');
+  if (payload.iss !== disc.issuer)            throw new Error(`ID token issuer mismatch: ${payload.iss}`);
+  if (cfg.client_id && payload.aud) {
+    const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    if (!aud.includes(cfg.client_id)) throw new Error('ID token audience mismatch');
+  }
+
+  return payload;
+}
+
 const TIMEOUT_MS = 10_000;
 
 async function fetchJson(url) {
@@ -17,8 +95,9 @@ async function fetchJson(url) {
 }
 
 class OidcService {
-  #discovery = null;   // cached discovery document
-  #jwks      = null;   // cached JWK set
+  #discovery  = null;                 // cached discovery document
+  #jwks       = null;                 // cached JWK set (raw, legacy)
+  #jwksCache  = new Map();            // jwks_uri → keys[] for signature verification
 
   async loadConfig() {
     const { rows } = await pool.query(
@@ -96,6 +175,10 @@ class OidcService {
 
     const disc    = await this.getDiscovery(cfg.issuer_url);
     const tokens  = await this.exchangeCode(cfg, code);
+
+    // Verify ID token signature + claims cryptographically (JWKS)
+    await verifyIdToken(tokens.id_token, disc, cfg, this.#jwksCache);
+
     const info    = await this.getUserInfo(disc, tokens.access_token);
 
     const email    = info.email;

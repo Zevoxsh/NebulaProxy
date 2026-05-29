@@ -408,9 +408,14 @@ export default function AdminUsers() {
                       <TableCell>
                         {user.role === 'admin' ? (
                           <AdminBadge variant="default" className="flex items-center gap-1 w-fit">
-                            <Shield className="w-3 h-3" />
-                            Admin
+                            <Shield className="w-3 h-3" />Admin
                           </AdminBadge>
+                        ) : user.role === 'operator' ? (
+                          <AdminBadge variant="warning" className="flex items-center gap-1 w-fit">
+                            Operator
+                          </AdminBadge>
+                        ) : user.role === 'viewer' ? (
+                          <AdminBadge variant="secondary" className="opacity-70">Viewer</AdminBadge>
                         ) : (
                           <AdminBadge variant="secondary">User</AdminBadge>
                         )}
@@ -490,6 +495,21 @@ export default function AdminUsers() {
           </DialogHeader>
           <form onSubmit={handleUpdateQuotas}>
             <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-admin-text">Role</Label>
+                <Combobox
+                  value={quotaForm.role || editingUser?.role || 'user'}
+                  onValueChange={(value) => setQuotaForm({ ...quotaForm, role: value })}
+                  options={[
+                    { value: 'user',     label: 'User' },
+                    { value: 'operator', label: 'Operator' },
+                    { value: 'viewer',   label: 'Viewer' },
+                    { value: 'admin',    label: 'Admin' },
+                  ]}
+                  placeholder="Select role"
+                  triggerClassName="h-10 bg-admin-bg border-admin-border text-admin-text"
+                />
+              </div>
               <div className="space-y-2">
                 <Label className="text-admin-text">Max Domains (-1 for unlimited)</Label>
                 <Input
@@ -591,8 +611,10 @@ export default function AdminUsers() {
                     value={createForm.role}
                     onValueChange={(value) => setCreateForm({ ...createForm, role: value })}
                     options={[
-                      { value: 'user', label: 'User' },
-                      { value: 'admin', label: 'Admin' },
+                      { value: 'user',     label: 'User — full access to own resources' },
+                      { value: 'operator', label: 'Operator — manage domains, read-only system' },
+                      { value: 'viewer',   label: 'Viewer — read-only everywhere' },
+                      { value: 'admin',    label: 'Admin — full access' },
                     ]}
                     placeholder="Select role"
                     searchPlaceholder="Search role..."

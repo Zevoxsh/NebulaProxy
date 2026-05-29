@@ -86,16 +86,9 @@ export async function adminUserRoutes(fastify, options) {
         type: 'object',
         required: ['maxDomains'],
         properties: {
-          maxDomains: {
-            type: 'integer',
-            minimum: 0,
-            maximum: 10000
-          },
-          maxRedirections: {
-            type: 'integer',
-            minimum: 0,
-            maximum: 10000
-          }
+          maxDomains: { type: 'integer', minimum: -1, maximum: 10000 },
+          maxRedirections: { type: 'integer', minimum: 0, maximum: 10000 },
+          role: { type: 'string', enum: ['admin', 'operator', 'viewer', 'user'] }
         },
         additionalProperties: false
       }
@@ -103,7 +96,7 @@ export async function adminUserRoutes(fastify, options) {
   }, async (request, reply) => {
     try {
       const userId = parseInt(request.params.id, 10);
-      const { maxDomains, maxRedirections } = request.body;
+      const { maxDomains, maxRedirections, role } = request.body;
       const adminId = request.user.id;
 
       const user = await database.getUserById(userId);
@@ -117,22 +110,31 @@ export async function adminUserRoutes(fastify, options) {
 
       const updatedUser = await database.updateUserQuotas(userId, maxDomains, user.max_proxies);
 
-      // Update redirection quota if provided
       if (maxRedirections !== undefined) {
         await database.updateUserRedirectionQuota(userId, maxRedirections);
       }
 
+      // Update role if provided (and not changing self)
+      if (role && role !== user.role) {
+        if (userId === request.user.id) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: 'You cannot change your own role'
+          });
+        }
+        const { pool } = await import('../../config/database.js');
+        await pool.query('UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2', [role, userId]);
+      }
+
       await database.createAuditLog({
         userId: adminId,
-        action: 'quota_updated',
+        action: 'user_updated',
         entityType: 'user',
         entityId: userId,
         details: {
           target_username: user.username,
-          old_max_domains: user.max_domains,
-          new_max_domains: maxDomains,
-          old_max_redirections: user.max_redirections,
-          new_max_redirections: maxRedirections
+          old_max_domains: user.max_domains,  new_max_domains: maxDomains,
+          old_role: user.role,                new_role: role || user.role
         },
         ipAddress: request.ip
       });

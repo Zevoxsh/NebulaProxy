@@ -1751,6 +1751,44 @@ const escapeHtml = (value) => String(value ?? '')
       }
     }
 
+    // ── 2.5. BANDWIDTH QUOTA CHECK ──────────────────────────────────────────────
+    // Quota is cached in Redis for 5 min to avoid a DB hit on every request.
+    if (domain.user_id) {
+      try {
+        const quotaCacheKey = `nebula:bwquota:${domain.user_id}`;
+        let quotaBytes = 0;
+
+        if (redisService.isConnected && redisService.client) {
+          const cached = await redisService.client.get(quotaCacheKey);
+          if (cached !== null) {
+            quotaBytes = parseInt(cached, 10);
+          } else {
+            const { pool } = await import('../config/database.js');
+            const { rows } = await pool.query(
+              'SELECT bandwidth_quota_bytes FROM users WHERE id = $1', [domain.user_id]
+            );
+            quotaBytes = Number(rows[0]?.bandwidth_quota_bytes ?? 0);
+            await redisService.client.setex(quotaCacheKey, 300, String(quotaBytes));
+          }
+        }
+
+        if (quotaBytes > 0) {
+          const { exceeded } = await bandwidthTracker.checkQuota(domain.user_id, quotaBytes);
+          if (exceeded) {
+            res.writeHead(429, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'Bandwidth Quota Exceeded',
+              message: 'Daily bandwidth limit reached for this account.'
+            }));
+            return;
+          }
+        }
+      } catch (bwErr) {
+        // Fail open — never block traffic due to quota check errors
+        console.error(`[HTTP Proxy ${domain.id}] Bandwidth quota check failed:`, bwErr.message);
+      }
+    }
+
     // ── 3. PER-DOMAIN RATE LIMITING ──────────────────────────────────────────
     if (domain.rate_limit_enabled) {
       try {

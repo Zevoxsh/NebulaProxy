@@ -6,10 +6,10 @@
  * Output: text/plain; version=0.0.4  (Prometheus exposition format)
  *
  * Security: protected by an optional bearer token (env METRICS_TOKEN).
- * If METRICS_TOKEN is not set, the endpoint is public — suitable for
- * internal networks. Set it for internet-exposed instances.
+ * If METRICS_TOKEN is not set the endpoint is public — fine for internal
+ * networks. Set it for internet-exposed instances.
  *
- * Scrape config example:
+ * Scrape config example (prometheus.yml):
  *   - job_name: nebulaproxy
  *     static_configs:
  *       - targets: ['proxy.example.com:3000']
@@ -17,181 +17,191 @@
  *     bearer_token: <METRICS_TOKEN>
  */
 
-import { database } from '../services/database.js';
-import { monitoringService } from '../services/monitoringService.js';
 import { pool } from '../config/database.js';
-import { config } from '../config/config.js';
+import { monitoringService } from '../services/monitoringService.js';
 
 const METRICS_TOKEN = process.env.METRICS_TOKEN || '';
 
-function gauge(name, help, labels, value) {
-  if (value == null || isNaN(value)) return '';
-  const labelStr = Object.entries(labels)
-    .map(([k, v]) => `${k}="${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`)
-    .join(',');
-  const labelPart = labelStr ? `{${labelStr}}` : '';
-  return `# HELP ${name} ${help}\n# TYPE ${name} gauge\n${name}${labelPart} ${value}\n`;
+// ── Prometheus text-format helpers ────────────────────────────────────────────
+
+function esc(v) {
+  return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
 
-function gaugeSet(name, help, rows) {
-  if (!rows.length) return '';
-  let out = `# HELP ${name} ${help}\n# TYPE ${name} gauge\n`;
-  for (const { labels, value } of rows) {
-    if (value == null || isNaN(value)) continue;
-    const labelStr = Object.entries(labels)
-      .map(([k, v]) => `${k}="${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`)
-      .join(',');
-    out += `${name}{${labelStr}} ${value}\n`;
-  }
-  return out;
+function labels(obj) {
+  const pairs = Object.entries(obj).map(([k, v]) => `${k}="${esc(v)}"`).join(',');
+  return pairs ? `{${pairs}}` : '';
 }
+
+function gaugeHead(name, help, type = 'gauge') {
+  return `# HELP ${name} ${help}\n# TYPE ${name} ${type}\n`;
+}
+
+function line(name, lbl, value) {
+  if (value == null || (typeof value === 'number' && isNaN(value))) return '';
+  return `${name}${labels(lbl)} ${value}\n`;
+}
+
+// ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function metricsRoutes(fastify) {
   fastify.get('/metrics', async (request, reply) => {
-    // Token auth (optional)
+
+    // Optional bearer token auth
     if (METRICS_TOKEN) {
-      const auth = request.headers.authorization || '';
-      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-      if (token !== METRICS_TOKEN) {
+      const auth = (request.headers.authorization || '');
+      if (auth.slice(7) !== METRICS_TOKEN) {
         return reply.code(401).header('WWW-Authenticate', 'Bearer').send('Unauthorized');
       }
     }
 
-    const lines = [];
+    const out = [];
 
-    // ── System metrics ────────────────────────────────────────────────────────
+    // ── 1. System metrics (non-blocking) ─────────────────────────────────────
     try {
       const m = await monitoringService.getSystemMetrics();
 
-      lines.push(gauge(
-        'nebula_system_cpu_usage_percent',
-        'Current CPU usage percentage (0-100)',
-        {},
-        parseFloat(m.cpu)
-      ));
+      out.push(
+        gaugeHead('nebula_system_cpu_usage_percent', 'CPU usage %'),
+        line('nebula_system_cpu_usage_percent', {}, parseFloat(m.cpu) || 0)
+      );
 
       if (m.memory?.percentage != null) {
-        lines.push(gauge(
-          'nebula_system_memory_usage_percent',
-          'Current memory usage percentage (0-100)',
-          {},
-          parseFloat(m.memory.percentage)
-        ));
+        out.push(
+          gaugeHead('nebula_system_memory_usage_percent', 'Memory usage %'),
+          line('nebula_system_memory_usage_percent', {}, parseFloat(m.memory.percentage))
+        );
       }
 
       if (m.disk?.percentage != null) {
-        lines.push(gauge(
-          'nebula_system_disk_usage_percent',
-          'Current disk usage percentage (0-100)',
-          {},
-          parseFloat(m.disk.percentage)
-        ));
+        out.push(
+          gaugeHead('nebula_system_disk_usage_percent', 'Disk usage %'),
+          line('nebula_system_disk_usage_percent', {}, parseFloat(m.disk.percentage))
+        );
       }
+    } catch { /* skip if monitoring service fails */ }
 
-      // Uptime in seconds
-      try {
-        const { rows } = await pool.query("SELECT EXTRACT(EPOCH FROM (NOW() - pg_postmaster_start_time()))::int AS up");
-        if (rows[0]?.up) {
-          lines.push(gauge('nebula_proxy_uptime_seconds', 'Seconds since the proxy backend started', {}, rows[0].up));
-        }
-      } catch { /* ignore */ }
-    } catch { /* skip system metrics on error */ }
-
-    // ── Domain health ─────────────────────────────────────────────────────────
-    try {
-      const allDomains = await database.getAllActiveDomains();
-
-      // Counts
-      let totalDomains = 0, domainsUp = 0, domainsDown = 0, domainsDegraded = 0;
-
-      const statusRows = [];
-      const responseTimeRows = [];
-      const uptimeRows = [];
-
-      for (const domain of allDomains) {
-        totalDomains++;
-        const hs = await database.getDomainHealthStatus(domain.id);
-        const latest = await database.getLatestHealthCheck(domain.id);
-
-        let statusVal = 1; // healthy
-        if (!domain.is_active) {
-          statusVal = 0;
-          domainsDown++;
-        } else if (hs?.current_status === 'down') {
-          statusVal = 0;
-          domainsDown++;
-        } else if (latest?.response_time > 1000) {
-          statusVal = 0.5; // degraded
-          domainsDegraded++;
-        } else {
-          domainsUp++;
-        }
-
-        const lbl = { hostname: domain.hostname, proxy_type: domain.proxy_type || 'http' };
-
-        statusRows.push({ labels: lbl, value: statusVal });
-
-        if (latest?.response_time != null) {
-          responseTimeRows.push({ labels: lbl, value: latest.response_time });
-        }
-
-        // Uptime % from last 10 checks
-        const recent = await database.getHealthChecksByDomain(domain.id, 10);
-        if (recent.length > 0) {
-          const successes = recent.filter(c => c.status === 'success').length;
-          uptimeRows.push({ labels: lbl, value: parseFloat(((successes / recent.length) * 100).toFixed(2)) });
-        }
-      }
-
-      lines.push(gauge('nebula_domains_total',    'Total number of active domains',          {}, totalDomains));
-      lines.push(gauge('nebula_domains_up',        'Domains currently healthy',               {}, domainsUp));
-      lines.push(gauge('nebula_domains_down',      'Domains currently down',                  {}, domainsDown));
-      lines.push(gauge('nebula_domains_degraded',  'Domains with degraded response time',     {}, domainsDegraded));
-      lines.push(gaugeSet('nebula_domain_up',           'Domain health (1=up, 0.5=degraded, 0=down)',         statusRows));
-      lines.push(gaugeSet('nebula_domain_response_time_ms', 'Latest health check response time in milliseconds', responseTimeRows));
-      lines.push(gaugeSet('nebula_domain_uptime_percent',    'Uptime percentage over the last 10 checks',         uptimeRows));
-    } catch { /* skip domain metrics on error */ }
-
-    // ── SSL certificates ──────────────────────────────────────────────────────
+    // ── 2. Domain metrics — ONE query instead of N×3 ─────────────────────────
     try {
       const { rows } = await pool.query(`
-        SELECT hostname, ssl_expires_at
-        FROM domains
-        WHERE is_active = TRUE
-          AND ssl_enabled = TRUE
-          AND ssl_expires_at IS NOT NULL
+        SELECT
+          d.id,
+          d.hostname,
+          COALESCE(d.proxy_type, 'http')  AS proxy_type,
+          d.ssl_enabled,
+          d.ssl_expires_at,
+          hs.current_status,
+          lc.response_time                AS latest_response_time,
+          COALESCE(rc.success_count, 0)   AS success_count,
+          COALESCE(rc.total_count,   0)   AS total_count
+        FROM domains d
+        LEFT JOIN domain_health_status hs
+               ON hs.domain_id = d.id
+        LEFT JOIN LATERAL (
+          SELECT response_time
+          FROM   domain_health_checks
+          WHERE  domain_id = d.id
+          ORDER  BY checked_at DESC
+          LIMIT  1
+        ) lc ON true
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'success') AS success_count,
+            COUNT(*)                                    AS total_count
+          FROM (
+            SELECT status
+            FROM   domain_health_checks
+            WHERE  domain_id = d.id
+            ORDER  BY checked_at DESC
+            LIMIT  10
+          ) r
+        ) rc ON true
+        WHERE d.is_active = TRUE
       `);
 
-      const sslRows = rows.map(r => {
-        const days = Math.floor((new Date(r.ssl_expires_at) - Date.now()) / 86400000);
-        return { labels: { hostname: r.hostname }, value: days };
-      });
+      let totalUp = 0, totalDown = 0, totalDegraded = 0;
 
-      lines.push(gaugeSet('nebula_ssl_expires_in_days', 'Days until SSL certificate expiry (negative = expired)', sslRows));
-    } catch { /* skip */ }
+      out.push(
+        gaugeHead('nebula_domain_up',
+          'Domain health: 1=healthy, 0.5=degraded (response_time>1s), 0=down'),
+        gaugeHead('nebula_domain_response_time_ms',
+          'Latest health-check response time in milliseconds'),
+        gaugeHead('nebula_domain_uptime_percent',
+          'Uptime percentage over the last 10 health checks')
+      );
 
-    // ── Request throughput (last hour from DB) ────────────────────────────────
+      for (const r of rows) {
+        const lbl = { hostname: r.hostname, proxy_type: r.proxy_type };
+
+        let statusVal = 1;
+        if (r.current_status === 'down') {
+          statusVal = 0;
+          totalDown++;
+        } else if (r.latest_response_time > 1000) {
+          statusVal = 0.5;
+          totalDegraded++;
+        } else {
+          totalUp++;
+        }
+
+        out.push(line('nebula_domain_up', lbl, statusVal));
+
+        if (r.latest_response_time != null) {
+          out.push(line('nebula_domain_response_time_ms', lbl, r.latest_response_time));
+        }
+
+        if (r.total_count > 0) {
+          const pct = parseFloat(((r.success_count / r.total_count) * 100).toFixed(2));
+          out.push(line('nebula_domain_uptime_percent', lbl, pct));
+        }
+      }
+
+      out.push(
+        gaugeHead('nebula_domains_total',   'Total active domains'),
+        line('nebula_domains_total',   {}, rows.length),
+        gaugeHead('nebula_domains_up',      'Domains currently healthy'),
+        line('nebula_domains_up',      {}, totalUp),
+        gaugeHead('nebula_domains_down',    'Domains currently down'),
+        line('nebula_domains_down',    {}, totalDown),
+        gaugeHead('nebula_domains_degraded','Domains with degraded response time'),
+        line('nebula_domains_degraded', {}, totalDegraded)
+      );
+
+      // SSL expiry
+      const sslRows = rows.filter(r => r.ssl_enabled && r.ssl_expires_at);
+      if (sslRows.length) {
+        out.push(gaugeHead('nebula_ssl_expires_in_days',
+          'Days until SSL certificate expiry (negative = expired)'));
+        for (const r of sslRows) {
+          const days = Math.floor((new Date(r.ssl_expires_at) - Date.now()) / 86_400_000);
+          out.push(line('nebula_ssl_expires_in_days', { hostname: r.hostname }, days));
+        }
+      }
+    } catch { /* skip domain metrics on DB error */ }
+
+    // ── 3. Request throughput — single aggregate query ────────────────────────
     try {
       const { rows } = await pool.query(`
         SELECT d.hostname, COUNT(*) AS requests
-        FROM request_logs rl
-        JOIN domains d ON d.id = rl.domain_id
-        WHERE rl.created_at > NOW() - INTERVAL '1 hour'
-        GROUP BY d.hostname
+        FROM   request_logs rl
+        JOIN   domains d ON d.id = rl.domain_id
+        WHERE  rl.created_at > NOW() - INTERVAL '1 hour'
+        GROUP  BY d.hostname
       `);
 
-      lines.push(gaugeSet(
-        'nebula_domain_requests_last_hour',
-        'Number of proxied requests in the last 60 minutes',
-        rows.map(r => ({ labels: { hostname: r.hostname }, value: parseInt(r.requests, 10) }))
-      ));
+      if (rows.length) {
+        out.push(gaugeHead('nebula_domain_requests_last_hour',
+          'HTTP requests proxied in the last 60 minutes'));
+        for (const r of rows) {
+          out.push(line('nebula_domain_requests_last_hour',
+            { hostname: r.hostname }, parseInt(r.requests, 10)));
+        }
+      }
     } catch { /* skip */ }
-
-    const body = lines.filter(Boolean).join('');
 
     reply
       .code(200)
       .header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
-      .send(body);
+      .send(out.filter(Boolean).join(''));
   });
 }

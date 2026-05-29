@@ -5,6 +5,7 @@
  */
 import { oidcService } from '../../services/oidcService.js';
 import { sendAuthSuccess } from './helpers.js';
+import { pool } from '../../config/database.js';
 
 const STATE_COOKIE = 'oidc_state';
 
@@ -46,11 +47,21 @@ export async function oidcRoutes(fastify) {
 
     try {
       const { user, isNew } = await oidcService.handleCallback(code);
+      const cfg = await oidcService.loadConfig();
 
-      fastify.log.info(
-        { userId: user.id, email: user.email, isNew },
-        'OIDC login successful'
-      );
+      fastify.log.info({ userId: user.id, email: user.email, isNew }, 'OIDC login successful');
+
+      // Audit log — every SSO login is recorded
+      await pool.query(
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, ip_address)
+         VALUES ($1, $2, 'user', $1, $3, $4)`,
+        [
+          user.id,
+          isNew ? 'oidc_signup' : 'oidc_login',
+          JSON.stringify({ email: user.email, provider: cfg?.issuer_url, isNew }),
+          request.headers['x-forwarded-for']?.split(',')[0]?.trim() || request.ip
+        ]
+      ).catch(err => fastify.log.warn({ err }, 'OIDC audit log failed'));
 
       sendAuthSuccess(request, reply, user, {
         tokenClaims: { authMethod: 'oidc' }
