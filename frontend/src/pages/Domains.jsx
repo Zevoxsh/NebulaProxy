@@ -491,7 +491,10 @@ export default function Domains() {
           protocol = formData.proxyType;
         }
         if (!formData.backendUrl.includes('://')) {
-          payload.backendUrl = `${protocol}://${formData.backendUrl}`;
+          // Wrap bare IPv6 addresses in brackets so the URL is valid (RFC 2732)
+          const isIpv6 = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(formData.backendUrl);
+          const host = isIpv6 ? `[${formData.backendUrl}]` : formData.backendUrl;
+          payload.backendUrl = `${protocol}://${host}`;
         }
       }
       if (formData.proxyType === 'minecraft' && formData.minecraftEdition) {
@@ -605,7 +608,9 @@ export default function Domains() {
           protocol = formData.proxyType;
         }
         if (!formData.backendUrl.includes('://')) {
-          payload.backendUrl = `${protocol}://${formData.backendUrl}`;
+          const isIpv6 = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(formData.backendUrl);
+          const host = isIpv6 ? `[${formData.backendUrl}]` : formData.backendUrl;
+          payload.backendUrl = `${protocol}://${host}`;
         }
       }
       if (user?.role !== 'admin' || !formData.externalPort) {

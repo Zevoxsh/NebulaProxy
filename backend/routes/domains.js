@@ -371,10 +371,17 @@ export async function domainRoutes(fastify, options) {
           return reply.code(e.code).send({ error: e.code === 409 ? 'Port unavailable' : 'Invalid external port', message: e.message });
         }
       } else if (proxyType === 'tcp' || proxyType === 'udp') {
-        if (!validator.isURL(backendUrl, { require_protocol: true, protocols: ['tcp', 'udp'], require_tld: false })) {
+        // Use URL constructor (handles IPv6 bracket notation) instead of validator
+        let parsedTcpUrl;
+        try {
+          parsedTcpUrl = new URL(backendUrl);
+          if (parsedTcpUrl.protocol !== `${proxyType}:` || !parsedTcpUrl.hostname) {
+            throw new Error('wrong protocol or empty host');
+          }
+        } catch {
           return reply.code(400).send({
             error: 'Invalid backend URL',
-            message: `Backend URL must be a valid ${proxyType.toUpperCase()} URL`
+            message: `Backend URL must be a valid ${proxyType.toUpperCase()} URL (e.g. ${proxyType}://1.2.3.4 or ${proxyType}://[2a01::1])`
           });
         }
         const portError = getBackendUrlPortError(backendUrl);

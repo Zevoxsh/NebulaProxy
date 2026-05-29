@@ -213,26 +213,30 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
       }
     } else {
       // For TCP/UDP/Minecraft, validate IP address or hostname
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      const isValidIp = ipRegex.test(formData.backendUrl);
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+      const isValidIpv4 = ipv4Regex.test(formData.backendUrl);
+      const isValidIpv6 = ipv6Regex.test(formData.backendUrl);
       const isValidHostname = hostnameRegex.test(formData.backendUrl);
 
-      if (!isValidIp && !isValidHostname) {
-        setError('Invalid backend IP address or hostname');
+      if (!isValidIpv4 && !isValidIpv6 && !isValidHostname) {
+        setError('Invalid backend IP address or hostname (IPv4, IPv6, or domain)');
         return;
       }
 
-      // If IP, validate octets are 0-255
-      if (isValidIp) {
+      // Validate IPv4 octets
+      if (isValidIpv4) {
         const octets = formData.backendUrl.split('.');
         if (octets.some(octet => parseInt(octet) > 255)) {
-          setError('Invalid IP address (octets must be 0-255)');
+          setError('Invalid IPv4 address (octets must be 0-255)');
           return;
         }
       }
-      // Block host:port in backend URL (use backend port field instead)
-      if (/:\d+$/.test(formData.backendUrl)) {
-        setError('Backend URL must not include a port. Use the Backend Port field.');
+
+      // Block host:port — but IPv6 addresses legitimately contain colons,
+      // so only check for a trailing port on non-IPv6 values
+      if (!isValidIpv6 && /:\d+$/.test(formData.backendUrl)) {
+        setError('Backend IP/hostname must not include a port. Use the Backend Port field.');
         return;
       }
     }
@@ -251,9 +255,13 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
           setError('Invalid additional backend URL (must include http:// or https://)');
           return;
         }
-      } else if (/:\d+$/.test(backend.url)) {
-        setError('Additional backend URLs must not include a port. Use the Backend Port field.');
-        return;
+      } else {
+        // IPv6 addresses contain colons — only flag trailing port on non-IPv6
+        const isIpv6 = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(backend.url);
+        if (!isIpv6 && /:\d+$/.test(backend.url)) {
+          setError('Additional backend IPs must not include a port. Use the Backend Port field.');
+          return;
+        }
       }
     }
 
@@ -448,7 +456,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               name="backendUrl"
               value={formData.backendUrl}
               onChange={handleChange}
-              placeholder={formData.proxyType === 'http' ? 'http://192.168.1.100' : '192.168.1.100'}
+              placeholder={formData.proxyType === 'http' ? 'http://192.168.1.100 or http://[2a01::1]' : '192.168.1.100 or 2a01::1'}
               disabled={isLoading}
               className="input-futuristic"
             />

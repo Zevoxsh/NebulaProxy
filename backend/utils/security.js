@@ -160,23 +160,32 @@ export async function validateBackendUrlWithDNS(url) {
   const isIpAddress = ipRegex.test(hostname);
 
   if (!isIpAddress) {
-    // Resolve DNS to check if it points to private IP (DNS rebinding protection)
+    // Resolve DNS (both A and AAAA) to check for DNS rebinding
+    const allowPrivate = config?.proxy?.allowPrivateBackends === true;
+
+    const ipv4Private = [
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+      /^192\.168\./,
+      /^127\./,
+      /^169\.254\./,
+    ];
+    const ipv6Private = [
+      /^::1$/,
+      /^fe80:/,
+      /^fc[0-9a-f][0-9a-f]:/i,
+      /^fd[0-9a-f][0-9a-f]:/i,
+    ];
+
+    let resolved = false;
+
+    // Check A records (IPv4)
     try {
       const addresses = await dns.resolve4(hostname);
-
-      // Check if any resolved IP is private
-      const allowPrivate = config?.proxy?.allowPrivateBackends === true;
+      resolved = true;
       if (!allowPrivate) {
-        const privateRanges = [
-          /^10\./,                          // 10.0.0.0/8
-          /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
-          /^192\.168\./,                    // 192.168.0.0/16
-          /^127\./,                         // 127.0.0.0/8 (loopback)
-          /^169\.254\./,                    // 169.254.0.0/16 (link-local)
-        ];
-
         for (const ip of addresses) {
-          for (const range of privateRanges) {
+          for (const range of ipv4Private) {
             if (range.test(ip)) {
               throw new Error(`DNS resolves to private IP: ${ip} (DNS rebinding attack detected)`);
             }
@@ -184,10 +193,30 @@ export async function validateBackendUrlWithDNS(url) {
         }
       }
     } catch (err) {
-      if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') {
-        throw new Error(`DNS lookup failed for ${hostname}`);
+      if (err.message.includes('DNS rebinding')) throw err;
+      // ENOTFOUND/ENODATA on A records is OK if AAAA exists
+    }
+
+    // Check AAAA records (IPv6)
+    try {
+      const addresses6 = await dns.resolve6(hostname);
+      resolved = true;
+      if (!allowPrivate) {
+        for (const ip of addresses6) {
+          for (const range of ipv6Private) {
+            if (range.test(ip.toLowerCase())) {
+              throw new Error(`DNS resolves to private IPv6: ${ip} (DNS rebinding attack detected)`);
+            }
+          }
+        }
       }
-      throw err;
+    } catch (err) {
+      if (err.message.includes('DNS rebinding')) throw err;
+      // ENOTFOUND/ENODATA on AAAA records is OK if A exists
+    }
+
+    if (!resolved) {
+      throw new Error(`DNS lookup failed for ${hostname}`);
     }
   } else {
     // It's an IP address - validate with existing logic
