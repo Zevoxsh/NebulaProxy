@@ -13,8 +13,9 @@ import net   from 'net';
 import { database } from './database.js';
 import { config   } from '../config/config.js';
 
-// Minimum interval regardless of config (avoid hammering backends)
-const MIN_INTERVAL_MS = 30_000; // 30s
+// Minimum interval — 5s is safe for most setups, avoids hammering backends
+// while still allowing fast failover detection.
+const MIN_INTERVAL_MS = 5_000;
 
 function parseBackend(rawUrl, overridePort, defaultProto = 'http', defaultPort = 80) {
   let url;

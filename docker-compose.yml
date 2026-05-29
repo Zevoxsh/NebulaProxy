@@ -97,6 +97,10 @@ services:
           memory: 128M
 
   # ── Backend ────────────────────────────────────────────────────────────────
+  # SECURITY NOTE: network_mode: host is required because the proxy must bind
+  # to arbitrary TCP/UDP ports at runtime (80, 443, custom game ports, etc.).
+  # Mitigation: drop all unneeded Linux capabilities and prevent privilege
+  # escalation. The proxy only needs NET_BIND_SERVICE (ports < 1024).
   backend:
     build:
       context: ./backend
@@ -105,6 +109,14 @@ services:
     env_file:
       - path: .env.nebula
         required: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # bind to ports < 1024 (80, 443)
+      - CHOWN              # write let's encrypt certs
+      - DAC_OVERRIDE       # read/write cert files as non-root
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/www/letsencrypt:/var/www/letsencrypt
@@ -161,6 +173,12 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: nebulaproxy-frontend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # nginx binds port 80
     ports:
       - "0.0.0.0:3001:80"
       - "[::]:3001:80"
@@ -187,6 +205,10 @@ services:
       context: ./watchdog
       dockerfile: Dockerfile
     container_name: nebulaproxy-watchdog
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
     volumes:
       - /etc/NebulaProxy:/repo
