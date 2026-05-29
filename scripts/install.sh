@@ -101,6 +101,38 @@ start_docker() {
 
 start_docker
 
+# ── Configure Docker daemon (DNS + MTU + IPv6) ────────────────────────────────
+configure_docker() {
+  echo "[CFG] Configuration du daemon Docker"
+
+  cat > /etc/docker/daemon.json << 'DAEMON_EOF'
+{
+  "dns": ["1.1.1.1", "8.8.8.8"],
+  "mtu": 1450,
+  "ipv6": true,
+  "fixed-cidr-v6": "fd00:docker::/64"
+}
+DAEMON_EOF
+
+  # Préférer IPv4 pour les connexions sortantes (évite les timeouts IPv6 vers Docker Hub)
+  if ! grep -q "precedence ::ffff:0:0/96 100" /etc/gai.conf 2>/dev/null; then
+    echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
+  fi
+
+  # Redémarre Docker pour prendre en compte la config
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart docker
+  elif command -v rc-service >/dev/null 2>&1; then
+    rc-service docker restart
+  fi
+
+  sleep 3
+  docker info >/dev/null 2>&1 || { echo "[ERROR] Docker n'a pas redémarré"; exit 1; }
+  echo "[OK] Docker configuré"
+}
+
+configure_docker
+
 echo "[PKG] Déploiement NebulaProxy"
 
 cd /etc
@@ -116,7 +148,24 @@ cd NebulaProxy
 echo "[PKG] Installation Node"
 npm run install:all
 
+# ── Pre-pull Docker images (contourne les timeouts BuildKit) ──────────────────
+echo "🐳 Téléchargement des images Docker"
+IMAGES="
+  node:20.18-alpine
+  node:20-alpine
+  postgres:16-alpine
+  redis:7.4-alpine
+  nginx:alpine
+  alpine:3.21
+  tecnativa/docker-socket-proxy:0.3.0
+"
+for img in $IMAGES; do
+  echo "[PULL] $img"
+  docker pull "$img" || { echo "[WARN] Échec pull $img, le build va réessayer"; }
+done
+
 echo "🐳 Lancement Docker Compose"
-docker compose up -d --build 2>/dev/null || docker-compose up -d --build
+DOCKER_BUILDKIT=0 docker compose up -d --build 2>/dev/null || \
+  DOCKER_BUILDKIT=0 docker-compose up -d --build
 
 echo "[OK] Tout est prêt [START]"
