@@ -301,13 +301,32 @@ export default function StatusPage() {
       setData(res.data);
       setLastRefresh(new Date());
       setError(false);
+
+      // Apply branding from API response (status page can be shared without auth)
+      const b = res.data?.branding;
+      if (b) {
+        const pageTitle = b.statusPageTitle || `${b.appName || appName} — Status`;
+        document.title = pageTitle;
+
+        // Open Graph meta tags for link previews (Slack, Discord, Twitter…)
+        const setMeta = (prop, content, attr = 'property') => {
+          let el = document.querySelector(`meta[${attr}="${prop}"]`);
+          if (!el) { el = document.createElement('meta'); el.setAttribute(attr, prop); document.head.appendChild(el); }
+          el.setAttribute('content', content);
+        };
+        setMeta('og:title',       pageTitle);
+        setMeta('og:description', b.statusPageDescription || `Live service status for ${b.appName || appName}`);
+        setMeta('og:type',        'website');
+        if (b.logoUrl) setMeta('og:image', b.logoUrl);
+        setMeta('description',    b.statusPageDescription || `Live service status for ${b.appName || appName}`, 'name');
+      }
     } catch { setError(true); }
     finally   {
       setLoading(false);
       lastRefreshTime.current = Date.now();
       setCountdown(1);
     }
-  }, []);
+  }, [appName]);
 
   useEffect(() => { fetchBranding(); }, []);
 

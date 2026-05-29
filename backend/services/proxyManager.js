@@ -25,6 +25,7 @@ import { circuitBreaker } from './circuitBreaker.js';
 import { geoIpService } from './geoIpService.js';
 import { redisService } from './redis.js';
 import { logBatchQueue } from './logBatchQueue.js';
+import { bandwidthTracker } from './bandwidthTracker.js';
 
 // Lazy singleton for live traffic tracking (avoids circular deps at load time)
 let _lts = null;
@@ -2017,6 +2018,13 @@ const escapeHtml = (value) => String(value ?? '')
       if (statusCode >= 500) logLevel = 'error';
       else if (statusCode >= 400) logLevel = 'warning';
       else if (statusCode >= 300) logLevel = 'info';
+
+      // Bandwidth tracking (fire-and-forget — never blocks response)
+      proxyRes.on('end', () => {
+        if (domain.user_id) {
+          bandwidthTracker.record(domain.user_id, bytesReceived, responseSize).catch(() => {});
+        }
+      });
 
       // Log the request (batched for performance)
       proxyRes.on('end', () => {

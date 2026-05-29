@@ -3,6 +3,7 @@ import { database } from '../services/database.js';
 import { config } from '../config/config.js';
 import { pool } from '../config/database.js';
 import { generateRegistrationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
+import { bandwidthTracker } from '../services/bandwidthTracker.js';
 
 async function getUserPasskeyCount(userId) {
   const tableCandidates = ['user_passkeys', 'webauthn_credentials', 'passkeys'];
@@ -417,5 +418,39 @@ export async function userRoutes(fastify, options) {
 
     await pool.query('DELETE FROM user_passkeys WHERE id = $1 AND user_id = $2', [passkeyId, request.user.id]);
     reply.send({ success: true });
+  });
+
+  // Bandwidth usage for current user (today + last 30 days)
+  fastify.get('/bandwidth', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    const userId = request.user.id;
+
+    const user = await pool.query(
+      'SELECT bandwidth_quota_bytes FROM users WHERE id = $1', [userId]
+    );
+    const quota = user.rows[0]?.bandwidth_quota_bytes ?? 0;
+
+    const { exceeded, used } = await bandwidthTracker.checkQuota(userId, quota);
+
+    const history = await pool.query(
+      `SELECT date, bytes_in, bytes_out, bytes_in + bytes_out AS total
+       FROM bandwidth_usage
+       WHERE user_id = $1 AND date >= CURRENT_DATE - INTERVAL '30 days'
+       ORDER BY date DESC`,
+      [userId]
+    );
+
+    reply.send({
+      quota:   Number(quota),
+      used:    Number(used),
+      exceeded,
+      history: history.rows.map(r => ({
+        date:     r.date,
+        bytesIn:  Number(r.bytes_in),
+        bytesOut: Number(r.bytes_out),
+        total:    Number(r.total)
+      }))
+    });
   });
 }

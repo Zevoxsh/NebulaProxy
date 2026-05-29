@@ -54,6 +54,8 @@ import updateService from './services/updateService.js';
 import { healthCheckService } from './services/healthCheckService.js';
 import WebSocketManager from './services/websocketManager.js';
 import NotificationService from './services/notificationService.js';
+import { resourceMonitor } from './services/resourceMonitor.js';
+import { bandwidthTracker } from './services/bandwidthTracker.js';
 import { urlFilterService } from './services/urlFilterService.js';
 import { logBroadcastService } from './services/logBroadcastService.js';
 import { smtpProxyService } from './services/smtpProxyService.js';
@@ -530,6 +532,16 @@ fastify.decorate('authenticate', async function(request, reply) {
 });
 
 // Role-based authorization decorator
+// Role hierarchy: admin > operator > user > viewer
+// When a route accepts ['admin', 'user'] it also implicitly accepts 'operator'
+// (operators can do everything users can).
+const ROLE_HIERARCHY = {
+  admin:    4,
+  operator: 3,
+  user:     2,
+  viewer:   1
+};
+
 fastify.decorate('authorize', (roles) => {
   return async function(request, reply) {
     await fastify.authenticate(request, reply);
@@ -538,18 +550,42 @@ fastify.decorate('authorize', (roles) => {
       return;
     }
 
-    if (!roles.includes(request.user.role)) {
+    const userRole   = request.user.role;
+    const userLevel  = ROLE_HIERARCHY[userRole] ?? 0;
+
+    // Resolve whether the user's role satisfies any of the required roles.
+    // Admin always passes. Operator passes any route that accepts 'user'.
+    // Viewer passes only routes that explicitly include 'viewer'.
+    const allowed = roles.some(required => {
+      if (required === 'admin')    return userRole === 'admin';
+      if (required === 'operator') return userLevel >= ROLE_HIERARCHY.operator;
+      if (required === 'viewer')   return userLevel >= ROLE_HIERARCHY.viewer;
+      if (required === 'user')     return userLevel >= ROLE_HIERARCHY.user;
+      return false;
+    });
+
+    if (!allowed) {
       return reply.code(403).send({
         error: 'Forbidden',
-        message: 'Insufficient permissions'
+        message: `Role '${userRole}' is not allowed to perform this action`
       });
     }
 
-    if (request.user.role === 'admin' && roles.includes('admin') && request.user.adminPinVerified !== true) {
-      return reply.code(423).send({
-        error: 'Admin PIN required',
-        message: 'Admin PIN verification is required to access admin features.'
-      });
+    // Admin PIN: required + must have been verified within the last 4 hours.
+    // adminPinVerifiedAt is a server-signed JWT claim — cannot be forged client-side.
+    if (userRole === 'admin' && roles.includes('admin')) {
+      const PIN_TTL_MS = 4 * 60 * 60 * 1000;
+      const verifiedAt = request.user.adminPinVerifiedAt;
+      const pinExpired = !verifiedAt || (Date.now() - verifiedAt) > PIN_TTL_MS;
+
+      if (request.user.adminPinVerified !== true || pinExpired) {
+        return reply.code(423).send({
+          error: 'Admin PIN required',
+          message: pinExpired
+            ? 'Admin session expired (4 h). Please re-enter your admin PIN.'
+            : 'Admin PIN verification is required to access admin features.'
+        });
+      }
     }
   };
 });
@@ -569,10 +605,16 @@ fastify.decorate('requireAdmin', async function(request, reply) {
     });
   }
 
-  if (request.user.adminPinVerified !== true) {
+  const PIN_TTL_MS  = 4 * 60 * 60 * 1000;
+  const verifiedAt  = request.user.adminPinVerifiedAt;
+  const pinExpired  = !verifiedAt || (Date.now() - verifiedAt) > PIN_TTL_MS;
+
+  if (request.user.adminPinVerified !== true || pinExpired) {
     return reply.code(423).send({
       error: 'Admin PIN required',
-      message: 'Admin PIN verification is required to access admin features.'
+      message: pinExpired
+        ? 'Admin session expired (4 h). Please re-enter your admin PIN.'
+        : 'Admin PIN verification is required to access admin features.'
     });
   }
 });
@@ -1011,6 +1053,13 @@ const start = async () => {
         fastify.log.warn({ error }, 'Failed to send proxy startup notification');
       }
 
+      // Start resource monitoring (CPU / memory / disk) with auto-resolution
+      resourceMonitor.start();
+
+      // Start bandwidth tracker (Redis counters → PostgreSQL flush every 5 min)
+      bandwidthTracker.start();
+      fastify.log.info('Resource monitor started (60s interval)');
+
       // Initialize Log Broadcast Service
       logBroadcastService.setWebSocketManager(websocketManager);
       fastify.log.info('Log broadcast service initialized');
@@ -1127,6 +1176,9 @@ process.on('SIGTERM', async () => {
   fastify.log.info('SIGTERM received, shutting down gracefully');
 
   try {
+    resourceMonitor.stop();
+    bandwidthTracker.stop();
+
     if (container.has('notifications')) {
       await container.get('notifications').sendProxyLifecycleNotification('stopping', {
         signal: 'SIGTERM',

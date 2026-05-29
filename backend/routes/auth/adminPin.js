@@ -184,7 +184,10 @@ export async function adminPinRoutes(fastify, options) {
     );
 
     sendAuthSuccess(request, reply, user, {
-      tokenClaims: { adminPinVerified: true },
+      tokenClaims: {
+        adminPinVerified:   true,
+        adminPinVerifiedAt: Date.now()   // checked by authorize() — re-verify after 4h
+      },
       responseData: { message: 'Admin PIN verified.' }
     });
   });

@@ -70,9 +70,29 @@ export async function statusRoutes(fastify, options) {
           down:     services.filter(s => s.status === 'down').length,
         };
 
+        // Include public branding so the status page can show the instance name/logo
+        let branding = null;
+        try {
+          const { pool } = await import('../config/database.js');
+          const bResult = await pool.query(
+            "SELECT value FROM system_config WHERE key = 'branding_config' LIMIT 1"
+          );
+          if (bResult.rows.length) {
+            const b = JSON.parse(bResult.rows[0].value);
+            branding = {
+              appName:    b.appName    || 'NebulaProxy',
+              logoUrl:    b.logoUrl    || null,
+              primaryColor: b.primaryColor || '#9D4EDD',
+              statusPageTitle:       b.statusPageTitle       || null,
+              statusPageDescription: b.statusPageDescription || null
+            };
+          }
+        } catch { /* branding is optional */ }
+
         return {
           services,
           summary,
+          branding,
           generatedAt: new Date().toISOString(),
         };
       } catch (error) {

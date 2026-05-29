@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, KeyRound, Sparkles, Lock } from 'lucide-react';
+import { Loader2, AlertCircle, KeyRound, Sparkles, Lock, LogIn } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useBrandingStore } from '../store/brandingStore';
@@ -27,6 +27,15 @@ export default function Login() {
   const [bootstrapChangeStep, setBootstrapChangeStep] = useState(false);
   const [bootstrapNewPassword, setBootstrapNewPassword] = useState('');
   const [bootstrapConfirmPassword, setBootstrapConfirmPassword] = useState('');
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [oidcProvider, setOidcProvider] = useState('SSO');
+
+  useEffect(() => {
+    fetch('/api/auth/oidc/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.enabled) { setOidcEnabled(true); setOidcProvider(d.providerName || 'SSO'); } })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -393,17 +402,29 @@ export default function Login() {
               )}
 
               {!twoFactorStep && !bootstrapChangeStep && (
-                <button
-                  type="button"
-                  disabled={loading || passkeyLoading}
-                  onClick={() => handlePasskeyLogin(false)}
-                  className="btn-secondary w-full"
-                >
-                  <span className="flex items-center justify-center gap-2">
-                    <KeyRound className="w-4 h-4" />
-                    {passkeyLoading ? 'Checking passkey...' : 'Sign in with passkey'}
-                  </span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={loading || passkeyLoading}
+                    onClick={() => handlePasskeyLogin(false)}
+                    className="btn-secondary w-full"
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      <KeyRound className="w-4 h-4" />
+                      {passkeyLoading ? 'Checking passkey...' : 'Sign in with passkey'}
+                    </span>
+                  </button>
+
+                  {oidcEnabled && (
+                    <a
+                      href="/api/auth/oidc/login"
+                      className="btn-secondary w-full flex items-center justify-center gap-2 no-underline"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      Sign in with {oidcProvider}
+                    </a>
+                  )}
+                </>
               )}
 
               <button type="submit" disabled={loading} className="btn-primary w-full">
