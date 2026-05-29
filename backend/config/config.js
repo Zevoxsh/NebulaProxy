@@ -75,7 +75,7 @@ export { initializeConfig };
 export const config = {
   // Server
   get port() { return parseInt(getConfig('PORT', '3000'), 10); },
-  get host() { return getConfig('HOST', '0.0.0.0'); },
+  get host() { return getConfig('HOST', '::'); },
   get nodeEnv() { return getConfig('NODE_ENV', 'development'); },
   logging: {
     get level() { return (getConfig('LOG_LEVEL', 'warn') || 'warn').toLowerCase(); },

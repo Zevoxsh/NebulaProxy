@@ -601,12 +601,12 @@ const escapeHtml = (value) => String(value ?? '')
         server.maxConnections = this.TCP_MAX_CONNECTIONS;
       }
 
-      const listenArgs = [domain.external_port, '0.0.0.0'];
+      const listenArgs = [domain.external_port, '::'];
       if (this.TCP_BACKLOG > 0) {
         listenArgs.push(this.TCP_BACKLOG);
       }
       listenArgs.push(() => {
-        console.log(`[TCP Proxy ${domain.id}] Listening on 0.0.0.0:${domain.external_port}`);
+        console.log(`[TCP Proxy ${domain.id}] Listening on [::]:${domain.external_port}`);
       });
       server.listen(...listenArgs);
 
@@ -824,9 +824,9 @@ const escapeHtml = (value) => String(value ?? '')
 
     // Get initial backend info for logging
     const defaultTarget = loadBalancer.getBackendTarget(domain, null, 'udp');
-    serverSocket.bind(domain.external_port, '0.0.0.0', () => {
+    serverSocket.bind(domain.external_port, '::', () => {
       const lbStatus = domain.load_balancing_enabled ? ' (load balanced)' : '';
-      console.log(`[UDP Proxy ${domain.id}] Listening on 0.0.0.0:${domain.external_port} -> ${defaultTarget.hostname}:${defaultTarget.port}${lbStatus}`);
+      console.log(`[UDP Proxy ${domain.id}] Listening on [::]:${domain.external_port} -> ${defaultTarget.hostname}:${defaultTarget.port}${lbStatus}`);
     });
 
     this.proxies.set(domain.id, {
@@ -1279,7 +1279,7 @@ const escapeHtml = (value) => String(value ?? '')
       }
 
       // Start listening
-      const listenArgs = [config.minecraftProxy.port, '0.0.0.0'];
+      const listenArgs = [config.minecraftProxy.port, '::'];
       if (this.MINECRAFT_BACKLOG > 0) {
         listenArgs.push(this.MINECRAFT_BACKLOG);
       }
@@ -1393,7 +1393,7 @@ const escapeHtml = (value) => String(value ?? '')
         }
       });
 
-      this.httpServer.listen(80, '0.0.0.0', () => {
+      this.httpServer.listen(80, '::', () => {
         console.log('[ProxyManager] Shared HTTP server listening on port 80');
         resolve();
       });
@@ -1469,7 +1469,7 @@ const escapeHtml = (value) => String(value ?? '')
         }
       });
 
-      this.httpsServer.listen(443, '0.0.0.0', () => {
+      this.httpsServer.listen(443, '::', () => {
         console.log('[ProxyManager] Shared HTTPS server listening on port 443');
         resolve();
       });

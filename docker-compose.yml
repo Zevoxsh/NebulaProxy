@@ -4,6 +4,11 @@ name: nebulaproxy
 networks:
   nebula-net:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+        - subnet: fd00:nebula::/48
 
 services:
 
@@ -152,7 +157,8 @@ services:
       dockerfile: Dockerfile
     container_name: nebulaproxy-frontend
     ports:
-      - "3001:80"
+      - "0.0.0.0:3001:80"
+      - "[::]:3001:80"
     extra_hosts:
       - "backend:host-gateway"   # résout 'backend' vers l'hôte (backend en network_mode host)
     restart: unless-stopped
