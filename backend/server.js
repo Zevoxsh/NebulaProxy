@@ -18,6 +18,7 @@ import { ldapAuth } from './services/ldap.js';
 import { database } from './services/database.js';
 import { redisService } from './services/redis.js';
 import { geoIpService } from './services/geoIpService.js';
+import { container } from './services/container.js';
 import { ddosProtectionService } from './services/ddosProtectionService.js';
 import { testPostgresConnection, closePool } from './config/database.js';
 import { authRoutes } from './routes/auth/index.js';
@@ -993,7 +994,7 @@ const start = async () => {
       // Initialize Notification Service
       notificationService = new NotificationService(fastify.log, websocketManager);
       await notificationService.initialize();
-      global.notificationService = notificationService;
+      container.set('notifications', notificationService);
       fastify.notificationService = notificationService;
       fastify.log.info('Notification service initialized');
       if (config.logging.startupSummary) {
@@ -1126,8 +1127,8 @@ process.on('SIGTERM', async () => {
   fastify.log.info('SIGTERM received, shutting down gracefully');
 
   try {
-    if (global.notificationService) {
-      await global.notificationService.sendProxyLifecycleNotification('stopping', {
+    if (container.has('notifications')) {
+      await container.get('notifications').sendProxyLifecycleNotification('stopping', {
         signal: 'SIGTERM',
         source: 'shutdown'
       }, {
@@ -1221,8 +1222,8 @@ process.on('SIGINT', async () => {
   fastify.log.info('SIGINT received, shutting down gracefully');
 
   try {
-    if (global.notificationService) {
-      await global.notificationService.sendProxyLifecycleNotification('stopping', {
+    if (container.has('notifications')) {
+      await container.get('notifications').sendProxyLifecycleNotification('stopping', {
         signal: 'SIGINT',
         source: 'shutdown'
       }, {

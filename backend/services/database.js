@@ -118,17 +118,32 @@ class DatabaseService {
         continue;
       }
       console.log(`[Database] Applying migration: ${file}`);
+
+      // Each migration runs in a transaction — partial failures roll back cleanly.
+      const client = await this.pgPool.connect();
       try {
-        await this.pgPool.query(sql);
-        await this.pgPool.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+        await client.query('COMMIT');
       } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+
         if (file === '001_initial_schema.sql' && error.code === '42710') {
+          // Schema already existed before migrations were introduced — safe to mark as applied.
           console.warn('[Database] Base schema already exists. Marking 001_initial_schema.sql as applied.');
-          await this.pgPool.query('INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
+          await this.pgPool.query(
+            'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+            [file]
+          );
+          client.release();
           continue;
         }
-        throw error;
+
+        client.release();
+        throw new Error(`[Database] Migration failed — rolled back: ${file}\n${error.message}`);
       }
+      client.release();
     }
   }
 

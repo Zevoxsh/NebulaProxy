@@ -64,10 +64,28 @@ function getAllowedSetupHosts(reqHostHeader) {
   return allowedHosts;
 }
 
-function getPrimaryIpAddress() {
-  const interfaces = networkInterfaces();
+function isDockerInterface(name) {
+  return /^(docker|br-|veth|lo)/.test(name);
+}
 
-  for (const entries of Object.values(interfaces)) {
+function getPrimaryIpAddress() {
+  // 1. Env var set by install.sh (most reliable — actual public IP)
+  if (process.env.PUBLIC_IP) return process.env.PUBLIC_IP;
+
+  const ifaces = networkInterfaces();
+
+  // 2. First non-Docker, non-internal IPv4
+  for (const [name, entries] of Object.entries(ifaces)) {
+    if (isDockerInterface(name)) continue;
+    for (const entry of entries || []) {
+      if (entry?.family === 'IPv4' && !entry.internal && entry?.address) {
+        return entry.address;
+      }
+    }
+  }
+
+  // 3. Fallback: any non-internal IPv4
+  for (const entries of Object.values(ifaces)) {
     for (const entry of entries || []) {
       if (entry?.family === 'IPv4' && !entry.internal && entry?.address) {
         return entry.address;
@@ -79,15 +97,22 @@ function getPrimaryIpAddress() {
 }
 
 function getPrimaryIpv6Address() {
-  const interfaces = networkInterfaces();
+  // 1. Env var set by install.sh
+  if (process.env.PUBLIC_IPV6) return process.env.PUBLIC_IPV6;
 
-  for (const entries of Object.values(interfaces)) {
+  const ifaces = networkInterfaces();
+
+  // 2. First non-Docker, non-internal, non-link-local, non-ULA IPv6
+  for (const [name, entries] of Object.entries(ifaces)) {
+    if (isDockerInterface(name)) continue;
     for (const entry of entries || []) {
       if (
         entry?.family === 'IPv6' &&
         !entry.internal &&
         entry?.address &&
-        !entry.address.startsWith('fe80:') // skip link-local
+        !entry.address.startsWith('fe80:') &&   // link-local
+        !entry.address.startsWith('fc') &&       // ULA
+        !entry.address.startsWith('fd')          // ULA (Docker ranges)
       ) {
         return entry.address;
       }

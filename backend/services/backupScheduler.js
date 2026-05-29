@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { pool } from '../config/database.js';
 import { databaseBackupService } from './databaseBackupService.js';
 import { s3BackupService } from './s3BackupService.js';
+import { container } from './container.js';
 
 const LOCAL_BACKUP_LIMIT = 3;
 
@@ -243,8 +244,8 @@ class BackupScheduler {
         : `Automatic backup failed: ${errorMessage}`;
 
       // Send via notification service (will be implemented)
-      if (global.notificationService) {
-        await global.notificationService.send({
+      if (container.has('notifications')) {
+        await container.get('notifications').send({
           title: status === 'success' ? 'Backup Success' : 'Backup Failed',
           message,
           severity: status === 'success' ? 'success' : 'error',

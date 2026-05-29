@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import configManager from '../config/config-manager.js';
 import { config } from '../config/config.js';
+import { database } from './database.js';
 
 /**
  * Queue Service
@@ -83,7 +84,7 @@ class QueueService {
       await this.redis.zadd(this.PENDING_KEY, nextRetryAt, jobId);
 
       // Audit log
-      const { database } = await import('./database.js');
+      // database imported statically at top of file
       await database.insertRetryAudit(jobId, jobType, 0, 'queued', null);
 
       console.log(`[Queue] Enqueued ${jobType} job ${jobId} for retry in ${config.queue.retryIntervalMinutes}min`);
@@ -167,7 +168,7 @@ class QueueService {
       await this.redis.del(`nebulaproxy:queue:job:${jobId}`);
 
       // Audit log
-      const { database } = await import('./database.js');
+      // database imported statically at top of file
       await database.insertRetryAudit(jobId, null, null, 'success', null);
 
       console.log(`[Queue] Job ${jobId} completed successfully`);
@@ -220,7 +221,7 @@ class QueueService {
       await this.redis.zadd(this.PENDING_KEY, nextRetryAt, jobId);
 
       // Audit log
-      const { database } = await import('./database.js');
+      // database imported statically at top of file
       await database.insertRetryAudit(jobId, job.type, attemptCount, 'retry', error.message);
 
       console.log(`[Queue] Job ${jobId} retry ${attemptCount}/${maxAttempts} scheduled for ${new Date(nextRetryAt).toISOString()}`);
@@ -257,7 +258,7 @@ class QueueService {
       }
 
       // Insert to PostgreSQL DLQ
-      const { database } = await import('./database.js');
+      // database imported statically at top of file
       await database.insertJobToDLQ({
         jobId,
         jobType: job.type,
@@ -314,7 +315,7 @@ class QueueService {
       const pendingCount = await this.redis.zcard(this.PENDING_KEY);
       const processingCount = await this.redis.scard(this.PROCESSING_KEY);
 
-      const { database } = await import('./database.js');
+      // database imported statically at top of file
       const dlqCount = await database.getDLQCount();
 
       return {

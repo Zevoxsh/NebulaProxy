@@ -102,6 +102,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: nebulaproxy-backend
+    env_file:
+      - path: .env.nebula
+        required: false
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/www/letsencrypt:/var/www/letsencrypt
@@ -122,6 +125,8 @@ services:
       - DB_USER=nebulaproxy
       - DB_NAME=nebulaproxy
       - DOCKER_HOST=tcp://127.0.0.1:2375
+      - PUBLIC_IP=${PUBLIC_IP:-}
+      - PUBLIC_IPV6=${PUBLIC_IPV6:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 15s
