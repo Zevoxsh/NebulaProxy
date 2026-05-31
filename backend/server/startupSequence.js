@@ -153,7 +153,9 @@ export async function startupSequence(fastify, config) {
   step('Update Service', 'OK', 'initialized');
 
   // 7. Start Fastify listener
-  await fastify.listen({ port: config.port, host: config.host });
+  // Always bind to all interfaces inside the container so the healthcheck
+  // (wget localhost:3000) always works, regardless of the configured external HOST.
+  await fastify.listen({ port: config.port, host: '0.0.0.0' });
   fastify.log.info(`API listening on ${config.host}:${config.port}`);
   step('API Listener', 'OK', `${config.host}:${config.port}`);
 

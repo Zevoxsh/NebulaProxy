@@ -163,7 +163,7 @@ services:
       - PUBLIC_IP=${PUBLIC_IP:-}
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -202,6 +202,9 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE    # nginx binds port 80
+      - CHOWN               # nginx needs to chown its cache dirs at startup
+      - SETUID              # nginx drops privileges from root → nginx user
+      - SETGID
     ports:
       - "0.0.0.0:3001:80"
       - "[::]:3001:80"
