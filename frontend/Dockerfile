@@ -34,9 +34,9 @@ RUN rm /etc/nginx/conf.d/default.conf.default 2>/dev/null || true
 # Expose HTTP and HTTPS ports
 EXPOSE 80 443
 
-# Health check
+# Health check (wget is available via busybox in nginx:alpine)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:80/ || exit 1
+    CMD wget -qO- http://localhost:80/ > /dev/null || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]
