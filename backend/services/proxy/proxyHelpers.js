@@ -2,6 +2,7 @@
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
 
+import { logger } from '../../utils/logger.js';
 export class ProxyHelpers {
 // ==================== HELPERS ====================
 

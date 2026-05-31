@@ -2,6 +2,7 @@
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
 import { lts } from '../proxyContext.js';
+import { logger } from '../../utils/logger.js';
 
 export class TcpProxy {
 // ==================== TCP PROXY ====================
