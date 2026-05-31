@@ -12,6 +12,7 @@
 import { monitoringService } from './monitoringService.js';
 import { container } from './container.js';
 import { pool } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 
 const HYSTERESIS = 5;       // % below threshold before resolving
 const CHECK_INTERVAL_MS = 60_000;
@@ -22,9 +23,9 @@ class ResourceMonitor {
 
   async start() {
     if (this.#timer) return;
-    this.#timer = setInterval(() => this.#check().catch(console.error), CHECK_INTERVAL_MS);
+    this.#timer = setInterval(() => this.#check().catch(err => logger.error(err)), CHECK_INTERVAL_MS);
     // Run once immediately so first alert isn't delayed a full minute
-    this.#check().catch(console.error);
+    this.#check().catch(err => logger.error(err));
   }
 
   stop() {
@@ -75,7 +76,7 @@ class ResourceMonitor {
   async #sendAlert(type, value, threshold) {
     const ns = container.has('notifications') ? container.get('notifications') : null;
     if (!ns) return;
-    await ns.sendResourceAlert(type, Math.round(value), threshold).catch(console.error);
+    await ns.sendResourceAlert(type, Math.round(value), threshold).catch(err => logger.error(err));
   }
 
   async #sendResolution(type, value, threshold) {
@@ -90,7 +91,7 @@ class ResourceMonitor {
       severity: 'success',
       event:    'resource_resolved',
       metadata: { type, value: Math.round(value), threshold }
-    }).catch(console.error);
+    }).catch(err => logger.error(err));
   }
 }
 

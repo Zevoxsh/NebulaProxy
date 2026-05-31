@@ -12,12 +12,35 @@ networks:
 
 services:
 
-  # ── Docker socket proxy ────────────────────────────────────────────────────
-  # Exposes only the needed Docker API subset — backend/watchdog never touch
-  # /var/run/docker.sock directly.
-  socket-proxy:
+  # ── Docker socket proxy (read-only) ────────────────────────────────────────
+  # Backend monitoring only — no POST, no BUILD. Cannot create/stop/modify containers.
+  socket-proxy-ro:
     image: tecnativa/docker-socket-proxy:0.3.0
-    container_name: nebulaproxy-socket-proxy
+    container_name: nebulaproxy-socket-proxy-ro
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      VOLUMES: 1
+    ports:
+      - "127.0.0.1:2375:2375"   # accessible depuis le backend en network_mode host
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Docker socket proxy (read-write) ────────────────────────────────────────
+  # Watchdog only — POST + BUILD required to rebuild and restart containers on update.
+  # Not published on host, accessible only via nebula-net.
+  socket-proxy-rw:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: nebulaproxy-socket-proxy-rw
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -29,8 +52,6 @@ services:
       INFO: 1
       NETWORKS: 1
       VOLUMES: 1
-    ports:
-      - "127.0.0.1:2375:2375"   # accessible depuis le backend en host network
     networks:
       - nebula-net
     deploy:
@@ -120,7 +141,9 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/www/letsencrypt:/var/www/letsencrypt
-      - /opt/mailcow-dockerized/data/web/.well-known:/var/www/letsencrypt/.well-known
+      # Optional: mount an extra .well-known from another service (e.g. mailcow).
+      # Add this line to a docker-compose.override.yml if needed:
+      #   - /opt/mailcow-dockerized/data/web/.well-known:/var/www/letsencrypt/.well-known
       - /etc/NebulaProxy:/repo
       - backups:/app/backups
       - uploads:/app/uploads
@@ -140,7 +163,7 @@ services:
       - PUBLIC_IP=${PUBLIC_IP:-}
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -150,7 +173,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      socket-proxy:
+      socket-proxy-ro:
         condition: service_started
     # host network = expose TOUS les ports dynamiquement (TCP/UDP domaines, 80, 443, 3000, 25565, SMTP...)
     # Aucun port n'a besoin d'être listé — tout ce que le backend écoute est accessible sur l'hôte.
@@ -161,11 +184,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 768M
+          cpus: '2.0'
+          memory: 1024M
         reservations:
-          cpus: '0.1'
-          memory: 128M
+          cpus: '0.2'
+          memory: 256M
 
   # ── Frontend ───────────────────────────────────────────────────────────────
   frontend:
@@ -179,9 +202,11 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE    # nginx binds port 80
+    # SECURITY: Bind only to localhost — access via a TLS-terminating reverse proxy
+    # (nginx, Caddy, Traefik) pointed at 127.0.0.1:3001.
+    # To expose externally (dev only): change to 0.0.0.0:3001:80.
     ports:
-      - "0.0.0.0:3001:80"
-      - "[::]:3001:80"
+      - "127.0.0.1:3001:80"
     extra_hosts:
       - "backend:host-gateway"   # résout 'backend' vers l'hôte (backend en network_mode host)
     restart: unless-stopped
@@ -218,17 +243,18 @@ services:
       - REPO_PATH=/repo
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - DOCKER_HOST=tcp://socket-proxy:2375
+      - DOCKER_HOST=tcp://socket-proxy-rw:2375
       - COMPOSE_PROJECT_NAME=nebulaproxy
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f update-watchdog.sh > /dev/null && echo ok || exit 1"]
+      test: ["CMD-SHELL", "find /tmp/watchdog.heartbeat -mmin -2 | grep -q ."]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
     depends_on:
       redis:
         condition: service_healthy
-      socket-proxy:
+      socket-proxy-rw:
         condition: service_started
     networks:
       - nebula-net

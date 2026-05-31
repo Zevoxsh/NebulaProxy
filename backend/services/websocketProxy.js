@@ -2,6 +2,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import net from 'net';
 import tls from 'tls';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 class WebSocketProxy {
   constructor() {
@@ -11,7 +12,7 @@ class WebSocketProxy {
   async handleUpgrade(req, socket, head, backend, clientIp) {
     const connectionId = `${req.socket.remoteAddress}:${req.socket.remotePort}`;
 
-    console.log(`[WebSocketProxy] Upgrading ${connectionId} -> ${backend.target_host}:${backend.target_port} (${backend.target_protocol})`);
+    logger.info(`[WebSocketProxy] Upgrading ${connectionId} -> ${backend.target_host}:${backend.target_port} (${backend.target_protocol})`);
 
     if (backend.target_protocol === 'http' || backend.target_protocol === 'https') {
       return this.handleUpgradeWithTunnel(req, socket, head, backend, connectionId, clientIp);
@@ -28,17 +29,17 @@ class WebSocketProxy {
       });
 
       backendWs.on('error', (error) => {
-        console.error(`[WebSocketProxy] Backend error for ${connectionId}:`, error.message);
+        logger.error(`[WebSocketProxy] Backend error for ${connectionId}:`, error.message);
         socket.destroy();
         this.activeConnections.delete(connectionId);
       });
 
       backendWs.on('open', () => {
-        console.log(`[WebSocketProxy] Backend connected for ${connectionId}`);
+        logger.info(`[WebSocketProxy] Backend connected for ${connectionId}`);
 
         const wss = new WebSocketServer({ noServer: true });
         wss.handleUpgrade(req, socket, head, (clientWs) => {
-          console.log(`[WebSocketProxy] Client upgraded for ${connectionId}`);
+          logger.info(`[WebSocketProxy] Client upgraded for ${connectionId}`);
 
           this.activeConnections.set(connectionId, {
             client: clientWs,
@@ -65,7 +66,7 @@ class WebSocketProxy {
           });
 
           clientWs.on('close', (code, reason) => {
-            console.log(`[WebSocketProxy] Client closed ${connectionId} (code: ${code})`);
+            logger.info(`[WebSocketProxy] Client closed ${connectionId} (code: ${code})`);
             if (backendWs.readyState === WebSocket.OPEN) {
               backendWs.close(code, reason);
             }
@@ -73,7 +74,7 @@ class WebSocketProxy {
           });
 
           backendWs.on('close', (code, reason) => {
-            console.log(`[WebSocketProxy] Backend closed ${connectionId} (code: ${code})`);
+            logger.info(`[WebSocketProxy] Backend closed ${connectionId} (code: ${code})`);
             if (clientWs.readyState === WebSocket.OPEN) {
               clientWs.close(code, reason);
             }
@@ -81,7 +82,7 @@ class WebSocketProxy {
           });
 
           clientWs.on('error', (error) => {
-            console.error(`[WebSocketProxy] Client error for ${connectionId}:`, error.message);
+            logger.error(`[WebSocketProxy] Client error for ${connectionId}:`, error.message);
             backendWs.close();
             this.activeConnections.delete(connectionId);
           });
@@ -100,7 +101,7 @@ class WebSocketProxy {
 
       const timeout = setTimeout(() => {
         if (backendWs.readyState === WebSocket.CONNECTING) {
-          console.error(`[WebSocketProxy] Backend connection timeout for ${connectionId}`);
+          logger.error(`[WebSocketProxy] Backend connection timeout for ${connectionId}`);
           backendWs.terminate();
           socket.destroy();
           this.activeConnections.delete(connectionId);
@@ -109,14 +110,14 @@ class WebSocketProxy {
 
       backendWs.on('open', () => clearTimeout(timeout));
     } catch (error) {
-      console.error(`[WebSocketProxy] Upgrade failed for ${connectionId}:`, error.message);
+      logger.error(`[WebSocketProxy] Upgrade failed for ${connectionId}:`, error.message);
       socket.destroy();
       this.activeConnections.delete(connectionId);
     }
   }
 
   handleUpgradeWithTunnel(req, socket, head, backend, connectionId, clientIp) {
-    console.log(`[WebSocketProxy] Using TCP tunnel mode for ${connectionId}`);
+    logger.info(`[WebSocketProxy] Using TCP tunnel mode for ${connectionId}`);
 
     const isSecure = backend.target_protocol === 'https';
     const backendSocket = isSecure
@@ -139,7 +140,7 @@ class WebSocketProxy {
 
     const sendUpgradeRequest = () => {
       backendConnected = true;
-      console.log(`[WebSocketProxy] Backend connected for ${connectionId} (secure: ${isSecure})`);
+      logger.info(`[WebSocketProxy] Backend connected for ${connectionId} (secure: ${isSecure})`);
 
       const upgradeRequest = this.buildUpgradeRequest(req, backend, clientIp);
       backendSocket.write(upgradeRequest);
@@ -151,12 +152,12 @@ class WebSocketProxy {
 
     if (isSecure) {
       backendSocket.on('secureConnect', () => {
-        console.log(`[WebSocketProxy] TLS tunnel established for ${connectionId}`);
+        logger.info(`[WebSocketProxy] TLS tunnel established for ${connectionId}`);
         sendUpgradeRequest();
       });
     } else {
       backendSocket.on('connect', () => {
-        console.log(`[WebSocketProxy] TCP tunnel connected to backend for ${connectionId}`);
+        logger.info(`[WebSocketProxy] TCP tunnel connected to backend for ${connectionId}`);
         sendUpgradeRequest();
       });
     }
@@ -174,22 +175,22 @@ class WebSocketProxy {
     });
 
     backendSocket.on('error', (error) => {
-      console.error(`[WebSocketProxy] Backend socket error for ${connectionId} (${backend.target_host}:${backend.target_port}):`, error.message);
-      console.error(`[WebSocketProxy] Error code:`, error.code);
+      logger.error(`[WebSocketProxy] Backend socket error for ${connectionId} (${backend.target_host}:${backend.target_port}):`, error.message);
+      logger.error(`[WebSocketProxy] Error code:`, error.code);
       if (!socket.destroyed) {
         socket.destroy();
       }
     });
 
     socket.on('error', (error) => {
-      console.error(`[WebSocketProxy] Client socket error for ${connectionId}:`, error.message);
+      logger.error(`[WebSocketProxy] Client socket error for ${connectionId}:`, error.message);
       if (!backendSocket.destroyed) {
         backendSocket.destroy();
       }
     });
 
     backendSocket.on('close', () => {
-      console.log(`[WebSocketProxy] Backend socket closed for ${connectionId}`);
+      logger.info(`[WebSocketProxy] Backend socket closed for ${connectionId}`);
       if (!socket.destroyed) {
         socket.destroy();
       }
@@ -197,7 +198,7 @@ class WebSocketProxy {
     });
 
     socket.on('close', () => {
-      console.log(`[WebSocketProxy] Client socket closed for ${connectionId}`);
+      logger.info(`[WebSocketProxy] Client socket closed for ${connectionId}`);
       if (!backendSocket.destroyed) {
         backendSocket.destroy();
       }
@@ -206,7 +207,7 @@ class WebSocketProxy {
 
     const timeout = setTimeout(() => {
       if (!backendConnected) {
-        console.error(`[WebSocketProxy] Backend connection timeout for ${connectionId} (${backend.target_host}:${backend.target_port})`);
+        logger.error(`[WebSocketProxy] Backend connection timeout for ${connectionId} (${backend.target_host}:${backend.target_port})`);
         backendSocket.destroy();
         socket.destroy();
       }
@@ -348,14 +349,14 @@ class WebSocketProxy {
   }
 
   closeAll() {
-    console.log(`[WebSocketProxy] Closing ${this.activeConnections.size} active connections`);
+    logger.info(`[WebSocketProxy] Closing ${this.activeConnections.size} active connections`);
 
     for (const [id, conn] of this.activeConnections.entries()) {
       try {
         conn.client.close?.(1001, 'Server shutdown');
         conn.backend.close?.(1001, 'Server shutdown');
       } catch (error) {
-        console.error(`[WebSocketProxy] Error closing connection ${id}:`, error.message);
+        logger.error(`[WebSocketProxy] Error closing connection ${id}:`, error.message);
       }
     }
 

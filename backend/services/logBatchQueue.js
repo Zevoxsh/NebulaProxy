@@ -3,6 +3,7 @@
  * Reduces per-request DB latency by 5-15% through batching
  */
 import { database } from './database.js';
+import { logger } from '../utils/logger.js';
 
 class LogBatchQueue {
   constructor(batchSize = 50, flushIntervalMs = 500) {
@@ -21,7 +22,7 @@ class LogBatchQueue {
     if (this.isRunning) return;
     this.isRunning = true;
     this._scheduleFlush();
-    console.log('[LogBatchQueue] Started with batch size:', this.batchSize);
+    logger.info('[LogBatchQueue] Started with batch size:', this.batchSize);
   }
 
   /**
@@ -40,7 +41,7 @@ class LogBatchQueue {
     if (this.requestLogs.length > 0 || this.proxyLogs.length > 0) {
       await this._flush();
     }
-    console.log('[LogBatchQueue] Stopped');
+    logger.info('[LogBatchQueue] Stopped');
   }
 
   /**
@@ -50,7 +51,7 @@ class LogBatchQueue {
     if (!this.isRunning) {
       // If not running, fall back to direct insert (degraded mode)
       database.createRequestLog(logData).catch((err) => {
-        console.error('[LogBatchQueue] Failed to write request log (degraded mode):', err);
+        logger.error('[LogBatchQueue] Failed to write request log (degraded mode):', err);
       });
       return;
     }
@@ -60,7 +61,7 @@ class LogBatchQueue {
     // Flush if batch size reached
     if (this.requestLogs.length >= this.batchSize) {
       this._flush().catch((err) => {
-        console.error('[LogBatchQueue] Flush error:', err);
+        logger.error('[LogBatchQueue] Flush error:', err);
       });
     }
   }
@@ -72,7 +73,7 @@ class LogBatchQueue {
     if (!this.isRunning) {
       // If not running, fall back to direct insert (degraded mode)
       database.createProxyLog(logData).catch((err) => {
-        console.error('[LogBatchQueue] Failed to write proxy log (degraded mode):', err);
+        logger.error('[LogBatchQueue] Failed to write proxy log (degraded mode):', err);
       });
       return;
     }
@@ -82,7 +83,7 @@ class LogBatchQueue {
     // Flush if batch size reached
     if (this.proxyLogs.length >= this.batchSize) {
       this._flush().catch((err) => {
-        console.error('[LogBatchQueue] Flush error:', err);
+        logger.error('[LogBatchQueue] Flush error:', err);
       });
     }
   }
@@ -94,7 +95,7 @@ class LogBatchQueue {
     this.flushTimer = setTimeout(() => {
       if (this.isRunning) {
         this._flush().catch((err) => {
-          console.error('[LogBatchQueue] Flush error:', err);
+          logger.error('[LogBatchQueue] Flush error:', err);
         }).finally(() => {
           this._scheduleFlush(); // Schedule next flush
         });
@@ -127,7 +128,7 @@ class LogBatchQueue {
 
       await Promise.all(promises);
     } catch (error) {
-      console.error('[LogBatchQueue] Flush operation failed:', error.message);
+      logger.error('[LogBatchQueue] Flush operation failed:', error.message);
       // Put logs back in queue if insert failed
       this.requestLogs.unshift(...requestLogsToFlush);
       this.proxyLogs.unshift(...proxyLogsToFlush);

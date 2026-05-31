@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 
 const { Pool } = pg;
@@ -90,24 +91,24 @@ export const getPgPool = () => {
     }
 
     if (process.env.NODE_ENV !== 'production' && process.env.LOG_QUIET !== 'true') {
-      console.log(`[DB] Creating PostgreSQL pool: ${dbConfig.postgresql.user}@${dbConfig.postgresql.host}:${dbConfig.postgresql.port}/${dbConfig.postgresql.database}`);
+      logger.info(`[DB] Creating PostgreSQL pool: ${dbConfig.postgresql.user}@${dbConfig.postgresql.host}:${dbConfig.postgresql.port}/${dbConfig.postgresql.database}`);
     }
 
     pgPool = new Pool(dbConfig.postgresql);
 
     pgPool.on('error', (err) => {
-      console.error('[DB] Unexpected PostgreSQL pool error:', err);
+      logger.error('[DB] Unexpected PostgreSQL pool error:', err);
     });
 
     pgPool.on('connect', () => {
       if (process.env.NODE_ENV !== 'production' && process.env.LOG_QUIET !== 'true') {
-        console.log(`[DB] New PostgreSQL client connected (total: ${pgPool.totalCount})`);
+        logger.info(`[DB] New PostgreSQL client connected (total: ${pgPool.totalCount})`);
       }
     });
 
     pgPool.on('remove', () => {
       if (pgPool && process.env.NODE_ENV !== 'production' && process.env.LOG_QUIET !== 'true') {
-        console.log(`[DB] PostgreSQL client removed (total: ${pgPool.totalCount})`);
+        logger.info(`[DB] PostgreSQL client removed (total: ${pgPool.totalCount})`);
       }
     });
   }
@@ -126,25 +127,25 @@ export const testPostgresConnection = async () => {
     const client = await pool.connect();
     const result = await client.query('SELECT version(), current_database(), current_user');
 
-    console.log('[DB] PostgreSQL connection successful');
-    console.log(`[DB]   Version: ${result.rows[0].version.split(' ')[0]} ${result.rows[0].version.split(' ')[1]}`);
-    console.log(`[DB]   Database: ${result.rows[0].current_database}`);
-    console.log(`[DB]   User: ${result.rows[0].current_user}`);
+    logger.info('[DB] PostgreSQL connection successful');
+    logger.info(`[DB]   Version: ${result.rows[0].version.split(' ')[0]} ${result.rows[0].version.split(' ')[1]}`);
+    logger.info(`[DB]   Database: ${result.rows[0].current_database}`);
+    logger.info(`[DB]   User: ${result.rows[0].current_user}`);
 
     client.release();
     return true;
   } catch (err) {
-    console.error('[DB] PostgreSQL connection failed:', err.message);
+    logger.error('[DB] PostgreSQL connection failed:', err.message);
     throw err;
   }
 };
 
 export const closePool = async () => {
   if (pgPool) {
-    console.log('[DB] Closing PostgreSQL pool...');
+    logger.info('[DB] Closing PostgreSQL pool...');
     await pgPool.end();
     pgPool = null;
-    console.log('[DB] PostgreSQL pool closed');
+    logger.info('[DB] PostgreSQL pool closed');
   }
 };
 

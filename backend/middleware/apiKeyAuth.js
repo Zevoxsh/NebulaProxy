@@ -12,6 +12,7 @@ import {
 } from '../utils/apiKey.js';
 import { database } from '../services/database.js';
 import { redisService } from '../services/redis.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Middleware to authenticate requests using API keys
@@ -173,7 +174,7 @@ export async function apiKeyAuthMiddleware(request, reply) {
 
     // Update last_used_at asynchronously (don't block request)
     database.updateApiKeyLastUsed(apiKeyRecord.id).catch(err => {
-      console.error('[API Key Auth] Failed to update last_used_at:', err.message);
+      logger.error('[API Key Auth] Failed to update last_used_at:', err.message);
     });
 
     // Log usage asynchronously (don't block request)
@@ -187,12 +188,12 @@ export async function apiKeyAuthMiddleware(request, reply) {
       userAgent: request.headers['user-agent'],
       responseTimeMs: responseTime
     }).catch(err => {
-      console.error('[API Key Auth] Failed to log usage:', err.message);
+      logger.error('[API Key Auth] Failed to log usage:', err.message);
     });
 
     // Continue to route handler
   } catch (error) {
-    console.error('[API Key Auth] Authentication error:', error);
+    logger.error('[API Key Auth] Authentication error:', error);
     return reply.status(500).send({
       error: 'Internal Server Error',
       message: 'Authentication failed due to server error.'

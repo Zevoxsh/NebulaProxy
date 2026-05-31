@@ -2,7 +2,7 @@ FROM node:20.18-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache certbot git postgresql-client redis docker-cli docker-cli-compose curl
+RUN apk add --no-cache certbot git postgresql-client redis docker-cli docker-cli-compose
 
 COPY package*.json ./
 RUN npm ci --omit=dev

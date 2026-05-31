@@ -1,5 +1,6 @@
 import net from 'net';
 import { database } from './database.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * URL Filter Service
@@ -69,7 +70,7 @@ class UrlFilterService {
       // No matching rules - default allow
       return { blocked: false, rule: null, response: null };
     } catch (error) {
-      console.error('Error checking URL filter:', error);
+      logger.error('Error checking URL filter:', error);
       // On error, default to allow to prevent service disruption
       return { blocked: false, rule: null, response: null };
     }
@@ -108,11 +109,11 @@ class UrlFilterService {
           return this.testRegexWithTimeout(pattern, path, this.regexTimeout);
 
         default:
-          console.warn(`Unknown pattern type: ${type}`);
+          logger.warn(`Unknown pattern type: ${type}`);
           return false;
       }
     } catch (error) {
-      console.error(`Error matching pattern: ${error.message}`, { pattern, type, path });
+      logger.error(`Error matching pattern: ${error.message}`, { pattern, type, path });
       return false;
     }
   }
@@ -171,13 +172,13 @@ class UrlFilterService {
       clearTimeout(timeoutId);
 
       if (timedOut) {
-        console.warn(`Regex timeout: ${pattern}`);
+        logger.warn(`Regex timeout: ${pattern}`);
         return false;
       }
 
       return result;
     } catch (error) {
-      console.error(`Invalid regex pattern: ${pattern}`, error);
+      logger.error(`Invalid regex pattern: ${pattern}`, error);
       return false;
     }
   }
@@ -231,13 +232,13 @@ class UrlFilterService {
         const now = Date.now();
         const lastWarn = this._lastDbWarn?.get(cacheKey) || 0;
         if (now - lastWarn > this.cacheTTL) {
-          console.warn(`[UrlFilter] DB unavailable for domain ${domainId}, serving stale cache:`, error.message);
+          logger.warn(`[UrlFilter] DB unavailable for domain ${domainId}, serving stale cache:`, error.message);
           if (!this._lastDbWarn) this._lastDbWarn = new Map();
           this._lastDbWarn.set(cacheKey, now);
         }
         return cached.rules;
       }
-      console.error('Error fetching URL blocking rules:', error);
+      logger.error('Error fetching URL blocking rules:', error);
       return [];
     } finally {
       this.pendingQueries.delete(cacheKey);
@@ -251,7 +252,7 @@ class UrlFilterService {
   invalidateCache(domainId) {
     const cacheKey = `domain_${domainId}`;
     this.cache.delete(cacheKey);
-    console.log(`Cache invalidated for domain ${domainId}`);
+    logger.info(`Cache invalidated for domain ${domainId}`);
   }
 
   /**
@@ -261,7 +262,7 @@ class UrlFilterService {
     this.cache.clear();
     // Also clear compiled patterns since rules (and their patterns) may have changed
     this.compiledPatterns.clear();
-    console.log('All URL filter cache cleared');
+    logger.info('All URL filter cache cleared');
   }
 
   /**
@@ -351,7 +352,7 @@ class UrlFilterService {
 
       return { blocked: false, rule: null, response: null };
     } catch (error) {
-      console.error('Error checking network access rules:', error);
+      logger.error('Error checking network access rules:', error);
       return { blocked: false, rule: null, response: null };
     }
   }

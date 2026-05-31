@@ -24,6 +24,7 @@
  */
 
 import net from 'net';
+import { logger } from '../utils/logger.js';
 
 const STATES = {
   CLOSED: 'CLOSED',
@@ -93,7 +94,7 @@ class CircuitBreaker {
       socket.once('connect', () => {
         socket.destroy();
         // Backend répond → reset immédiat en CLOSED
-        console.log(`[CircuitBreaker] ${key} → CLOSED (probe TCP actif réussi, récupération instantanée)`);
+        logger.info(`[CircuitBreaker] ${key} → CLOSED (probe TCP actif réussi, récupération instantanée)`);
         this._forceClose(key);
         clearInterval(intervalId);
         this._probeIntervals.delete(key);
@@ -155,7 +156,7 @@ class CircuitBreaker {
           breaker.state = STATES.HALF_OPEN;
           breaker.halfOpenCalls = 0;
           breaker.successes = 0;
-          console.log(`[CircuitBreaker] ${key} → HALF_OPEN (probe allowed)`);
+          logger.info(`[CircuitBreaker] ${key} → HALF_OPEN (probe allowed)`);
           return true;
         }
         return false;
@@ -184,7 +185,7 @@ class CircuitBreaker {
     if (breaker.state === STATES.HALF_OPEN) {
       breaker.successes++;
       if (breaker.successes >= this.SUCCESS_THRESHOLD) {
-        console.log(`[CircuitBreaker] ${key} → CLOSED (recovered after ${breaker.successes} successes)`);
+        logger.info(`[CircuitBreaker] ${key} → CLOSED (recovered after ${breaker.successes} successes)`);
         breaker.state = STATES.CLOSED;
         breaker.failures = 0;
         breaker.successes = 0;
@@ -195,7 +196,7 @@ class CircuitBreaker {
         // Sans ça, le circuit restait bloqué en HALF_OPEN indéfiniment après
         // un premier probe réussi (halfOpenCalls = 1 = HALF_OPEN_MAX_CALLS → tout bloqué)
         breaker.halfOpenCalls = 0;
-        console.log(`[CircuitBreaker] ${key} probe ok (${breaker.successes}/${this.SUCCESS_THRESHOLD}), waiting for next probe`);
+        logger.info(`[CircuitBreaker] ${key} probe ok (${breaker.successes}/${this.SUCCESS_THRESHOLD}), waiting for next probe`);
       }
     } else if (breaker.state === STATES.CLOSED) {
       // Reset failure counter on success in CLOSED state
@@ -212,7 +213,7 @@ class CircuitBreaker {
 
     if (breaker.state === STATES.HALF_OPEN) {
       // Probe failed → go back to OPEN
-      console.log(`[CircuitBreaker] ${key} → OPEN (probe failed)`);
+      logger.info(`[CircuitBreaker] ${key} → OPEN (probe failed)`);
       breaker.state = STATES.OPEN;
       breaker.openedAt = Date.now();
       breaker.halfOpenCalls = 0;
@@ -226,7 +227,7 @@ class CircuitBreaker {
       breaker.lastFailure = Date.now();
 
       if (breaker.failures >= this.FAILURE_THRESHOLD) {
-        console.warn(`[CircuitBreaker] ${key} → OPEN (${breaker.failures} consecutive failures)`);
+        logger.warn(`[CircuitBreaker] ${key} → OPEN (${breaker.failures} consecutive failures)`);
         breaker.state = STATES.OPEN;
         breaker.openedAt = Date.now();
         // Démarrer le probe TCP actif pour récupération instantanée
@@ -261,7 +262,7 @@ class CircuitBreaker {
     breaker.halfOpenCalls = 0;
     breaker.openedAt = null;
     breaker.lastFailure = null;
-    console.log(`[CircuitBreaker] ${key} manually reset to CLOSED`);
+    logger.info(`[CircuitBreaker] ${key} manually reset to CLOSED`);
   }
 
   /**

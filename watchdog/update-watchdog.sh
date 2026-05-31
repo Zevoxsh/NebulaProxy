@@ -35,6 +35,7 @@ echo "" | tee -a "$LOG_FILE"
 while true; do
   # Blocking pop — waits up to 10 s then returns empty; retry on empty
   result=$(redis_cmd BLPOP nebulaproxy:update:queue 10 2>/dev/null)
+  touch /tmp/watchdog.heartbeat
   [ -z "$result" ] && continue
 
   echo "[$(date)] ========================================" | tee -a "$LOG_FILE"

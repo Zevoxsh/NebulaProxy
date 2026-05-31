@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import net from 'net';
+import { logger } from './logger.js';
 
 /**
  * Validate container name to prevent command injection
@@ -290,7 +291,7 @@ export class DockerHelper {
         return false;
       }
     } catch (error) {
-      console.error('[DockerHelper] Postgres connection test failed:', error.message);
+      logger.error('[DockerHelper] Postgres connection test failed:', error.message);
       return false;
     }
   }

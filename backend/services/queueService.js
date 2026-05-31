@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import configManager from '../config/config-manager.js';
 import { config } from '../config/config.js';
 import { database } from './database.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Queue Service
@@ -25,7 +26,7 @@ class QueueService {
    */
   async init() {
     if (this.initialized) {
-      console.log('[Queue] Already initialized');
+      logger.info('[Queue] Already initialized');
       return;
     }
 
@@ -35,7 +36,7 @@ class QueueService {
     }
 
     this.initialized = true;
-    console.log('[Queue] Initialized successfully');
+    logger.info('[Queue] Initialized successfully');
   }
 
   /**
@@ -47,13 +48,13 @@ class QueueService {
    */
   async enqueue(jobType, payload, options = {}) {
     if (!this.initialized) {
-      console.error('[Queue] Not initialized, cannot enqueue');
+      logger.error('[Queue] Not initialized, cannot enqueue');
       return null;
     }
 
     // Skip retry if flag set (for DLQ alerts to avoid loops)
     if (options.skipRetry) {
-      console.log(`[Queue] Skipping retry for ${jobType} job (skipRetry flag)`);
+      logger.info(`[Queue] Skipping retry for ${jobType} job (skipRetry flag)`);
       return null;
     }
 
@@ -87,10 +88,10 @@ class QueueService {
       // database imported statically at top of file
       await database.insertRetryAudit(jobId, jobType, 0, 'queued', null);
 
-      console.log(`[Queue] Enqueued ${jobType} job ${jobId} for retry in ${config.queue.retryIntervalMinutes}min`);
+      logger.info(`[Queue] Enqueued ${jobType} job ${jobId} for retry in ${config.queue.retryIntervalMinutes}min`);
       return jobId;
     } catch (error) {
-      console.error(`[Queue] Failed to enqueue job: ${error.message}`);
+      logger.error(`[Queue] Failed to enqueue job: ${error.message}`);
       return null;
     }
   }
@@ -118,7 +119,7 @@ class QueueService {
 
       return jobIds || [];
     } catch (error) {
-      console.error(`[Queue] Failed to dequeue jobs: ${error.message}`);
+      logger.error(`[Queue] Failed to dequeue jobs: ${error.message}`);
       return [];
     }
   }
@@ -146,7 +147,7 @@ class QueueService {
 
       return true;
     } catch (error) {
-      console.error(`[Queue] Failed to mark job ${jobId} as processing: ${error.message}`);
+      logger.error(`[Queue] Failed to mark job ${jobId} as processing: ${error.message}`);
       return false;
     }
   }
@@ -171,9 +172,9 @@ class QueueService {
       // database imported statically at top of file
       await database.insertRetryAudit(jobId, null, null, 'success', null);
 
-      console.log(`[Queue] Job ${jobId} completed successfully`);
+      logger.info(`[Queue] Job ${jobId} completed successfully`);
     } catch (error) {
-      console.error(`[Queue] Failed to mark job ${jobId} as success: ${error.message}`);
+      logger.error(`[Queue] Failed to mark job ${jobId} as success: ${error.message}`);
     }
   }
 
@@ -192,7 +193,7 @@ class QueueService {
       const job = await this.redis.hgetall(jobKey);
 
       if (!job || !job.id) {
-        console.error(`[Queue] Job ${jobId} not found for retry`);
+        logger.error(`[Queue] Job ${jobId} not found for retry`);
         return;
       }
 
@@ -201,7 +202,7 @@ class QueueService {
 
       // Check if max attempts reached
       if (attemptCount >= maxAttempts) {
-        console.log(`[Queue] Job ${jobId} exceeded max attempts (${attemptCount}/${maxAttempts})`);
+        logger.info(`[Queue] Job ${jobId} exceeded max attempts (${attemptCount}/${maxAttempts})`);
         await this.moveToDLQ(jobId, 'Max attempts exceeded');
         return;
       }
@@ -224,9 +225,9 @@ class QueueService {
       // database imported statically at top of file
       await database.insertRetryAudit(jobId, job.type, attemptCount, 'retry', error.message);
 
-      console.log(`[Queue] Job ${jobId} retry ${attemptCount}/${maxAttempts} scheduled for ${new Date(nextRetryAt).toISOString()}`);
+      logger.info(`[Queue] Job ${jobId} retry ${attemptCount}/${maxAttempts} scheduled for ${new Date(nextRetryAt).toISOString()}`);
     } catch (err) {
-      console.error(`[Queue] Failed to mark job ${jobId} for retry: ${err.message}`);
+      logger.error(`[Queue] Failed to mark job ${jobId} for retry: ${err.message}`);
     }
   }
 
@@ -245,7 +246,7 @@ class QueueService {
       const job = await this.redis.hgetall(jobKey);
 
       if (!job || !job.id) {
-        console.error(`[Queue] Job ${jobId} not found for DLQ`);
+        logger.error(`[Queue] Job ${jobId} not found for DLQ`);
         return;
       }
 
@@ -275,9 +276,9 @@ class QueueService {
       // Audit log
       await database.insertRetryAudit(jobId, job.type, job.attemptCount, 'failed', failureReason);
 
-      console.log(`[Queue] Job ${jobId} moved to DLQ: ${failureReason}`);
+      logger.info(`[Queue] Job ${jobId} moved to DLQ: ${failureReason}`);
     } catch (error) {
-      console.error(`[Queue] Failed to move job ${jobId} to DLQ: ${error.message}`);
+      logger.error(`[Queue] Failed to move job ${jobId} to DLQ: ${error.message}`);
     }
   }
 
@@ -324,7 +325,7 @@ class QueueService {
         dlqCount: dlqCount || 0
       };
     } catch (error) {
-      console.error(`[Queue] Failed to get stats: ${error.message}`);
+      logger.error(`[Queue] Failed to get stats: ${error.message}`);
       return { pendingCount: 0, processingCount: 0, dlqCount: 0 };
     }
   }
@@ -355,10 +356,10 @@ class QueueService {
       }
 
       if (cleanedCount > 0) {
-        console.log(`[Queue] Cleaned up ${cleanedCount} orphaned jobs from processing set`);
+        logger.info(`[Queue] Cleaned up ${cleanedCount} orphaned jobs from processing set`);
       }
     } catch (error) {
-      console.error(`[Queue] Cleanup failed: ${error.message}`);
+      logger.error(`[Queue] Cleanup failed: ${error.message}`);
     }
   }
 }

@@ -4,6 +4,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { pool } from '../config/database.js';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 const LOCAL_BACKUP_LIMIT = 3;
 
@@ -410,13 +411,13 @@ export class DatabaseBackupService {
           await this.deleteBackup(backup.filename);
           deleted += 1;
         } catch (error) {
-          console.warn(`[DatabaseBackupService] Failed to prune old backup ${backup.filename}: ${error.message}`);
+          logger.warn(`[DatabaseBackupService] Failed to prune old backup ${backup.filename}: ${error.message}`);
         }
       }
 
       return { deleted };
     } catch (error) {
-      console.warn(`[DatabaseBackupService] Failed to enforce backup retention: ${error.message}`);
+      logger.warn(`[DatabaseBackupService] Failed to enforce backup retention: ${error.message}`);
       return { deleted: 0 };
     }
   }

@@ -20,8 +20,7 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# wget is provided by busybox (already in nginx:alpine base image)
 
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html

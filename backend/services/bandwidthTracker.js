@@ -13,6 +13,7 @@
 
 import { pool } from '../config/database.js';
 import { redisService } from './redis.js';
+import { logger } from '../utils/logger.js';
 
 const KEY_TTL_S  = 3 * 24 * 60 * 60;   // 3 days
 const FLUSH_MS   = 5 * 60 * 1000;        // 5 minutes
@@ -30,7 +31,7 @@ class BandwidthTracker {
 
   start() {
     if (this.#flushTimer) return;
-    this.#flushTimer = setInterval(() => this.#flush().catch(console.error), FLUSH_MS);
+    this.#flushTimer = setInterval(() => this.#flush().catch(err => logger.error(err)), FLUSH_MS);
   }
 
   stop() {
@@ -143,7 +144,7 @@ class BandwidthTracker {
            SET bytes_in  = GREATEST(bandwidth_usage.bytes_in,  EXCLUDED.bytes_in),
                bytes_out = GREATEST(bandwidth_usage.bytes_out, EXCLUDED.bytes_out)`,
         [userId, today, bIn.toString(), bOut.toString()]
-      ).catch(console.error);
+      ).catch(err => logger.error(err));
     }
   }
 }

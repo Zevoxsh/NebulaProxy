@@ -4,6 +4,7 @@ import net from 'net';
 import { URL } from 'url';
 import { WebSocketServer } from 'ws';
 import { database } from './database.js';
+import { logger } from '../utils/logger.js';
 
 const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 
@@ -47,7 +48,7 @@ class TunnelRelayService {
         ws._connectTime = Date.now();
         this.agentSockets.set(agentId, ws);
         await database.updateTunnelAgentHeartbeat(agentId, { status: 'online' });
-        console.log(`[DEBUG:TUNNEL] agent=${agentId} CONNECTED from ${req.socket?.remoteAddress}`);
+        logger.info(`[DEBUG:TUNNEL] agent=${agentId} CONNECTED from ${req.socket?.remoteAddress}`);
 
         ws.on('message', (raw) => {
           this.handleAgentMessage(agentId, raw);
@@ -55,7 +56,7 @@ class TunnelRelayService {
 
         ws.on('close', async (code, reason) => {
           const uptime = ws._connectTime ? Date.now() - ws._connectTime : '?';
-          console.log(`[DEBUG:TUNNEL] agent=${agentId} DISCONNECTED code=${code} reason=${reason?.toString() || '-'} uptime=${uptime}ms`);
+          logger.info(`[DEBUG:TUNNEL] agent=${agentId} DISCONNECTED code=${code} reason=${reason?.toString() || '-'} uptime=${uptime}ms`);
           if (this.agentSockets.get(agentId) === ws) {
             this.agentSockets.delete(agentId);
           }
@@ -69,7 +70,7 @@ class TunnelRelayService {
         });
 
         ws.on('error', (err) => {
-          console.error(`[DEBUG:TUNNEL] agent=${agentId} WS ERROR: ${err.message}`);
+          logger.error(`[DEBUG:TUNNEL] agent=${agentId} WS ERROR: ${err.message}`);
           this.closeAgentConnections(agentId);
         });
 
@@ -134,7 +135,7 @@ class TunnelRelayService {
       const connStart = Date.now();
 
       if (!agentWs || agentWs.readyState !== 1) {
-        console.log(`[DEBUG:TUNNEL] conn=${clientAddr} binding=${binding.id} port=${binding.public_port} -> REJECT (agent ${binding.agent_id} not connected)`);
+        logger.info(`[DEBUG:TUNNEL] conn=${clientAddr} binding=${binding.id} port=${binding.public_port} -> REJECT (agent ${binding.agent_id} not connected)`);
         clientSocket.destroy();
         return;
       }
@@ -148,7 +149,7 @@ class TunnelRelayService {
         clientSocket
       });
 
-      console.log(`[DEBUG:TUNNEL] conn=${clientAddr} id=${shortId} binding=${binding.id} port=${binding.public_port} -> OPEN (agent=${binding.agent_id} target=${binding.target_host || '127.0.0.1'}:${binding.local_port})`);
+      logger.info(`[DEBUG:TUNNEL] conn=${clientAddr} id=${shortId} binding=${binding.id} port=${binding.public_port} -> OPEN (agent=${binding.agent_id} target=${binding.target_host || '127.0.0.1'}:${binding.local_port})`);
 
       this.sendJson(agentWs, {
         type: 'open',
@@ -166,7 +167,7 @@ class TunnelRelayService {
       clientSocket.on('data', (chunk) => {
         const ws = this.agentSockets.get(binding.agent_id);
         if (!ws || ws.readyState !== 1) {
-          console.warn(`[DEBUG:TUNNEL] id=${shortId} data DROP (agent gone), bytes=${chunk.length}`);
+          logger.warn(`[DEBUG:TUNNEL] id=${shortId} data DROP (agent gone), bytes=${chunk.length}`);
           clientSocket.destroy();
           this.cleanupConnection(connId);
           return;
@@ -184,7 +185,7 @@ class TunnelRelayService {
 
         ws.send(frame, { binary: true }, (err) => {
           if (err && !clientSocket.destroyed) {
-            console.error(`[DEBUG:TUNNEL] id=${shortId} send ERROR: ${err.message}`);
+            logger.error(`[DEBUG:TUNNEL] id=${shortId} send ERROR: ${err.message}`);
             clientSocket.destroy();
             this.cleanupConnection(connId);
           }
@@ -196,11 +197,11 @@ class TunnelRelayService {
           backpressureCount++;
           backpressureAt = Date.now();
           clientSocket.pause();
-          console.warn(`[DEBUG:TUNNEL] id=${shortId} BACKPRESSURE #${backpressureCount} ws.bufferedAmount=${Math.round(ws.bufferedAmount/1024)}KB chunk=${chunk.length}B -> pausing client`);
+          logger.warn(`[DEBUG:TUNNEL] id=${shortId} BACKPRESSURE #${backpressureCount} ws.bufferedAmount=${Math.round(ws.bufferedAmount/1024)}KB chunk=${chunk.length}B -> pausing client`);
           const onDrain = () => {
             if (ws.bufferedAmount < 32 * 1024 && !clientSocket.destroyed) {
               const pausedMs = Date.now() - backpressureAt;
-              console.log(`[DEBUG:TUNNEL] id=${shortId} DRAIN after ${pausedMs}ms ws.bufferedAmount=${Math.round(ws.bufferedAmount/1024)}KB -> resuming client`);
+              logger.info(`[DEBUG:TUNNEL] id=${shortId} DRAIN after ${pausedMs}ms ws.bufferedAmount=${Math.round(ws.bufferedAmount/1024)}KB -> resuming client`);
               clientSocket.resume();
               ws._socket?.removeListener('drain', onDrain);
               ws._drainCheck = null;
@@ -215,7 +216,7 @@ class TunnelRelayService {
       clientSocket.on('close', () => {
         const ws = this.agentSockets.get(binding.agent_id);
         const durationMs = Date.now() - connStart;
-        console.log(`[DEBUG:TUNNEL] id=${shortId} CLOSE duration=${durationMs}ms sent=${bytesSentToAgent}B recv=${bytesRecvFromAgent}B backpressures=${backpressureCount}`);
+        logger.info(`[DEBUG:TUNNEL] id=${shortId} CLOSE duration=${durationMs}ms sent=${bytesSentToAgent}B recv=${bytesRecvFromAgent}B backpressures=${backpressureCount}`);
         if (ws && ws.readyState === 1) {
           this.sendJson(ws, { type: 'close', connId });
         }
@@ -224,7 +225,7 @@ class TunnelRelayService {
 
       clientSocket.on('error', (err) => {
         const ws = this.agentSockets.get(binding.agent_id);
-        console.error(`[DEBUG:TUNNEL] id=${shortId} CLIENT ERROR: ${err.code || err.message}`);
+        logger.error(`[DEBUG:TUNNEL] id=${shortId} CLIENT ERROR: ${err.code || err.message}`);
         if (ws && ws.readyState === 1) {
           this.sendJson(ws, { type: 'close', connId });
         }

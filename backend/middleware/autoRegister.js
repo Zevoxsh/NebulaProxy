@@ -1,4 +1,5 @@
 import { database } from '../services/database.js';
+import { logger } from '../utils/logger.js';
 
 export async function autoRegisterUser(ldapUser) {
   try {
@@ -17,7 +18,7 @@ export async function autoRegisterUser(ldapUser) {
       dbUser = await database.getUserByUsername(ldapUser.username);
 
       await database.updateUserLoginTime(dbUser.id);
-      console.log(`User ${ldapUser.username} logged in (existing user)`);
+      logger.info(`User ${ldapUser.username} logged in (existing user)`);
       return dbUser;
     }
 
@@ -40,10 +41,10 @@ export async function autoRegisterUser(ldapUser) {
       }
     });
 
-    console.log(`User ${ldapUser.username} auto-registered (role: ${ldapUser.role})`);
+    logger.info(`User ${ldapUser.username} auto-registered (role: ${ldapUser.role})`);
     return dbUser;
   } catch (error) {
-    console.error('Error in autoRegisterUser:', error);
+    logger.error('Error in autoRegisterUser:', error);
     throw error;
   }
 }

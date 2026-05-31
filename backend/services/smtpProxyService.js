@@ -13,6 +13,7 @@
 import net from 'net';
 import { config } from '../config/config.js';
 import { pool } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 
 class SmtpProxyService {
   constructor() {
@@ -32,23 +33,23 @@ class SmtpProxyService {
    */
   async start() {
     if (this.isRunning) {
-      console.warn('[SMTP Proxy] Already running');
+      logger.warn('[SMTP Proxy] Already running');
       return;
     }
 
     const smtpConfig = config.smtpProxy;
 
     if (!smtpConfig.enabled) {
-      console.log('[SMTP Proxy] Disabled in configuration');
+      logger.info('[SMTP Proxy] Disabled in configuration');
       return;
     }
 
     if (!smtpConfig.backendHost || !smtpConfig.backendPort) {
-      console.error('[SMTP Proxy] Backend mail server not configured (SMTP_PROXY_BACKEND_HOST/PORT required)');
+      logger.error('[SMTP Proxy] Backend mail server not configured (SMTP_PROXY_BACKEND_HOST/PORT required)');
       return;
     }
 
-    console.log(`[SMTP Proxy] Starting with backend: ${smtpConfig.backendHost}:${smtpConfig.backendPort}`);
+    logger.info(`[SMTP Proxy] Starting with backend: ${smtpConfig.backendHost}:${smtpConfig.backendPort}`);
 
     // Start SMTP server (port 25)
     if (smtpConfig.ports.smtp) {
@@ -66,7 +67,7 @@ class SmtpProxyService {
     }
 
     this.isRunning = true;
-    console.log('[SMTP Proxy] All configured servers started');
+    logger.info('[SMTP Proxy] All configured servers started');
   }
 
   /**
@@ -83,7 +84,7 @@ class SmtpProxyService {
       const clientIp = this._extractClientIp(clientSocket);
       const clientPort = clientSocket.remotePort;
 
-      console.log(`[SMTP Proxy ${name}] New connection from ${clientIp}:${clientPort} (id: ${connectionId})`);
+      logger.info(`[SMTP Proxy ${name}] New connection from ${clientIp}:${clientPort} (id: ${connectionId})`);
 
       // Track connection
       this.connections.set(connectionId, {
@@ -100,7 +101,7 @@ class SmtpProxyService {
       // Port 25 → Backend 25, Port 465 → Backend 465, Port 587 → Backend 587
       const backendPort = port;
 
-      console.log(`[SMTP Proxy ${name}] Connecting to backend ${smtpConfig.backendHost}:${backendPort}`);
+      logger.info(`[SMTP Proxy ${name}] Connecting to backend ${smtpConfig.backendHost}:${backendPort}`);
 
       // Connect to backend mail server
       const backendSocket = net.createConnection({
@@ -118,37 +119,37 @@ class SmtpProxyService {
           if (name !== 'SMTPS' || port !== 465) {
             const proxyHeader = this._buildProxyProtocolV2Header(clientIp, clientPort, clientSocket.localAddress, clientSocket.localPort);
             backendSocket.write(proxyHeader);
-            console.log(`[SMTP Proxy ${name}] Sent PROXY Protocol header for ${clientIp}:${clientPort}`);
+            logger.info(`[SMTP Proxy ${name}] Sent PROXY Protocol header for ${clientIp}:${clientPort}`);
           } else {
-            console.log(`[SMTP Proxy ${name}] Skipping PROXY Protocol for SMTPS (immediate TLS) - ${clientIp}:${clientPort}`);
+            logger.info(`[SMTP Proxy ${name}] Skipping PROXY Protocol for SMTPS (immediate TLS) - ${clientIp}:${clientPort}`);
           }
 
           // Start bidirectional relay
           this._relay(clientSocket, backendSocket, connectionId, name);
         } catch (err) {
-          console.error(`[SMTP Proxy ${name}] Failed to send PROXY header:`, err.message);
+          logger.error(`[SMTP Proxy ${name}] Failed to send PROXY header:`, err.message);
           this._closeConnection(connectionId, name);
         }
       });
 
       backendSocket.on('error', (err) => {
         this.stats.errors++;
-        console.error(`[SMTP Proxy ${name}] Backend error for ${clientIp}:`, err.message);
+        logger.error(`[SMTP Proxy ${name}] Backend error for ${clientIp}:`, err.message);
         this._closeConnection(connectionId, name);
       });
 
       backendSocket.on('timeout', () => {
-        console.warn(`[SMTP Proxy ${name}] Backend timeout for ${clientIp}`);
+        logger.warn(`[SMTP Proxy ${name}] Backend timeout for ${clientIp}`);
         this._closeConnection(connectionId, name);
       });
 
       clientSocket.on('error', (err) => {
-        console.error(`[SMTP Proxy ${name}] Client error for ${clientIp}:`, err.message);
+        logger.error(`[SMTP Proxy ${name}] Client error for ${clientIp}:`, err.message);
         this._closeConnection(connectionId, name);
       });
 
       clientSocket.on('timeout', () => {
-        console.warn(`[SMTP Proxy ${name}] Client timeout for ${clientIp}`);
+        logger.warn(`[SMTP Proxy ${name}] Client timeout for ${clientIp}`);
         this._closeConnection(connectionId, name);
       });
 
@@ -161,23 +162,23 @@ class SmtpProxyService {
       // Log connection to database
       if (smtpConfig.logging.enabled) {
         this._logConnection(clientIp, name, 'connected').catch(err => {
-          console.error('[SMTP Proxy] Failed to log connection:', err.message);
+          logger.error('[SMTP Proxy] Failed to log connection:', err.message);
         });
       }
     });
 
     server.on('error', (err) => {
       this.stats.errors++;
-      console.error(`[SMTP Proxy ${name}] Server error:`, err.message);
+      logger.error(`[SMTP Proxy ${name}] Server error:`, err.message);
     });
 
     await new Promise((resolve, reject) => {
       server.listen(port, smtpConfig.bindAddress, (err) => {
         if (err) {
-          console.error(`[SMTP Proxy ${name}] Failed to start on port ${port}:`, err.message);
+          logger.error(`[SMTP Proxy ${name}] Failed to start on port ${port}:`, err.message);
           reject(err);
         } else {
-          console.log(`[SMTP Proxy ${name}] Listening on ${smtpConfig.bindAddress}:${port}`);
+          logger.info(`[SMTP Proxy ${name}] Listening on ${smtpConfig.bindAddress}:${port}`);
           this.servers.push({ server, port, name });
           resolve();
         }
@@ -296,7 +297,7 @@ class SmtpProxyService {
 
     const duration = Date.now() - conn.startTime;
 
-    console.log(`[SMTP Proxy ${name}] Connection closed: ${conn.clientIp}:${conn.clientPort} (${duration}ms, ${conn.bytesIn}↓ ${conn.bytesOut}↑)`);
+    logger.info(`[SMTP Proxy ${name}] Connection closed: ${conn.clientIp}:${conn.clientPort} (${duration}ms, ${conn.bytesIn}↓ ${conn.bytesOut}↑)`);
 
     // Close sockets
     if (conn.clientSocket && !conn.clientSocket.destroyed) {
@@ -313,7 +314,7 @@ class SmtpProxyService {
         bytesIn: conn.bytesIn,
         bytesOut: conn.bytesOut
       }).catch(err => {
-        console.error('[SMTP Proxy] Failed to log disconnection:', err.message);
+        logger.error('[SMTP Proxy] Failed to log disconnection:', err.message);
       });
     }
 
@@ -354,7 +355,7 @@ class SmtpProxyService {
       );
     } catch (err) {
       // Don't throw - logging should not break the proxy
-      console.error('[SMTP Proxy] Database log error:', err.message);
+      logger.error('[SMTP Proxy] Database log error:', err.message);
     }
   }
 
@@ -366,7 +367,7 @@ class SmtpProxyService {
       return;
     }
 
-    console.log('[SMTP Proxy] Stopping all servers...');
+    logger.info('[SMTP Proxy] Stopping all servers...');
 
     // Close all active connections
     for (const [connectionId, conn] of this.connections.entries()) {
@@ -383,7 +384,7 @@ class SmtpProxyService {
     for (const { server, name } of this.servers) {
       await new Promise((resolve) => {
         server.close(() => {
-          console.log(`[SMTP Proxy ${name}] Stopped`);
+          logger.info(`[SMTP Proxy ${name}] Stopped`);
           resolve();
         });
       });
@@ -392,7 +393,7 @@ class SmtpProxyService {
     this.servers = [];
     this.isRunning = false;
     this.stats.activeConnections = 0;
-    console.log('[SMTP Proxy] All servers stopped');
+    logger.info('[SMTP Proxy] All servers stopped');
   }
 
   /**

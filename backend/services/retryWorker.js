@@ -2,6 +2,7 @@ import { queueService } from './queueService.js';
 import { emailNotificationService } from './emailNotificationService.js';
 import { database } from './database.js';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Retry Worker
@@ -25,14 +26,14 @@ class RetryWorker {
    */
   async start() {
     if (this.interval) {
-      console.log('[RetryWorker] Already running');
+      logger.info('[RetryWorker] Already running');
       return;
     }
 
     // Initialize queue service
     await queueService.init();
 
-    console.log(`[RetryWorker] Starting (poll every ${this.pollIntervalSeconds}s, batch size: ${this.batchSize})`);
+    logger.info(`[RetryWorker] Starting (poll every ${this.pollIntervalSeconds}s, batch size: ${this.batchSize})`);
 
     // Run immediately
     this.processQueue();
@@ -50,7 +51,7 @@ class RetryWorker {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
-      console.log('[RetryWorker] Stopped');
+      logger.info('[RetryWorker] Stopped');
     }
   }
 
@@ -74,7 +75,7 @@ class RetryWorker {
         return;
       }
 
-      console.log(`[RetryWorker] Processing ${jobs.length} job(s)`);
+      logger.info(`[RetryWorker] Processing ${jobs.length} job(s)`);
 
       // Process all jobs in parallel
       const results = await Promise.allSettled(
@@ -86,13 +87,13 @@ class RetryWorker {
       const failed = results.filter(r => r.status === 'fulfilled' && r.value === false).length;
       const errors = results.filter(r => r.status === 'rejected').length;
 
-      console.log(`[RetryWorker] Completed: ${succeeded} success, ${failed} retry/failed, ${errors} errors`);
+      logger.info(`[RetryWorker] Completed: ${succeeded} success, ${failed} retry/failed, ${errors} errors`);
 
       // Perform maintenance tasks
       await this.performMaintenance();
 
     } catch (error) {
-      console.error('[RetryWorker] Error processing queue:', error);
+      logger.error('[RetryWorker] Error processing queue:', error);
     } finally {
       this.isRunning = false;
     }
@@ -107,7 +108,7 @@ class RetryWorker {
     // Acquire lock
     const locked = await queueService.markProcessing(jobId);
     if (!locked) {
-      console.log(`[RetryWorker] Job ${jobId} already processing or completed`);
+      logger.info(`[RetryWorker] Job ${jobId} already processing or completed`);
       return null;
     }
 
@@ -117,7 +118,7 @@ class RetryWorker {
       const jobData = await queueService.redis.hgetall(jobKey);
 
       if (!jobData || !jobData.id) {
-        console.error(`[RetryWorker] Job ${jobId} not found in Redis`);
+        logger.error(`[RetryWorker] Job ${jobId} not found in Redis`);
         return false;
       }
 
@@ -127,13 +128,13 @@ class RetryWorker {
       try {
         parsedPayload = JSON.parse(payload);
       } catch (e) {
-        console.error(`[RetryWorker] Failed to parse job ${jobId} payload: ${e.message}`);
+        logger.error(`[RetryWorker] Failed to parse job ${jobId} payload: ${e.message}`);
         await queueService.moveToDLQ(jobId, 'Invalid payload format');
         return false;
       }
 
       const currentAttempt = parseInt(attemptCount) + 1;
-      console.log(`[RetryWorker] Processing ${type} job ${jobId} (attempt ${currentAttempt})`);
+      logger.info(`[RetryWorker] Processing ${type} job ${jobId} (attempt ${currentAttempt})`);
 
       // Execute job based on type
       let success = false;
@@ -145,7 +146,7 @@ class RetryWorker {
           success = await this.executeAcmeJob(parsedPayload);
           break;
         default:
-          console.error(`[RetryWorker] Unknown job type: ${type}`);
+          logger.error(`[RetryWorker] Unknown job type: ${type}`);
           await queueService.moveToDLQ(jobId, `Unknown job type: ${type}`);
           return false;
       }
@@ -158,7 +159,7 @@ class RetryWorker {
       }
 
     } catch (error) {
-      console.error(`[RetryWorker] Job ${jobId} failed: ${error.message}`);
+      logger.error(`[RetryWorker] Job ${jobId} failed: ${error.message}`);
       await queueService.markRetry(jobId, error);
       return false;
     }
@@ -186,11 +187,11 @@ class RetryWorker {
         html
       });
 
-      console.log(`[RetryWorker] Email sent successfully: ${subject}`);
+      logger.info(`[RetryWorker] Email sent successfully: ${subject}`);
       return true;
 
     } catch (error) {
-      console.error(`[RetryWorker] Email job failed: ${error.message}`);
+      logger.error(`[RetryWorker] Email job failed: ${error.message}`);
       throw error;
     }
   }
@@ -207,11 +208,11 @@ class RetryWorker {
       // const { acmeManager } = await import('./acmeManager.js');
       // await acmeManager.ensureCert(domain);
 
-      console.log(`[RetryWorker] ACME job execution not yet implemented`);
+      logger.info(`[RetryWorker] ACME job execution not yet implemented`);
       return true;
 
     } catch (error) {
-      console.error(`[RetryWorker] ACME job failed: ${error.message}`);
+      logger.error(`[RetryWorker] ACME job failed: ${error.message}`);
       throw error;
     }
   }
@@ -232,7 +233,7 @@ class RetryWorker {
       }
 
     } catch (error) {
-      console.error('[RetryWorker] Maintenance error:', error);
+      logger.error('[RetryWorker] Maintenance error:', error);
     }
   }
 
@@ -245,7 +246,7 @@ class RetryWorker {
       const threshold = config.queue.dlqAlertThreshold;
 
       if (dlqCount >= threshold) {
-        console.log(`[RetryWorker] DLQ threshold exceeded: ${dlqCount} jobs (threshold: ${threshold})`);
+        logger.info(`[RetryWorker] DLQ threshold exceeded: ${dlqCount} jobs (threshold: ${threshold})`);
 
         // Get unnotified jobs
         const unnotifiedJobs = await database.getJobsFromDLQ({ notifiedAdmin: false });
@@ -264,7 +265,7 @@ class RetryWorker {
 
       }
     } catch (error) {
-      console.error('[RetryWorker] DLQ threshold check failed:', error);
+      logger.error('[RetryWorker] DLQ threshold check failed:', error);
     }
   }
 
@@ -294,7 +295,7 @@ class RetryWorker {
       const adminEmails = admins.map(a => a.email).filter(Boolean);
 
       if (adminEmails.length === 0) {
-        console.log('[RetryWorker] No admin emails configured, skipping DLQ alert');
+        logger.info('[RetryWorker] No admin emails configured, skipping DLQ alert');
         return;
       }
 
@@ -307,11 +308,11 @@ class RetryWorker {
           subject,
           html
         });
-        console.log(`[RetryWorker] DLQ alert sent to ${adminEmails.length} admin(s)`);
+        logger.info(`[RetryWorker] DLQ alert sent to ${adminEmails.length} admin(s)`);
       }
 
     } catch (error) {
-      console.error('[RetryWorker] Failed to send DLQ alert:', error);
+      logger.error('[RetryWorker] Failed to send DLQ alert:', error);
     }
   }
 }

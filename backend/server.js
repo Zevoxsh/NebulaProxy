@@ -1,4 +1,7 @@
+import crypto from 'crypto';
 import Fastify from 'fastify';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
@@ -351,6 +354,27 @@ await fastify.register(cookie, {
   parseOptions: {}
 });
 
+// OpenAPI spec — available at /api-docs/json and /api-docs in dev/staging only
+if (config.nodeEnv !== 'production') {
+  await fastify.register(swagger, {
+    openapi: {
+      info: { title: 'NebulaProxy API', version: '3.0.0', description: 'Reverse proxy control plane API' },
+      components: {
+        securitySchemes: {
+          cookieAuth: { type: 'apiKey', in: 'cookie', name: 'token' },
+          bearerAuth: { type: 'http', scheme: 'bearer' },
+          apiKeyHeader: { type: 'apiKey', in: 'header', name: 'X-API-Key' }
+        }
+      },
+      security: [{ cookieAuth: [] }]
+    }
+  });
+  await fastify.register(swaggerUi, {
+    routePrefix: '/api-docs',
+    uiConfig: { docExpansion: 'list', deepLinking: true }
+  });
+}
+
 await fastify.register(jwt, {
   secret: config.jwtSecret,
   cookie: {
@@ -358,6 +382,33 @@ await fastify.register(jwt, {
     signed: false
   }
 });
+
+// JWT key-rotation helpers ─────────────────────────────────────────────────
+// Verifies an HS256 JWT against an explicit secret without touching @fastify/jwt.
+function _verifyHs256(token, secret) {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid JWT format');
+  const [header, payload, sig] = parts;
+  const expected = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+  if (expected !== sig) throw new Error('Invalid JWT signature');
+  const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) throw new Error('JWT expired');
+  return decoded;
+}
+
+// Drop-in replacement for fastify.jwt.verify() — tries current secret first,
+// then each previous secret (JWT_SECRET_PREVIOUS) for zero-downtime key rotation.
+function verifyJwt(token) {
+  try {
+    return fastify.jwt.verify(token);
+  } catch (primaryErr) {
+    const prevSecrets = config.jwtSecretPrevious;
+    for (const secret of prevSecrets) {
+      try { return _verifyHs256(token, secret); } catch { /* try next */ }
+    }
+    throw primaryErr;
+  }
+}
 
 // Multipart support for file uploads
 await fastify.register(multipart, {
@@ -467,20 +518,20 @@ fastify.decorate('authenticate', async function(request, reply) {
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.slice(7);
-      request.user = fastify.jwt.verify(token);
+      request.user = verifyJwt(token);
     } else {
       const rawToken = extractTokenFromCookieHeader(cookieHeader);
 
       if (rawToken) {
         try {
           token = rawToken;
-          request.user = fastify.jwt.verify(token);
+          request.user = verifyJwt(token);
         } catch (err) {
           // Fallback to parsed cookie if different (handles duplicate token cookies)
           const parsedToken = request.cookies.token;
           if (parsedToken && parsedToken !== rawToken) {
             token = parsedToken;
-            request.user = fastify.jwt.verify(token);
+            request.user = verifyJwt(token);
           } else {
             throw err;
           }
@@ -1151,6 +1202,34 @@ const start = async () => {
   }
 };
 
+// SSL expiry check — runs once per day, sends alerts for certs expiring in ≤ 14 days
+let sslExpiryTimer = null;
+const SSL_EXPIRY_WARN_DAYS = 14;
+const runSslExpiryCheck = async () => {
+  try {
+    const expiring = await database.getDomainsExpiringSoon(SSL_EXPIRY_WARN_DAYS);
+    if (!expiring?.length) return;
+    const notificationSvc = container.has('notifications') ? container.get('notifications') : null;
+    if (!notificationSvc) return;
+    for (const domain of expiring) {
+      const days = domain.days_until_expiry ?? 0;
+      fastify.log.warn({ hostname: domain.hostname, daysLeft: days }, 'SSL certificate expiring soon');
+      await notificationSvc.sendCertificateExpiryAlert(domain.hostname, days).catch(() => {});
+    }
+  } catch (err) {
+    fastify.log.error({ err }, 'SSL expiry check failed');
+  }
+};
+
+const startSslExpiryCheck = () => {
+  runSslExpiryCheck();
+  sslExpiryTimer = setInterval(runSslExpiryCheck, 24 * 60 * 60 * 1000); // every 24h
+};
+
+const stopSslExpiryCheck = () => {
+  if (sslExpiryTimer) { clearInterval(sslExpiryTimer); sslExpiryTimer = null; }
+};
+
 let logCleanupTimer = null;
 const startLogCleanup = () => {
   const intervalMs = config.logs.cleanupIntervalHours * 60 * 60 * 1000;
@@ -1268,6 +1347,7 @@ process.on('SIGTERM', async () => {
     fastify.log.info('Redis closed');
 
     stopLogCleanup();
+  stopSslExpiryCheck();
     process.exit(0);
   } catch (error) {
     fastify.log.error({ error }, 'Error during shutdown');
@@ -1333,6 +1413,7 @@ process.on('SIGINT', async () => {
     await redisService.close();
 
     stopLogCleanup();
+  stopSslExpiryCheck();
     process.exit(0);
   } catch (error) {
     fastify.log.error({ error }, 'Error during shutdown');
@@ -1342,3 +1423,4 @@ process.on('SIGINT', async () => {
 
 await start();
 startLogCleanup();
+startSslExpiryCheck();

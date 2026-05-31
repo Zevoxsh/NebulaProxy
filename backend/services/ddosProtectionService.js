@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { logger } from '../utils/logger.js';
 
 // ── Challenge secret (regenerated each process start, that's fine) ───────────
 
@@ -307,7 +308,7 @@ class ChallengeService {
   async init(redisClient) {
     this.redis = redisClient;
     await this._loadEnabledTypes().catch(() => {});
-    console.log('[Challenge] Service initialized');
+    logger.info('[Challenge] Service initialized');
   }
 
   // ── Challenge type management ─────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import ldap from 'ldapjs';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 class LDAPService {
   constructor() {
@@ -64,17 +65,17 @@ class LDAPService {
       const client = this.createClient();
       const userDN = this.constructUserDN(username);
 
-      console.log('[LDAP] Starting authentication...');
-      console.log('   Username provided:', username);
-      console.log('   Constructed UserDN:', userDN);
-      console.log('   LDAP URL:', this.config.url);
-      console.log('   Base DN:', this.config.baseDN);
+      logger.info('[LDAP] Starting authentication...');
+      logger.info('   Username provided:', username);
+      logger.info('   Constructed UserDN:', userDN);
+      logger.info('   LDAP URL:', this.config.url);
+      logger.info('   Base DN:', this.config.baseDN);
 
       client.bind(userDN, password, async (err) => {
         if (err) {
-          console.error('[LDAP] Bind failed');
-          console.error('   Error code:', err.code);
-          console.error('   Error message:', err.message);
+          logger.error('[LDAP] Bind failed');
+          logger.error('   Error code:', err.code);
+          logger.error('   Error message:', err.message);
           client.unbind();
           return reject({
             code: 'AUTH_FAILED',
@@ -82,22 +83,22 @@ class LDAPService {
           });
         }
 
-        console.log('[LDAP] Bind successful');
+        logger.info('[LDAP] Bind successful');
 
         try {
-          console.log('[LDAP] Fetching user info...');
+          logger.info('[LDAP] Fetching user info...');
           const userInfo = await this.getUserInfo(client, username);
-          console.log('[LDAP] User info retrieved:', userInfo.displayName);
-          console.log('   User real DN:', userInfo.dn);
+          logger.info('[LDAP] User info retrieved:', userInfo.displayName);
+          logger.info('   User real DN:', userInfo.dn);
 
-          console.log('[LDAP] Checking user role and groups...');
-          console.log('   Admin group DN:', this.config.adminGroup);
-          console.log('   User group DN:', this.config.userGroup);
-          console.log('   Require group membership:', this.config.requireGroup);
+          logger.info('[LDAP] Checking user role and groups...');
+          logger.info('   Admin group DN:', this.config.adminGroup);
+          logger.info('   User group DN:', this.config.userGroup);
+          logger.info('   Require group membership:', this.config.requireGroup);
 
           const realUserDN = userInfo.dn || userDN;
           const role = await this.getUserRole(client, realUserDN);
-          console.log('[LDAP] Role assigned:', role);
+          logger.info('[LDAP] Role assigned:', role);
 
           client.unbind();
 
@@ -109,9 +110,9 @@ class LDAPService {
             groups: userInfo.groups || []
           });
         } catch (error) {
-          console.error('[LDAP] Error during authentication');
-          console.error('   Error code:', error.code);
-          console.error('   Error message:', error.message);
+          logger.error('[LDAP] Error during authentication');
+          logger.error('   Error code:', error.code);
+          logger.error('   Error message:', error.message);
           client.unbind();
           reject(error);
         }
@@ -197,8 +198,8 @@ class LDAPService {
 
   async getUserRole(client, userDN) {
     return new Promise((resolve, reject) => {
-      console.log('[LDAP] Starting group membership check...');
-      console.log('   User DN:', userDN);
+      logger.info('[LDAP] Starting group membership check...');
+      logger.info('   User DN:', userDN);
 
       const opts = {
         filter: `(member=${userDN})`,
@@ -206,12 +207,12 @@ class LDAPService {
         attributes: ['cn', 'distinguishedName']
       };
 
-      console.log('   Search filter:', opts.filter);
-      console.log('   Search base:', this.config.baseDN);
+      logger.info('   Search filter:', opts.filter);
+      logger.info('   Search base:', this.config.baseDN);
 
       client.search(this.config.baseDN, opts, (err, res) => {
         if (err) {
-          console.error('[LDAP] Group search failed:', err.message);
+          logger.error('[LDAP] Group search failed:', err.message);
           if (this.config.requireGroup) {
             return reject({
               code: 'GROUP_CHECK_FAILED',
@@ -228,12 +229,12 @@ class LDAPService {
           if (dn) {
             const groupDN = dn.values[0];
             groups.push(groupDN);
-            console.log('   Found group:', groupDN);
+            logger.info('   Found group:', groupDN);
           }
         });
 
         res.on('error', (err) => {
-          console.error('[LDAP] Group search error:', err.message);
+          logger.error('[LDAP] Group search error:', err.message);
           if (this.config.requireGroup) {
             reject({
               code: 'GROUP_CHECK_FAILED',
@@ -245,45 +246,45 @@ class LDAPService {
         });
 
         res.on('end', async () => {
-          console.log(`[LDAP] Found ${groups.length} direct group(s)`);
+          logger.info(`[LDAP] Found ${groups.length} direct group(s)`);
 
           const isAdmin = groups.some(g => g === this.config.adminGroup);
           const isUser = groups.some(g => g === this.config.userGroup);
 
-          console.log('   Checking against admin group:', this.config.adminGroup);
-          console.log('   Direct admin membership?', isAdmin);
-          console.log('   Checking against user group:', this.config.userGroup);
-          console.log('   Direct user membership?', isUser);
+          logger.info('   Checking against admin group:', this.config.adminGroup);
+          logger.info('   Direct admin membership?', isAdmin);
+          logger.info('   Checking against user group:', this.config.userGroup);
+          logger.info('   Direct user membership?', isUser);
 
           if (isAdmin) {
-            console.log('[LDAP] User has ADMIN role (direct)');
+            logger.info('[LDAP] User has ADMIN role (direct)');
             return resolve('admin');
           } else if (isUser) {
-            console.log('[LDAP] User has USER role (direct)');
+            logger.info('[LDAP] User has USER role (direct)');
             return resolve('user');
           }
 
-          console.log('[LDAP] Checking nested group membership...');
+          logger.info('[LDAP] Checking nested group membership...');
           try {
             const nestedRole = await this.checkNestedGroups(client, groups);
             if (nestedRole) {
-              console.log('[LDAP] User has', nestedRole.toUpperCase(), 'role (nested)');
+              logger.info('[LDAP] User has', nestedRole.toUpperCase(), 'role (nested)');
               return resolve(nestedRole);
             }
           } catch (err) {
-            console.error('[LDAP] Nested check failed:', err.message);
+            logger.error('[LDAP] Nested check failed:', err.message);
           }
 
           if (this.config.requireGroup) {
-            console.error('[LDAP] User not in any authorized group');
-            console.error('   Required groups: Proxy_Admins OR Proxy_Users');
-            console.error('   User groups found:', groups);
+            logger.error('[LDAP] User not in any authorized group');
+            logger.error('   Required groups: Proxy_Admins OR Proxy_Users');
+            logger.error('   User groups found:', groups);
             reject({
               code: 'UNAUTHORIZED_GROUP',
               message: 'User is not member of authorized groups (Proxy_Admins or Proxy_Users)'
             });
           } else {
-            console.log('[LDAP] No group required, default USER role');
+            logger.info('[LDAP] No group required, default USER role');
             resolve('user');
           }
         });
@@ -293,22 +294,22 @@ class LDAPService {
 
   async checkNestedGroups(client, userGroups) {
     for (const groupDN of userGroups) {
-      console.log('   Checking nested membership for:', groupDN);
+      logger.info('   Checking nested membership for:', groupDN);
 
       try {
         const isInAdminGroup = await this.isGroupMemberOf(client, groupDN, this.config.adminGroup);
         if (isInAdminGroup) {
-          console.log('   Group is member of Proxy_Admins!');
+          logger.info('   Group is member of Proxy_Admins!');
           return 'admin';
         }
 
         const isInUserGroup = await this.isGroupMemberOf(client, groupDN, this.config.userGroup);
         if (isInUserGroup) {
-          console.log('   Group is member of Proxy_Users!');
+          logger.info('   Group is member of Proxy_Users!');
           return 'user';
         }
       } catch (err) {
-        console.error('   Error checking nested group:', err.message);
+        logger.error('   Error checking nested group:', err.message);
       }
     }
 

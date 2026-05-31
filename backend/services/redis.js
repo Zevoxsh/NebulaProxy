@@ -4,6 +4,7 @@
 
 import Redis from 'ioredis';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 class RedisService {
   constructor() {
@@ -31,28 +32,28 @@ class RedisService {
       });
 
       this.client.on('connect', () => {
-        console.log('[Redis] Connected successfully');
+        logger.info('[Redis] Connected successfully');
         this.isConnected = true;
       });
 
       this.client.on('error', (err) => {
-        console.error('[Redis] Connection error:', err.message);
+        logger.error('[Redis] Connection error:', err.message);
         this.isConnected = false;
       });
 
       this.client.on('close', () => {
-        console.log('[Redis] Connection closed');
+        logger.info('[Redis] Connection closed');
         this.isConnected = false;
       });
 
       // Wait for connection
       await this.client.ping();
-      console.log('[Redis] Ping successful');
+      logger.info('[Redis] Ping successful');
 
       return this;
     } catch (error) {
-      console.error('[Redis] Initialization failed:', error.message);
-      console.warn('[Redis] Running without Redis - JWT revocation will not work!');
+      logger.error('[Redis] Initialization failed:', error.message);
+      logger.warn('[Redis] Running without Redis - JWT revocation will not work!');
       this.client = null;
       this.isConnected = false;
       // Don't throw - allow app to run without Redis (degraded mode)
@@ -67,7 +68,7 @@ class RedisService {
    */
   async blacklistToken(token, expiresAt) {
     if (!this.isConnected || !this.client) {
-      console.warn('[Redis] Cannot blacklist token - Redis not connected');
+      logger.warn('[Redis] Cannot blacklist token - Redis not connected');
       return false;
     }
 
@@ -84,7 +85,7 @@ class RedisService {
       await this.client.setex(`blacklist:${token}`, ttl, '1');
       return true;
     } catch (error) {
-      console.error('[Redis] Failed to blacklist token:', error.message);
+      logger.error('[Redis] Failed to blacklist token:', error.message);
       return false;
     }
   }
@@ -105,7 +106,7 @@ class RedisService {
       const exists = await this.client.exists(`blacklist:${token}`);
       return exists === 1;
     } catch (error) {
-      console.error('[Redis] Failed to check token blacklist:', error.message);
+      logger.error('[Redis] Failed to check token blacklist:', error.message);
       // Fail open - assume not blacklisted if Redis error
       return false;
     }
@@ -130,7 +131,7 @@ class RedisService {
       }
       return count;
     } catch (error) {
-      console.error('[Redis] Failed to increment rate limit:', error.message);
+      logger.error('[Redis] Failed to increment rate limit:', error.message);
       return 0;
     }
   }
@@ -149,7 +150,7 @@ class RedisService {
       const count = await this.client.get(`ratelimit:${key}`);
       return count ? parseInt(count, 10) : 0;
     } catch (error) {
-      console.error('[Redis] Failed to get rate limit count:', error.message);
+      logger.error('[Redis] Failed to get rate limit count:', error.message);
       return 0;
     }
   }
@@ -162,7 +163,7 @@ class RedisService {
       await this.client.quit();
       this.client = null;
       this.isConnected = false;
-      console.log('[Redis] Connection closed gracefully');
+      logger.info('[Redis] Connection closed gracefully');
     }
   }
 
@@ -176,7 +177,7 @@ class RedisService {
   async checkApiKeyRateLimit(apiKeyId, limitRpm, limitRph) {
     if (!this.isConnected || !this.client) {
       // Fail open if Redis is down - allow the request
-      console.warn('[Redis] Rate limiting unavailable - allowing request');
+      logger.warn('[Redis] Rate limiting unavailable - allowing request');
       return { allowed: true, limitType: null, retryAfter: null };
     }
 
@@ -220,7 +221,7 @@ class RedisService {
       // Both limits passed
       return { allowed: true, limitType: null, retryAfter: null };
     } catch (error) {
-      console.error('[Redis] Failed to check API key rate limit:', error.message);
+      logger.error('[Redis] Failed to check API key rate limit:', error.message);
       // Fail open on error - allow the request
       return { allowed: true, limitType: null, retryAfter: null };
     }

@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 class EmailNotificationService {
   constructor() {
@@ -11,7 +12,7 @@ class EmailNotificationService {
   _init() {
     const { smtp } = config;
     if (!smtp.host || !smtp.fromEmail) {
-      console.log('[Email] SMTP not configured, email notifications disabled');
+      logger.info('[Email] SMTP not configured, email notifications disabled');
       return;
     }
 
@@ -30,7 +31,7 @@ class EmailNotificationService {
 
     this.transporter = nodemailer.createTransport(transportOptions);
     this.enabled = true;
-    console.log(`[Email] SMTP ready: ${smtp.host}:${smtp.port} secure=${smtp.secure}`);
+    logger.info(`[Email] SMTP ready: ${smtp.host}:${smtp.port} secure=${smtp.secure}`);
   }
 
   isEnabled() {
@@ -39,13 +40,13 @@ class EmailNotificationService {
 
   async send(to, subject, html, options = {}) {
     if (!this.enabled) {
-      console.log('[Email] Skipping send (SMTP not configured)');
+      logger.info('[Email] Skipping send (SMTP not configured)');
       return { success: false, message: 'SMTP not configured' };
     }
 
     const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
     if (recipients.length === 0) {
-      console.log('[Email] Skipping send (no recipients)');
+      logger.info('[Email] Skipping send (no recipients)');
       return { success: false, message: 'No email recipients' };
     }
 
@@ -59,19 +60,19 @@ class EmailNotificationService {
         html
       });
 
-      console.log(`[Email] Sent: ${subject} -> ${recipients.join(', ')}`);
+      logger.info(`[Email] Sent: ${subject} -> ${recipients.join(', ')}`);
       return { success: true };
     } catch (error) {
-      console.error(`[Email] Failed to send: ${error.message}`);
+      logger.error(`[Email] Failed to send: ${error.message}`);
 
       // Queue for retry if enabled (and not already a retry from worker)
       if (config.queue.emailRetryEnabled && !options.skipRetry) {
         try {
           const { queueService } = await import('./queueService.js');
           await queueService.enqueue('email', { to: recipients, subject, html });
-          console.log(`[Email] Queued for retry: ${subject}`);
+          logger.info(`[Email] Queued for retry: ${subject}`);
         } catch (queueError) {
-          console.error(`[Email] Failed to queue for retry: ${queueError.message}`);
+          logger.error(`[Email] Failed to queue for retry: ${queueError.message}`);
         }
       }
 

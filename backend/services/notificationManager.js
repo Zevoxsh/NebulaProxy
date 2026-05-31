@@ -1,4 +1,5 @@
 import { pool } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Notification Manager
@@ -58,7 +59,7 @@ class NotificationManager {
 
       return minutesSinceLastSent >= throttleMinutes;
     } catch (error) {
-      console.error('[NotificationManager] Error checking throttle:', error);
+      logger.error('[NotificationManager] Error checking throttle:', error);
       return true; // On error, allow sending
     }
   }
@@ -80,7 +81,7 @@ class NotificationManager {
         [notificationType, entityType, entityId, recipientType, recipientId, metadata ? JSON.stringify(metadata) : null]
       );
     } catch (error) {
-      console.error('[NotificationManager] Error tracking notification:', error);
+      logger.error('[NotificationManager] Error tracking notification:', error);
     }
   }
 
@@ -96,7 +97,7 @@ class NotificationManager {
 
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
-      console.error('[NotificationManager] Error getting state:', error);
+      logger.error('[NotificationManager] Error getting state:', error);
       return null;
     }
   }
@@ -117,7 +118,7 @@ class NotificationManager {
         [stateKey, stateValue, metadata ? JSON.stringify(metadata) : null]
       );
     } catch (error) {
-      console.error('[NotificationManager] Error setting state:', error);
+      logger.error('[NotificationManager] Error setting state:', error);
     }
   }
 
@@ -131,7 +132,7 @@ class NotificationManager {
         [stateKey]
       );
     } catch (error) {
-      console.error('[NotificationManager] Error updating state notification time:', error);
+      logger.error('[NotificationManager] Error updating state notification time:', error);
     }
   }
 
@@ -192,7 +193,7 @@ class NotificationManager {
       if (notifications.length === 0) continue;
 
       // Send aggregated notification
-      console.log(`[NotificationManager] Sending ${notifications.length} aggregated notifications for ${groupKey}`);
+      logger.info(`[NotificationManager] Sending ${notifications.length} aggregated notifications for ${groupKey}`);
 
       // TODO: Implement aggregated notification sending
       // This will be handled by the webhook services
@@ -218,7 +219,7 @@ class NotificationManager {
 
       return result.rows[0];
     } catch (error) {
-      console.error('[NotificationManager] Error getting admin preferences:', error);
+      logger.error('[NotificationManager] Error getting admin preferences:', error);
       return this.getDefaultAdminPreferences();
     }
   }
@@ -239,7 +240,7 @@ class NotificationManager {
 
       return result.rows[0];
     } catch (error) {
-      console.error('[NotificationManager] Error getting user preferences:', error);
+      logger.error('[NotificationManager] Error getting user preferences:', error);
       return null;
     }
   }
@@ -255,7 +256,7 @@ class NotificationManager {
 
       return result.rows;
     } catch (error) {
-      console.error('[NotificationManager] Error getting admin users:', error);
+      logger.error('[NotificationManager] Error getting admin users:', error);
       return [];
     }
   }
@@ -303,9 +304,9 @@ class NotificationManager {
       await pool.query(
         "DELETE FROM notification_tracking WHERE last_sent_at < NOW() - INTERVAL '30 days'"
       );
-      console.log('[NotificationManager] Cleaned old tracking records');
+      logger.info('[NotificationManager] Cleaned old tracking records');
     } catch (error) {
-      console.error('[NotificationManager] Error cleaning old tracking:', error);
+      logger.error('[NotificationManager] Error cleaning old tracking:', error);
     }
   }
 }

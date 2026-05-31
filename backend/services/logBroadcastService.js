@@ -1,5 +1,6 @@
 // Log broadcast service for streaming proxy logs to WebSocket clients
 import { trafficStatsService } from './trafficStatsService.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Log Broadcasting Service
@@ -21,7 +22,7 @@ class LogBroadcastService {
    */
   setWebSocketManager(websocketManager) {
     this.websocketManager = websocketManager;
-    console.log('LogBroadcastService initialized with WebSocket manager');
+    logger.info('LogBroadcastService initialized with WebSocket manager');
   }
 
   /**
@@ -30,7 +31,7 @@ class LogBroadcastService {
    */
   broadcastTrafficLog(logData) {
     if (!this.websocketManager) {
-      console.warn('WebSocket manager not initialized, skipping log broadcast');
+      logger.warn('WebSocket manager not initialized, skipping log broadcast');
       return;
     }
 
@@ -73,7 +74,7 @@ class LogBroadcastService {
         this.processBatch();
       }
     } catch (error) {
-      console.error('Error broadcasting traffic log:', error);
+      logger.error('Error broadcasting traffic log:', error);
     }
   }
 
@@ -98,7 +99,7 @@ class LogBroadcastService {
         }
       }
     } catch (error) {
-      console.error('Error processing message batch:', error);
+      logger.error('Error processing message batch:', error);
     } finally {
       this.isProcessing = false;
     }
@@ -138,7 +139,7 @@ class LogBroadcastService {
         this.processBatch();
       }
     } catch (error) {
-      console.error('Error broadcasting proxy log:', error);
+      logger.error('Error broadcasting proxy log:', error);
     }
   }
 

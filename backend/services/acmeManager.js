@@ -15,6 +15,7 @@ import { database } from './database.js';
 import { certificateManager } from './certificateManager.js';
 import { sanitizeHostname } from '../utils/security.js';
 import configManager from '../config/config-manager.js';
+import { logger } from '../utils/logger.js';
 
 class AcmeManager {
   constructor() {
@@ -50,17 +51,17 @@ class AcmeManager {
     if (!fs.existsSync(this.webrootDir)) {
       try {
         fs.mkdirSync(this.webrootDir, { recursive: true });
-        console.log(`[AcmeManager] Created webroot directory: ${this.webrootDir}`);
+        logger.info(`[AcmeManager] Created webroot directory: ${this.webrootDir}`);
       } catch (error) {
-        console.error('[AcmeManager] Failed to create webroot directory:', error.message);
+        logger.error('[AcmeManager] Failed to create webroot directory:', error.message);
       }
     }
 
     const email = this.getEmail();
-    console.log('[AcmeManager] Initialized');
-    console.log(`[AcmeManager] Email: ${email || '(not set)'}`);
-    console.log(`[AcmeManager] Webroot: ${this.webrootDir}`);
-    console.log(`[AcmeManager] Cert directory: ${this.certDir}`);
+    logger.info('[AcmeManager] Initialized');
+    logger.info(`[AcmeManager] Email: ${email || '(not set)'}`);
+    logger.info(`[AcmeManager] Webroot: ${this.webrootDir}`);
+    logger.info(`[AcmeManager] Cert directory: ${this.certDir}`);
   }
 
   /**
@@ -76,18 +77,18 @@ class AcmeManager {
     const dbDomain = await database.getDomainByHostname(domain);
 
     if (dbDomain && dbDomain.acme_challenge_type === 'dns-01') {
-      console.log(`[AcmeManager] Domain ${domain} requires DNS-01 challenge (manual setup required)`);
-      console.log(`[AcmeManager] Skipping automatic HTTP-01 certificate request`);
+      logger.info(`[AcmeManager] Domain ${domain} requires DNS-01 challenge (manual setup required)`);
+      logger.info(`[AcmeManager] Skipping automatic HTTP-01 certificate request`);
       return;
     }
 
     if (await this.certFilesExist(domain)) {
       const expiresSoon = await this.certExpiresSoon(domain);
       if (!expiresSoon) {
-        console.log(`[AcmeManager] Certificate already exists for ${domain}`);
+        logger.info(`[AcmeManager] Certificate already exists for ${domain}`);
         return;
       }
-      console.log(`[AcmeManager] Certificate for ${domain} expires soon, attempting renewal`);
+      logger.info(`[AcmeManager] Certificate for ${domain} expires soon, attempting renewal`);
     }
 
     if (this.running.has(domain)) {
@@ -116,7 +117,7 @@ class AcmeManager {
     // Sanitize domain to prevent command injection
     const safeDomain = sanitizeHostname(domain);
 
-    console.log(`[AcmeManager] Requesting certificate for ${safeDomain}...`);
+    logger.info(`[AcmeManager] Requesting certificate for ${safeDomain}...`);
 
     return new Promise((resolve, reject) => {
       const args = [
@@ -144,7 +145,7 @@ class AcmeManager {
 
       certbot.on('close', async (code) => {
         if (code === 0) {
-          console.log(`[AcmeManager] SUCCESS: Certificate obtained for ${domain}`);
+          logger.info(`[AcmeManager] SUCCESS: Certificate obtained for ${domain}`);
 
           // Update SSL certificate info in database
           try {
@@ -162,10 +163,10 @@ class AcmeManager {
               // Store certificate in database
               await certificateManager.storeCertbotCertificateInDB(dbDomain.id, certPath, keyPath);
 
-              console.log(`[AcmeManager] SSL info updated for ${domain} (expires: ${expiresAt})`);
+              logger.info(`[AcmeManager] SSL info updated for ${domain} (expires: ${expiresAt})`);
             }
           } catch (dbError) {
-            console.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
+            logger.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
           }
 
           resolve();
@@ -173,23 +174,23 @@ class AcmeManager {
           const trimmedStdout = stdout.trim();
           const trimmedStderr = stderr.trim();
           if (trimmedStdout) {
-            console.error(`[AcmeManager] Certbot stdout (${domain}):
+            logger.error(`[AcmeManager] Certbot stdout (${domain}):
 ${trimmedStdout}`);
           }
           if (trimmedStderr) {
-            console.error(`[AcmeManager] Certbot stderr (${domain}):
+            logger.error(`[AcmeManager] Certbot stderr (${domain}):
 ${trimmedStderr}`);
           }
-          console.error(`[AcmeManager] Certbot failed for ${domain} (code ${code})`);
-          console.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
-          console.error('[AcmeManager] Check /var/log/letsencrypt/letsencrypt.log for full details');
+          logger.error(`[AcmeManager] Certbot failed for ${domain} (code ${code})`);
+          logger.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
+          logger.error('[AcmeManager] Check /var/log/letsencrypt/letsencrypt.log for full details');
           reject(new Error(`Certbot exited with code ${code}`));
         }
       });
 
       certbot.on('error', (error) => {
-        console.error('[AcmeManager] Failed to spawn certbot:', error.message);
-        console.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
+        logger.error('[AcmeManager] Failed to spawn certbot:', error.message);
+        logger.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
         reject(new Error(`Failed to spawn certbot: ${error.message}`));
       });
     });
@@ -212,7 +213,7 @@ ${trimmedStderr}`);
       const metadata = certificateManager.parseCertificateMetadata(cert.fullchain);
       return new Date(metadata.expiresAt) > new Date();
     } catch (error) {
-      console.error(`[AcmeManager] Error checking certificate in DB for ${domain}:`, error.message);
+      logger.error(`[AcmeManager] Error checking certificate in DB for ${domain}:`, error.message);
       return false;
     }
   }
@@ -224,7 +225,7 @@ ${trimmedStderr}`);
     try {
       return await certificateManager.loadCertificateFromDB(domain);
     } catch (error) {
-      console.error(`[AcmeManager] Error reading cert data for ${domain}:`, error.message);
+      logger.error(`[AcmeManager] Error reading cert data for ${domain}:`, error.message);
       return null;
     }
   }
@@ -244,7 +245,7 @@ ${trimmedStderr}`);
       const metadata = certificateManager.parseCertificateMetadata(cert.fullchain);
       return new Date(metadata.expiresAt);
     } catch (error) {
-      console.error(`[AcmeManager] Error getting cert expiry for ${domain}:`, error.message);
+      logger.error(`[AcmeManager] Error getting cert expiry for ${domain}:`, error.message);
       return null;
     }
   }
@@ -301,7 +302,7 @@ ${trimmedStderr}`);
    * Called by cron job daily
    */
   async renewExpiringSoon() {
-    console.log('[AcmeManager] Checking for expiring certificates...');
+    logger.info('[AcmeManager] Checking for expiring certificates...');
 
     try {
       // Get all domains with SSL enabled and ACME enabled
@@ -309,7 +310,7 @@ ${trimmedStderr}`);
         .filter(d => d.proxy_type === 'http' && d.ssl_enabled && d.acme_enabled);
 
       if (domainsWithSSL.length === 0) {
-        console.log('[AcmeManager] No domains configured for auto-renewal');
+        logger.info('[AcmeManager] No domains configured for auto-renewal');
         return;
       }
 
@@ -319,20 +320,20 @@ ${trimmedStderr}`);
       for (const domainObj of domainsWithSSL) {
         const hostname = domainObj.hostname;
         if (await this.certExpiresSoon(hostname)) {
-          console.log(`[AcmeManager] Renewing certificate for ${hostname}...`);
+          logger.info(`[AcmeManager] Renewing certificate for ${hostname}...`);
           try {
             await this.ensureCert(hostname);
             renewedCount++;
           } catch (error) {
-            console.error(`[AcmeManager] Failed to renew cert for ${hostname}:`, error.message);
+            logger.error(`[AcmeManager] Failed to renew cert for ${hostname}:`, error.message);
             errorCount++;
           }
         }
       }
 
-      console.log(`[AcmeManager] Renewal check complete: ${renewedCount} renewed, ${errorCount} errors`);
+      logger.info(`[AcmeManager] Renewal check complete: ${renewedCount} renewed, ${errorCount} errors`);
     } catch (error) {
-      console.error('[AcmeManager] Error during renewal check:', error.message);
+      logger.error('[AcmeManager] Error during renewal check:', error.message);
     }
   }
 
@@ -342,18 +343,18 @@ ${trimmedStderr}`);
    */
   startRenewalCron() {
     if (this.renewalJob) {
-      console.warn('[AcmeManager] Renewal cron already started');
+      logger.warn('[AcmeManager] Renewal cron already started');
       return;
     }
 
     // Run daily at 3 AM
     this.renewalJob = new CronJob('0 3 * * *', async () => {
-      console.log('[AcmeManager] Running scheduled renewal check...');
+      logger.info('[AcmeManager] Running scheduled renewal check...');
       await this.renewExpiringSoon();
     });
 
     this.renewalJob.start();
-    console.log('[AcmeManager] Renewal cron started (daily at 3 AM)');
+    logger.info('[AcmeManager] Renewal cron started (daily at 3 AM)');
   }
 
   /**
@@ -363,7 +364,7 @@ ${trimmedStderr}`);
     if (this.renewalJob) {
       this.renewalJob.stop();
       this.renewalJob = null;
-      console.log('[AcmeManager] Renewal cron stopped');
+      logger.info('[AcmeManager] Renewal cron stopped');
     }
   }
 
@@ -376,16 +377,16 @@ ${trimmedStderr}`);
       throw new Error('ACME certificates require a DNS hostname (IP addresses are not supported).');
     }
 
-    console.log(`[AcmeManager] Force renewing certificate for ${domain}...`);
+    logger.info(`[AcmeManager] Force renewing certificate for ${domain}...`);
 
     // Remove existing cert files to force renewal
     const dir = path.join(this.certDir, domain);
     if (fs.existsSync(dir)) {
       try {
         // Note: certbot manages this directory, we just trigger renewal
-        console.log(`[AcmeManager] Triggering certbot renewal for ${domain}`);
+        logger.info(`[AcmeManager] Triggering certbot renewal for ${domain}`);
       } catch (error) {
-        console.error(`[AcmeManager] Error during force renewal:`, error.message);
+        logger.error(`[AcmeManager] Error during force renewal:`, error.message);
       }
     }
 
@@ -415,7 +416,7 @@ ${trimmedStderr}`);
    * Prevents conflicts when requesting new certificates
    */
   async _deleteCertificateIfExists(domain) {
-    console.log(`[AcmeManager] Checking for existing certificates for ${domain}...`);
+    logger.info(`[AcmeManager] Checking for existing certificates for ${domain}...`);
 
     // Find all certificate variants (domain, domain-0001, domain-0002, etc.)
     const renewalDir = '/etc/letsencrypt/renewal';
@@ -429,11 +430,11 @@ ${trimmedStderr}`);
           .map(f => f.replace('.conf', ''));
 
         if (certNames.length > 0) {
-          console.log(`[AcmeManager] Found ${certNames.length} certificate(s):`, certNames.join(', '));
+          logger.info(`[AcmeManager] Found ${certNames.length} certificate(s):`, certNames.join(', '));
         }
       }
     } catch (err) {
-      console.warn(`[AcmeManager] Error reading renewal directory:`, err.message);
+      logger.warn(`[AcmeManager] Error reading renewal directory:`, err.message);
     }
 
     // Also check live directory
@@ -450,17 +451,17 @@ ${trimmedStderr}`);
         });
       }
     } catch (err) {
-      console.warn(`[AcmeManager] Error reading live directory:`, err.message);
+      logger.warn(`[AcmeManager] Error reading live directory:`, err.message);
     }
 
     if (certNames.length === 0) {
-      console.log(`[AcmeManager] No existing certificates found for ${domain}`);
+      logger.info(`[AcmeManager] No existing certificates found for ${domain}`);
       return;
     }
 
     // Delete all found certificates
     for (const certName of certNames) {
-      console.log(`[AcmeManager] Deleting certificate: ${certName}...`);
+      logger.info(`[AcmeManager] Deleting certificate: ${certName}...`);
 
       await new Promise((resolve) => {
         const certbot = spawn('certbot', [
@@ -482,28 +483,28 @@ ${trimmedStderr}`);
 
         certbot.on('close', (code) => {
           if (code === 0) {
-            console.log(`[AcmeManager] SUCCESS: Certificate ${certName} deleted`);
+            logger.info(`[AcmeManager] SUCCESS: Certificate ${certName} deleted`);
           } else {
-            console.warn(`[AcmeManager] WARNING: Failed to delete ${certName} (code ${code})`);
+            logger.warn(`[AcmeManager] WARNING: Failed to delete ${certName} (code ${code})`);
           }
           resolve();
         });
 
         certbot.on('error', (error) => {
-          console.warn(`[AcmeManager] Error deleting ${certName}:`, error.message);
+          logger.warn(`[AcmeManager] Error deleting ${certName}:`, error.message);
           resolve();
         });
 
         // Timeout after 10 seconds
         setTimeout(() => {
-          console.warn(`[AcmeManager] Deletion timeout for ${certName}`);
+          logger.warn(`[AcmeManager] Deletion timeout for ${certName}`);
           certbot.kill();
           resolve();
         }, 10000);
       });
     }
 
-    console.log(`[AcmeManager] Certificate cleanup complete for ${domain}`);
+    logger.info(`[AcmeManager] Certificate cleanup complete for ${domain}`);
   }
 
   /**
@@ -548,7 +549,7 @@ ${trimmedStderr}`);
               const expiryDateStr = `${expiryMatch[1]}T${expiryMatch[2]}`;
               const expiryDate = new Date(expiryDateStr);
 
-              console.log(`[AcmeManager] SUCCESS: Valid certificate found for ${domain} (${daysValid} days remaining)`);
+              logger.info(`[AcmeManager] SUCCESS: Valid certificate found for ${domain} (${daysValid} days remaining)`);
 
               resolve({
                 valid: true,
@@ -594,7 +595,7 @@ ${trimmedStderr}`);
       throw new Error('ACME_EMAIL environment variable not set');
     }
 
-    console.log(`[AcmeManager] Initiating DNS-01 challenge for ${domain}...`);
+    logger.info(`[AcmeManager] Initiating DNS-01 challenge for ${domain}...`);
 
     // Check if a valid certificate already exists
     const existingCert = await this._checkExistingCertificate(domain);
@@ -608,9 +609,9 @@ ${trimmedStderr}`);
         // Store existing certificate in database
         await certificateManager.storeCertbotCertificateInDB(domainId, existingCert.certPath, existingCert.keyPath);
 
-        console.log(`[AcmeManager] Using existing valid certificate for ${domain}`);
+        logger.info(`[AcmeManager] Using existing valid certificate for ${domain}`);
       } catch (dbError) {
-        console.error(`[AcmeManager] Failed to update database with existing cert:`, dbError.message);
+        logger.error(`[AcmeManager] Failed to update database with existing cert:`, dbError.message);
       }
 
       // Return success with existing certificate
@@ -648,13 +649,13 @@ ${trimmedStderr}`);
         const output = data.toString();
         stdout += output;
 
-        console.log(`[AcmeManager DNS] ${output.trim()}`);
+        logger.info(`[AcmeManager DNS] ${output.trim()}`);
 
         // Detect if certificate was obtained without DNS challenge (HTTP-01 fallback)
         if ((output.includes('Successfully received certificate') ||
              output.includes('Certificate is saved at')) &&
             !dnsToken && !dnsDomain) {
-          console.log(`[AcmeManager] WARNING: Certificate obtained without DNS challenge (likely HTTP-01 fallback)`);
+          logger.info(`[AcmeManager] WARNING: Certificate obtained without DNS challenge (likely HTTP-01 fallback)`);
           certificateObtainedWithoutDNS = true;
         }
 
@@ -662,11 +663,11 @@ ${trimmedStderr}`);
         if (output.includes('Are you OK with your IP being logged') ||
             output.includes('public IP') ||
             output.includes('(Y)es/(N)o')) {
-          console.log(`[AcmeManager] Auto-responding 'Y' to IP logging question`);
+          logger.info(`[AcmeManager] Auto-responding 'Y' to IP logging question`);
           try {
             certbot.stdin.write('Y\n');
           } catch (err) {
-            console.error(`[AcmeManager] Failed to send response to certbot:`, err.message);
+            logger.error(`[AcmeManager] Failed to send response to certbot:`, err.message);
           }
         }
 
@@ -675,12 +676,12 @@ ${trimmedStderr}`);
         if (!hasRespondedToRenewal &&
             (output.includes('What would you like to do') ||
              output.includes('Select the appropriate number'))) {
-          console.log(`[AcmeManager] Auto-responding '2' to renew certificate`);
+          logger.info(`[AcmeManager] Auto-responding '2' to renew certificate`);
           hasRespondedToRenewal = true;
           try {
             certbot.stdin.write('2\n');
           } catch (err) {
-            console.error(`[AcmeManager] Failed to send response to certbot:`, err.message);
+            logger.error(`[AcmeManager] Failed to send response to certbot:`, err.message);
           }
         }
 
@@ -702,7 +703,7 @@ ${trimmedStderr}`);
             const match = output.match(pattern);
             if (match) {
               dnsDomain = `_acme-challenge.${match[1].replace(/\.$/, '')}`;
-              console.log(`[AcmeManager] Extracted DNS domain: ${dnsDomain}`);
+              logger.info(`[AcmeManager] Extracted DNS domain: ${dnsDomain}`);
               break;
             }
           }
@@ -721,7 +722,7 @@ ${trimmedStderr}`);
             const match = output.match(pattern);
             if (match) {
               dnsToken = match[1];
-              console.log(`[AcmeManager] Extracted DNS token: ${dnsToken}`);
+              logger.info(`[AcmeManager] Extracted DNS token: ${dnsToken}`);
               break;
             }
           }
@@ -743,21 +744,21 @@ ${trimmedStderr}`);
           // Update database
           await database.updateDomainDNSChallenge(domainId, dnsToken, dnsDomain, expiresAt);
 
-          console.log(`[AcmeManager] SUCCESS: DNS challenge ready for ${domain}`);
-          console.log(`[AcmeManager] TXT Record: ${dnsDomain} = ${dnsToken}`);
+          logger.info(`[AcmeManager] SUCCESS: DNS challenge ready for ${domain}`);
+          logger.info(`[AcmeManager] TXT Record: ${dnsDomain} = ${dnsToken}`);
         }
       });
 
       certbot.stderr.on('data', (data) => {
         stderr += data.toString();
-        console.error(`[AcmeManager DNS Error] ${data.toString().trim()}`);
+        logger.error(`[AcmeManager DNS Error] ${data.toString().trim()}`);
       });
 
       certbot.on('error', (error) => {
         this.running.delete(domain);
         this.dnsChallengePending.delete(domainId);
-        console.error('[AcmeManager] Failed to spawn certbot:', error.message);
-        console.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
+        logger.error('[AcmeManager] Failed to spawn certbot:', error.message);
+        logger.error(`[AcmeManager] Command: certbot ${args.join(' ')}`);
         reject(new Error(`Failed to spawn certbot: ${error.message}`));
       });
 
@@ -779,7 +780,7 @@ ${trimmedStderr}`);
 
           // Check if certificate was obtained without DNS challenge
           if (certificateObtainedWithoutDNS) {
-            console.log(`[AcmeManager] SUCCESS: Certificate obtained successfully (via HTTP-01 fallback)`);
+            logger.info(`[AcmeManager] SUCCESS: Certificate obtained successfully (via HTTP-01 fallback)`);
 
             // Update database
             try {
@@ -793,9 +794,9 @@ ${trimmedStderr}`);
               // Store certificate in database
               await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
 
-              console.log(`[AcmeManager] SSL info updated for ${domain}`);
+              logger.info(`[AcmeManager] SSL info updated for ${domain}`);
             } catch (dbError) {
-              console.error(`[AcmeManager] Failed to update database:`, dbError.message);
+              logger.error(`[AcmeManager] Failed to update database:`, dbError.message);
             }
 
             this.running.delete(domain);
@@ -805,14 +806,14 @@ ${trimmedStderr}`);
             return;
           }
 
-          console.error(`[AcmeManager] Timeout waiting for DNS challenge from certbot`);
-          console.error(`[AcmeManager] stdout: ${stdout}`);
-          console.error(`[AcmeManager] stderr: ${stderr}`);
+          logger.error(`[AcmeManager] Timeout waiting for DNS challenge from certbot`);
+          logger.error(`[AcmeManager] stdout: ${stdout}`);
+          logger.error(`[AcmeManager] stderr: ${stderr}`);
 
           try {
             certbot.kill('SIGTERM');
           } catch (err) {
-            console.error(`[AcmeManager] Error killing certbot process:`, err.message);
+            logger.error(`[AcmeManager] Error killing certbot process:`, err.message);
           }
 
           this.running.delete(domain);
@@ -852,7 +853,7 @@ ${trimmedStderr}`);
       throw new Error('DNS challenge has expired. Please initiate a new request.');
     }
 
-    console.log(`[AcmeManager] Validating DNS challenge for ${originalDomain}...`);
+    logger.info(`[AcmeManager] Validating DNS challenge for ${originalDomain}...`);
 
     // Update status to validating
     await database.updateDNSValidationStatus(domainId, 'validating');
@@ -864,23 +865,23 @@ ${trimmedStderr}`);
       // Capture stdout and stderr for better error reporting
       certbot.stdout.on('data', (data) => {
         stdout += data.toString();
-        console.log(`[AcmeManager DNS Validation] ${data.toString().trim()}`);
+        logger.info(`[AcmeManager DNS Validation] ${data.toString().trim()}`);
       });
 
       certbot.stderr.on('data', (data) => {
         stderr += data.toString();
-        console.error(`[AcmeManager DNS Validation Error] ${data.toString().trim()}`);
+        logger.error(`[AcmeManager DNS Validation Error] ${data.toString().trim()}`);
       });
 
       // Send newline to certbot stdin to continue validation
       try {
         certbot.stdin.write('\n');
       } catch (error) {
-        console.error(`[AcmeManager] Failed to send stdin to certbot:`, error.message);
+        logger.error(`[AcmeManager] Failed to send stdin to certbot:`, error.message);
         this.running.delete(originalDomain);
         this.dnsChallengePending.delete(domainId);
         database.updateDNSValidationStatus(domainId, 'failed').catch((dbError) => {
-          console.error(`[AcmeManager] Failed to update DNS validation status:`, dbError.message);
+          logger.error(`[AcmeManager] Failed to update DNS validation status:`, dbError.message);
         });
         return reject(new Error('Failed to communicate with certbot process'));
       }
@@ -890,7 +891,7 @@ ${trimmedStderr}`);
         this.dnsChallengePending.delete(domainId);
 
         if (code === 0) {
-          console.log(`[AcmeManager] SUCCESS: Certificate obtained for ${originalDomain}`);
+          logger.info(`[AcmeManager] SUCCESS: Certificate obtained for ${originalDomain}`);
 
           // Update database - certificate is now available
           await database.updateDNSValidationStatus(domainId, 'completed');
@@ -910,15 +911,15 @@ ${trimmedStderr}`);
             // Store certificate in database
             await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
 
-            console.log(`[AcmeManager] SSL info updated for ${originalDomain} (expires: ${expiresAt})`);
+            logger.info(`[AcmeManager] SSL info updated for ${originalDomain} (expires: ${expiresAt})`);
           } catch (dbError) {
-            console.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
+            logger.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
           }
 
           resolve();
         } else {
-          console.error(`[AcmeManager] ✗ DNS validation failed for ${originalDomain} (code ${code})`);
-          console.error(`[AcmeManager] stderr: ${stderr}`);
+          logger.error(`[AcmeManager] ✗ DNS validation failed for ${originalDomain} (code ${code})`);
+          logger.error(`[AcmeManager] stderr: ${stderr}`);
 
           await database.updateDNSValidationStatus(domainId, 'failed');
 
@@ -943,7 +944,7 @@ ${trimmedStderr}`);
           this.dnsChallengePending.delete(domainId);
           this.running.delete(originalDomain);
           database.updateDNSValidationStatus(domainId, 'failed').catch((dbError) => {
-            console.error(`[AcmeManager] Failed to update DNS validation status:`, dbError.message);
+            logger.error(`[AcmeManager] Failed to update DNS validation status:`, dbError.message);
           });
           reject(new Error('DNS validation timeout'));
         }
@@ -963,10 +964,10 @@ ${trimmedStderr}`);
 
       const found = flatRecords.some(record => record === expectedValue);
 
-      console.log(`[AcmeManager] DNS check for ${domain}: ${found ? 'FOUND' : 'NOT FOUND'}`);
+      logger.info(`[AcmeManager] DNS check for ${domain}: ${found ? 'FOUND' : 'NOT FOUND'}`);
       return found;
     } catch (error) {
-      console.log(`[AcmeManager] DNS check failed for ${domain}:`, error.message);
+      logger.info(`[AcmeManager] DNS check failed for ${domain}:`, error.message);
       return false;
     }
   }
@@ -982,7 +983,7 @@ ${trimmedStderr}`);
       this.running.delete(pending.originalDomain);
       this.dnsChallengePending.delete(domainId);
       await database.clearDNSChallenge(domainId);
-      console.log(`[AcmeManager] Cancelled DNS challenge for domain ID ${domainId}`);
+      logger.info(`[AcmeManager] Cancelled DNS challenge for domain ID ${domainId}`);
     }
   }
 }

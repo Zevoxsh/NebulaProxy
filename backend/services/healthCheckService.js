@@ -12,6 +12,7 @@ import https from 'https';
 import net   from 'net';
 import { database } from './database.js';
 import { config   } from '../config/config.js';
+import { logger } from '../utils/logger.js';
 
 // Minimum interval — 5s is safe for most setups, avoids hammering backends
 // while still allowing fast failover detection.
@@ -150,7 +151,7 @@ class HealthCheckService {
     try {
       domains = await database.getAllActiveDomains();
     } catch (err) {
-      console.error('[HealthCheck] Failed to fetch domains:', err.message);
+      logger.error('[HealthCheck] Failed to fetch domains:', err.message);
       return;
     }
 
@@ -197,7 +198,7 @@ class HealthCheckService {
 
     const elapsed = Date.now() - t0;
     // Disabled verbose summary logging to reduce console clutter
-    // console.log(`[HealthCheck] Checked ${checked} domains in ${elapsed}ms`);
+    // logger.info(`[HealthCheck] Checked ${checked} domains in ${elapsed}ms`);
   }
 
   async _checkDomain(domain, timeoutMs) {
@@ -241,7 +242,7 @@ class HealthCheckService {
 
     // Disabled verbose health check logging to reduce console clutter
     // Uncomment below to see individual health check results
-    // console.log(
+    // logger.info(
     //   `[HealthCheck] ${domain.hostname} (${proxyType}) → ${result.success ? 'UP' : 'DOWN'}`
     //   + (result.error ? ` [${result.error}]` : '')
     //   + (result.responseTime != null ? ` ${result.responseTime}ms` : '')
@@ -257,7 +258,7 @@ class HealthCheckService {
       );
       await database.upsertDomainHealthStatus(domain.id, status, result.success);
     } catch (err) {
-      console.error(`[HealthCheck] DB write failed for domain ${domain.id}:`, err.message);
+      logger.error(`[HealthCheck] DB write failed for domain ${domain.id}:`, err.message);
     }
   }
 }

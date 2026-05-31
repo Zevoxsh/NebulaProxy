@@ -129,6 +129,12 @@ export const config = {
     return getConfig('JWT_SECRET') || (isTestEnv ? 'test-secret-for-ci-please-change-0000000000000000' : '');
   },
   jwtExpiry: '24h',
+  // Comma-separated list of old JWT secrets — used for verification only during key rotation.
+  // Clear this once all tokens signed with old secrets have expired (max 24h after rotation).
+  get jwtSecretPrevious() {
+    const raw = getConfig('JWT_SECRET_PREVIOUS', '');
+    return raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  },
 
   // Auth
   auth: {
@@ -228,7 +234,8 @@ export const config = {
     get connectTimeoutMs() { return parseInt(getConfig('TCP_PROXY_CONNECT_TIMEOUT_MS', '10000'), 10); },
     get keepAliveMs() { return parseInt(getConfig('TCP_PROXY_KEEPALIVE_MS', '30000'), 10); },
     get backlog() { return parseInt(getConfig('TCP_PROXY_BACKLOG', '4096'), 10); },
-    get maxConnections() { return parseInt(getConfig('TCP_PROXY_MAX_CONNECTIONS', '0'), 10); }
+    get maxConnections() { return parseInt(getConfig('TCP_PROXY_MAX_CONNECTIONS', '0'), 10); },
+    get maxConnectionsPerIp() { return parseInt(getConfig('TCP_PROXY_MAX_CONNECTIONS_PER_IP', '50'), 10); }
   },
 
   udpProxy: {

@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { logger } from '../utils/logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -73,8 +74,8 @@ class GitService {
     }
 
     try {
-      console.log(`[GitService] Checking Git availability at: ${this.repoRoot}`);
-      console.log(`[GitService] Git directory: ${this.gitDir}`);
+      logger.info(`[GitService] Checking Git availability at: ${this.repoRoot}`);
+      logger.info(`[GitService] Git directory: ${this.gitDir}`);
 
       // Check if git command exists
       await execCommand('git', ['--version'], { timeout: 5000 });
@@ -82,20 +83,20 @@ class GitService {
       // Check if .git directory exists
       const fs = await import('fs/promises');
       const gitDirExists = await fs.access(this.gitDir).then(() => true).catch(() => false);
-      console.log(`[GitService] .git directory exists: ${gitDirExists}`);
+      logger.info(`[GitService] .git directory exists: ${gitDirExists}`);
 
       if (!gitDirExists) {
-        console.log(`[GitService] Git directory not found at ${this.gitDir}`);
+        logger.info(`[GitService] Git directory not found at ${this.gitDir}`);
         this._isAvailable = false;
         return false;
       }
 
       // Try to run a git command
       await this.execGit('git rev-parse --git-dir');
-      console.log(`[GitService] Git repository is available`);
+      logger.info(`[GitService] Git repository is available`);
       this._isAvailable = true;
     } catch (error) {
-      console.error(`[GitService] Git not available: ${error.message}`);
+      logger.error(`[GitService] Git not available: ${error.message}`);
       this._isAvailable = false;
     }
 

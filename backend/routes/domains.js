@@ -9,123 +9,15 @@ import { validateBackendUrlWithDNS, sanitizeHostname } from '../utils/security.j
 import { PermissionChecker } from '../utils/permissions.js';
 import { config } from '../config/config.js';
 import { allocateAvailablePort, isPortAvailable, validateExternalPort, MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT } from '../services/portAllocator.js';
-import dns from 'dns/promises';
-import http from 'http';
-import https from 'https';
 import net from 'net';
 import validator from 'validator';
-
-const ROUTE_CHECK_PATH = '/.well-known/nebula-proxy';
-const ROUTE_CHECK_TIMEOUT_MS = 5000;
-
-const getBackendUrlPortError = (backendUrl) => {
-  try {
-    const parsedUrl = new URL(backendUrl);
-    if (parsedUrl.port) {
-      return 'Backend URL must not include a port. Use the backendPort field instead.';
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
-const parsePortNumber = (value) => {
-  const port = Number.parseInt(value, 10);
-  if (!Number.isInteger(port)) {
-    return null;
-  }
-  if (port < MIN_EXTERNAL_PORT || port > MAX_EXTERNAL_PORT) {
-    return null;
-  }
-  return port;
-};
-
-const resolveDns = async (hostname) => {
-  const results = { a: [], aaaa: [], cname: [] };
-  const [a, aaaa, cname] = await Promise.allSettled([
-    dns.resolve4(hostname),
-    dns.resolve6(hostname),
-    dns.resolveCname(hostname)
-  ]);
-
-  if (a.status === 'fulfilled') results.a = a.value;
-  if (aaaa.status === 'fulfilled') results.aaaa = aaaa.value;
-  if (cname.status === 'fulfilled') results.cname = cname.value;
-
-  return results;
-};
-
-const probeUrl = (url, hostname) => new Promise((resolve) => {
-  const isHttps = url.protocol === 'https:';
-  const client = isHttps ? https : http;
-  const options = {
-    hostname: url.hostname,
-    port: url.port || (isHttps ? 443 : 80),
-    path: url.pathname,
-    method: 'GET',
-    timeout: ROUTE_CHECK_TIMEOUT_MS,
-    headers: {
-      Host: hostname,
-      'User-Agent': 'NebulaProxy-RouteCheck/1.0'
-    }
-  };
-
-  if (isHttps) {
-    options.rejectUnauthorized = !config.proxy.allowInsecureBackends;
-  }
-
-  const req = client.request(options, (res) => {
-    let body = '';
-    res.setEncoding('utf8');
-    res.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 512) {
-        body = body.slice(0, 512);
-      }
-    });
-    res.on('end', () => {
-      const headerToken = res.headers['x-nebula-proxy'];
-      const ok = headerToken === config.proxy.checkToken || body.trim() === config.proxy.checkToken;
-      resolve({ ok, statusCode: res.statusCode });
-    });
-  });
-
-  req.on('error', (error) => {
-    resolve({ ok: false, error: error.message });
-  });
-  req.on('timeout', () => {
-    req.destroy();
-    resolve({ ok: false, error: 'timeout' });
-  });
-  req.end();
-});
-
-
-// Helper function to check if user can access a domain (view only)
-async function canAccessDomain(domain, userId, isAdmin) {
-  // Owner can always access
-  if (domain.user_id === userId) return true;
-
-  // Team members can access team domains
-  if (domain.team_id && await database.isTeamMember(domain.team_id, userId)) return true;
-
-  return false;
-}
-
-// Helper function to check if user can modify a domain
-async function canModifyDomain(domain, userId, isAdmin) {
-  // Owner can always modify
-  if (domain.user_id === userId) return true;
-
-  // For team domains, check if user has can_manage_domains permission
-  if (domain.team_id) {
-    const hasPermission = await database.hasTeamPermission(domain.team_id, userId, 'can_manage_domains');
-    return hasPermission;
-  }
-
-  return false;
-}
+import { logger } from '../utils/logger.js';
+import {
+  ROUTE_CHECK_PATH,
+  getBackendUrlPortError, parsePortNumber,
+  resolveDns, probeUrl,
+  canAccessDomain, canModifyDomain
+} from '../services/domainService.js';
 
 export async function domainRoutes(fastify, options) {
   // Admin: check if an external port is available (TCP/UDP only)
@@ -1219,7 +1111,7 @@ export async function domainRoutes(fastify, options) {
         try {
           cachedResult = await redisService.client.get(cacheKey);
         } catch (err) {
-          console.warn('[DomainStats] Cache get failed:', err.message);
+          logger.warn('[DomainStats] Cache get failed:', err.message);
         }
       }
 
@@ -1253,7 +1145,7 @@ export async function domainRoutes(fastify, options) {
         try {
           await redisService.client.setex(cacheKey, 45, JSON.stringify(result));
         } catch (err) {
-          console.warn('[DomainStats] Cache set failed:', err.message);
+          logger.warn('[DomainStats] Cache set failed:', err.message);
         }
       }
 

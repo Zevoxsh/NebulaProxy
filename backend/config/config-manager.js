@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { logger } from '../utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -74,17 +75,17 @@ class ConfigManager {
         if (migrated) {
           await this.redis.set(CONFIG_KEY, JSON.stringify(this.config));
           await this.redis.incr(CONFIG_VERSION_KEY);
-          console.log('Configuration migrated to current PostgreSQL defaults');
+          logger.info('Configuration migrated to current PostgreSQL defaults');
         }
 
-        console.log('Configuration loaded from Redis');
+        logger.info('Configuration loaded from Redis');
       } else {
         // No config in Redis, load defaults from .env.example
-        console.log('WARNING: No configuration found in Redis, using defaults');
+        logger.info('WARNING: No configuration found in Redis, using defaults');
         this.config = this.getDefaultConfig();
       }
     } catch (error) {
-      console.error('Failed to load config from Redis:', error);
+      logger.error('Failed to load config from Redis:', error);
       this.config = this.getDefaultConfig();
     }
   }
@@ -129,11 +130,11 @@ class ConfigManager {
       // Increment version
       await this.redis.incr(CONFIG_VERSION_KEY);
 
-      console.log('Configuration saved to Redis');
+      logger.info('Configuration saved to Redis');
 
       return true;
     } catch (error) {
-      console.error('Failed to save config to Redis:', error);
+      logger.error('Failed to save config to Redis:', error);
       throw error;
     }
   }
