@@ -202,11 +202,9 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE    # nginx binds port 80
-    # SECURITY: Bind only to localhost — access via a TLS-terminating reverse proxy
-    # (nginx, Caddy, Traefik) pointed at 127.0.0.1:3001.
-    # To expose externally (dev only): change to 0.0.0.0:3001:80.
     ports:
-      - "127.0.0.1:3001:80"
+      - "0.0.0.0:3001:80"
+      - "[::]:3001:80"
     extra_hosts:
       - "backend:host-gateway"   # résout 'backend' vers l'hôte (backend en network_mode host)
     restart: unless-stopped

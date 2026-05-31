@@ -75,7 +75,6 @@ class DatabaseService {
       'domain_health_status',
       'custom_headers',
       'cache_settings',
-      'cdn_settings',
       'notification_settings',
       'team_notification_settings',
       'request_logs',
