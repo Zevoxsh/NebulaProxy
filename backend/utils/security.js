@@ -69,12 +69,18 @@ export function validateBackendUrl(url) {
     '169.254.169.254', // AWS metadata
     'metadata.google.internal', // GCP metadata
     '::1', // IPv6 localhost
+    '[::1]', // IPv6 localhost (bracketed form from URL.hostname)
     'metadata', // Generic metadata
   ];
 
-  const hostname = parsedUrl.hostname.toLowerCase();
+  // Node.js URL.hostname returns bracketed IPv6 (e.g. "[::1]") per WHATWG spec.
+  // Strip brackets for uniform checking against private ranges.
+  const rawHostname = parsedUrl.hostname.toLowerCase();
+  const hostname = rawHostname.startsWith('[') && rawHostname.endsWith(']')
+    ? rawHostname.slice(1, -1)
+    : rawHostname;
 
-  if (blockedHosts.includes(hostname)) {
+  if (blockedHosts.includes(hostname) || blockedHosts.includes(rawHostname)) {
     if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal' || hostname === 'metadata') {
       throw new Error(`Blocked metadata endpoint: ${hostname}`);
     }
@@ -89,8 +95,8 @@ export function validateBackendUrl(url) {
     /^127\./,                         // 127.0.0.0/8 (loopback)
     /^169\.254\./,                    // 169.254.0.0/16 (link-local)
     /^::1$/,                           // IPv6 loopback
-    /^fe80:/,                           // IPv6 link-local
-    /^fc00:/                            // IPv6 unique local
+    /^fe80:/i,                         // IPv6 link-local (fe80::/10)
+    /^f[cd][0-9a-f]{2}:/i             // IPv6 ULA (fc00::/7 covers fc* and fd*)
   ];
 
   // Allow private/internal backends when explicitly enabled in config

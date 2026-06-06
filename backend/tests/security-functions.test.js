@@ -263,7 +263,7 @@ describe('Security Functions - Unit Tests', () => {
 
 describe('Configuration Validation', () => {
   it('should have security configuration enabled', async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../config/config.js');
 
     expect(config.security).toBeDefined();
     expect(config.security.csrfEnabled).toBeDefined();
@@ -271,7 +271,7 @@ describe('Configuration Validation', () => {
   });
 
   it('should have Redis configuration', async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../config/config.js');
 
     expect(config.redis).toBeDefined();
     expect(config.redis.host).toBeDefined();
@@ -279,7 +279,7 @@ describe('Configuration Validation', () => {
   });
 
   it('should enforce strong JWT secret in production', async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../config/config.js');
 
     // In test mode, we allow test secrets
     // In production, this should be enforced

@@ -141,28 +141,28 @@ describe('UrlFilterService', () => {
         }
       ];
 
-      // Create a mock database query spy
+      // Import the shared database singleton that urlFilterService uses internally
+      const { database } = await import('../../services/database.js');
+
+      // Clear any existing cache so getRulesForDomain hits the DB on first call
+      urlFilterService.cache.delete('domain_1');
+
+      // Spy on the underlying pgPool.query — this is what getRulesForDomain calls
+      const originalPgPool = database.pgPool;
       const querySpy = vi.fn().mockResolvedValue({ rows: mockRules });
+      database.pgPool = { query: querySpy };
 
-      // Store original query method
-      const originalQuery = urlFilterService.getRulesForDomain;
-
-      // Override with spy
-      urlFilterService.getRulesForDomain = async (domainId) => {
-        querySpy(domainId);
-        return mockRules;
-      };
-
-      // First call should query database
+      // First call should hit the database
       await urlFilterService.checkUrl(1, '/admin', 'GET');
       expect(querySpy).toHaveBeenCalledTimes(1);
 
-      // Second call should use cache
+      // Second call should use cache (no new DB query)
       await urlFilterService.checkUrl(1, '/admin', 'GET');
       expect(querySpy).toHaveBeenCalledTimes(1); // Still 1, used cache
 
-      // Restore original method
-      urlFilterService.getRulesForDomain = originalQuery;
+      // Restore
+      database.pgPool = originalPgPool;
+      urlFilterService.cache.delete('domain_1');
     });
 
     it('should invalidate cache when requested', () => {

@@ -33,7 +33,8 @@ describe('IPv6 Backend URL Validation', () => {
   describe('IPv6 URL formatting', () => {
     it('should parse bracketed IPv6 URLs correctly', () => {
       const url = new URL('http://[2a01::1]:3000');
-      expect(url.hostname).toBe('2a01::1');
+      // WHATWG URL spec: hostname includes brackets for IPv6
+      expect(url.hostname).toBe('[2a01::1]');
       expect(url.port).toBe('3000');
     });
 
@@ -78,7 +79,8 @@ describe('IPv6 Backend URL Validation', () => {
       };
 
       const url = buildUrl('tcp', '2a01::1');
-      expect(url.hostname).toBe('2a01::1');
+      // WHATWG URL spec: hostname includes brackets for IPv6
+      expect(url.hostname).toBe('[2a01::1]');
       expect(url.protocol).toBe('tcp:');
     });
   });

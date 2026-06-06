@@ -140,8 +140,12 @@ export function validateScopes(scopes, userRole) {
  * @returns {string[]} - Array of required scopes
  */
 export function getRequiredScopes(method, path) {
-    // Normalize path
-    const normalizedPath = path.replace(/\/\d+$/, '/:id'); // Replace numeric IDs with :id
+    // Normalize path — replace trailing path segment that looks like an ID (numeric or UUID-style alphanumeric)
+    // Skip known resource-name segments so /api/teams stays as-is but /api/teams/abc becomes /api/teams/:id
+    const knownSegments = new Set(['domains', 'teams', 'ssl', 'backends', 'monitoring', 'users', 'api-keys', 'health', 'stats', 'check', 'admin', 'api', 'login', 'logout', 'register', 'me']);
+    const normalizedPath = path.replace(/\/([a-zA-Z0-9][a-zA-Z0-9_-]*)$/, (match, segment) =>
+      knownSegments.has(segment) ? match : '/:id'
+    );
 
     // Route to scope mapping
     const routeScopes = {
