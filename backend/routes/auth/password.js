@@ -1,3 +1,4 @@
+// @ts-check
 import { config } from '../../config/config.js';
 import { database } from '../../services/database.js';
 import { pool } from '../../config/database.js';
@@ -13,7 +14,7 @@ import {
   sendAuthSuccess
 } from './helpers.js';
 
-export async function passwordRoutes(fastify, options) {
+export async function passwordRoutes(fastify, _options) {
   // SECURITY: Explicitly block GET on password reset endpoints
   fastify.get('/password-reset/request', async (request, reply) => {
     reply.code(405).send({

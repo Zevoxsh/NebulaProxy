@@ -1,6 +1,7 @@
+// @ts-check
 import { database } from '../services/database.js';
 
-export async function monitoringRoutes(fastify, options) {
+export async function monitoringRoutes(fastify, _options) {
   // Get service health status
   fastify.get('/services', {
     onRequest: [fastify.authenticate],
@@ -165,7 +166,7 @@ export async function monitoringRoutes(fastify, options) {
   // Refresh service status (manual health check) - DISABLED
   fastify.post('/refresh', {
     onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       return {
         success: false,
         message: 'Health checks are disabled.'

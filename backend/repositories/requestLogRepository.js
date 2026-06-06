@@ -1,7 +1,9 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
 
 import { logger } from '../utils/logger.js';
+import { logBroadcastService } from '../services/logBroadcastService.js';
 
 export class RequestLogRepository {
 // ===== REQUEST LOGS METHODS =====

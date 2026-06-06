@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * portAllocator — centralized external port allocation service
  *
@@ -80,11 +81,11 @@ export async function allocateAvailablePort(protocol, options = {}) {
  */
 export async function validateExternalPort(port, protocol) {
   if (port < MIN_EXTERNAL_PORT || port > MAX_EXTERNAL_PORT) {
-    throw { code: 400, message: `External port must be between ${MIN_EXTERNAL_PORT} and ${MAX_EXTERNAL_PORT}` };
+    throw Object.assign(new Error(`External port must be between ${MIN_EXTERNAL_PORT} and ${MAX_EXTERNAL_PORT}`), { code: 400 });
   }
   const assigned = await database.isPortAssigned(port, protocol);
   const available = await isPortAvailable(port, protocol);
   if (assigned || !available) {
-    throw { code: 409, message: `Port ${port} is already in use` };
+    throw Object.assign(new Error(`Port ${port} is already in use`), { code: 409 });
   }
 }

@@ -1,3 +1,4 @@
+// @ts-check
 import updateService from '../services/updateService.js';
 
 /**

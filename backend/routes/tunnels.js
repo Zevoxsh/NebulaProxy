@@ -1,3 +1,4 @@
+// @ts-check
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -257,7 +258,7 @@ Write-Host "[nebula-tunnel] Logs: $LogFile"
 `;
 }
 
-export async function tunnelRoutes(fastify, options) {
+export async function tunnelRoutes(fastify, _options) {
   fastify.get('/', {
     preHandler: fastify.authenticate
   }, async (request, reply) => {

@@ -1,7 +1,9 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
 
 import { logger } from '../utils/logger.js';
+import { logBroadcastService } from '../services/logBroadcastService.js';
 
 export class ProxyLogRepository {
 // ===== PROXY LOGS METHODS =====
@@ -42,7 +44,7 @@ async createProxyLog(logData) {
 }
 
 getProxyLogs(limit = 100, offset = 0, level = null) {
-  let query = `
+  const query = `
     SELECT * FROM proxy_logs
     ${level ? 'WHERE level = ?' : ''}
     ORDER BY created_at DESC

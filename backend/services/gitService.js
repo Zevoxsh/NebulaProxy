@@ -1,3 +1,4 @@
+// @ts-check
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -109,7 +110,7 @@ class GitService {
    */
   async refreshAvailability() {
     this._isAvailable = null;
-    return await this.isAvailable();
+    return this.isAvailable();
   }
 
   /**

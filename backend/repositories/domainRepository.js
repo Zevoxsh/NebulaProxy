@@ -1,5 +1,13 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
+
+import {
+  getRandomExternalPortCandidate,
+  isReservedExternalPort,
+  AUTOMATIC_EXTERNAL_PORT_MIN,
+  MAX_EXTERNAL_PORT
+} from '../utils/externalPorts.js';
 
 export class DomainRepository {
 // ===== DOMAIN METHODS =====

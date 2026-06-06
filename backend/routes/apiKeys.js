@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * API Keys Routes
  * Manage API keys for programmatic access
@@ -492,7 +493,7 @@ export function apiKeysRoutes(fastify, opts, done) {
     try {
       // Filter scopes based on user role
       const availableScopes = Object.entries(AVAILABLE_SCOPES)
-        .filter(([scope, description]) => {
+        .filter(([scope, _description]) => {
           // Hide admin-only scopes from non-admin users
           if (request.user.role !== 'admin' && scope.startsWith('users:')) {
             return false;

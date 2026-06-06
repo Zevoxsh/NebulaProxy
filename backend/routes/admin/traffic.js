@@ -1,3 +1,4 @@
+// @ts-check
 import { liveTrafficService } from '../../services/liveTrafficService.js';
 import { database } from '../../services/database.js';
 
@@ -10,7 +11,7 @@ export async function trafficAdminRoutes(fastify) {
 
       // Enrich with domain hostname + proxy_type
       const domainIds = [...new Set(connections.map(c => c.domainId))];
-      let domainMap = {};
+      const domainMap = {};
       if (domainIds.length) {
         const rows = await database.pgPool.query(
           'SELECT id, hostname, proxy_type FROM domains WHERE id = ANY($1)',

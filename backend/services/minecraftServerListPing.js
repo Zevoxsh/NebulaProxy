@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Minecraft Server List Ping
  *
@@ -184,13 +185,6 @@ export function minecraftServerListPing(hostname, port = 25565, timeout = 5000) 
     const socket = new net.Socket();
     let responseBuffer = Buffer.alloc(0);
     let resolved = false;
-
-    const cleanup = () => {
-      if (!resolved) {
-        resolved = true;
-        socket.destroy();
-      }
-    };
 
     const resolveResult = (result) => {
       if (!resolved) {

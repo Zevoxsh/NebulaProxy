@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
@@ -13,7 +14,7 @@ const TEMPLATE_PATH = join(__dirname, '../../zabbix/nebula_proxy_template.yaml')
  * GET /api/zabbix/lld/domains   — Low-Level Discovery feed (Zabbix LLD format)
  * GET /api/zabbix/template      — Download the Zabbix YAML template
  */
-export async function zabbixRoutes(fastify, options) {
+export async function zabbixRoutes(fastify, _options) {
   // LLD: domain discovery
   fastify.get('/lld/domains', async (request, reply) => {
     try {

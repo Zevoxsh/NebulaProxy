@@ -1,10 +1,11 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { PermissionChecker } from '../utils/permissions.js';
 import validator from 'validator';
 import crypto from 'crypto';
 
 // Helper function to check if user can access a redirection (view only)
-async function canAccessRedirection(redirection, userId, isAdmin) {
+async function canAccessRedirection(redirection, userId, _isAdmin) {
   // Owner can always access
   if (redirection.user_id === userId) return true;
 
@@ -15,7 +16,7 @@ async function canAccessRedirection(redirection, userId, isAdmin) {
 }
 
 // Helper function to check if user can modify a redirection
-async function canModifyRedirection(redirection, userId, isAdmin) {
+async function canModifyRedirection(redirection, userId, _isAdmin) {
   // Owner can always modify
   if (redirection.user_id === userId) return true;
 
@@ -39,7 +40,7 @@ function generateShortCode(length = 8) {
   return result;
 }
 
-export async function redirectionRoutes(fastify, options) {
+export async function redirectionRoutes(fastify, _options) {
 
   // List all redirections for the authenticated user
   fastify.get('/', {

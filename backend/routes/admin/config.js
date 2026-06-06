@@ -1,3 +1,4 @@
+// @ts-check
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -79,7 +80,7 @@ const parseEnvExample = () => {
   return sections;
 };
 
-export async function adminConfigRoutes(fastify, options) {
+export async function adminConfigRoutes(fastify, _options) {
 
   // ── Branding (GET is public — accessible by login page) ──────────────────
   fastify.get('/branding', async (request, reply) => {

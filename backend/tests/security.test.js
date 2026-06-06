@@ -4,8 +4,6 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import Fastify from 'fastify';
-import crypto from 'crypto';
 
 describe('Security Tests', () => {
   let app;
@@ -336,7 +334,7 @@ describe('Security Tests', () => {
     });
 
     it('should hash passwords with scrypt', async () => {
-      const { hashPassword } = await import('../routes/auth.js');
+      const { hashPassword: _hashPassword } = await import('../routes/auth.js');
       // This function is not exported, but we can test indirectly
 
       const response = await app.inject({
@@ -385,7 +383,7 @@ describe('Redis Service Tests', () => {
     await redisService.blacklistToken(token, expiresAt);
 
     // Wait for expiration
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => { setTimeout(resolve, 2000); });
 
     const isBlacklisted = await redisService.isTokenBlacklisted(token);
     expect(isBlacklisted).toBe(false);

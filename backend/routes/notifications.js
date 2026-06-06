@@ -1,6 +1,7 @@
+// @ts-check
 import { database } from '../services/database.js';
 
-export async function notificationRoutes(fastify, options) {
+export async function notificationRoutes(fastify, _options) {
 
   // Get user's notifications
   fastify.get('/', {

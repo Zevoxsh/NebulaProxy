@@ -307,7 +307,7 @@ class EmailService {
    * Send new IP login alert
    */
   async sendNewIPLoginAlert(userId, userEmail, ipData, origin = null) {
-    return await this.sendEmail({
+    return this.sendEmail({
       to: userEmail,
       subject: 'New sign-in detected on your account',
       template: 'new-ip-login',
@@ -331,7 +331,7 @@ class EmailService {
    * Send domain down alert
    */
   async sendDomainDownAlert(userId, userEmail, domainData) {
-    return await this.sendEmail({
+    return this.sendEmail({
       to: userEmail,
       subject: `Domain offline: ${domainData.hostname}`,
       template: 'domain-down',
@@ -357,7 +357,7 @@ class EmailService {
    * Send domain restored alert
    */
   async sendDomainRestoredAlert(userId, userEmail, domainData) {
-    return await this.sendEmail({
+    return this.sendEmail({
       to: userEmail,
       subject: `Domain restored: ${domainData.hostname}`,
       template: 'domain-restored',
@@ -382,7 +382,7 @@ class EmailService {
    * Send SSL expiring alert
    */
   async sendSSLExpiringAlert(userId, userEmail, sslData) {
-    return await this.sendEmail({
+    return this.sendEmail({
       to: userEmail,
       subject: `SSL certificate expiring soon: ${sslData.domainName}`,
       template: 'ssl-expiring',
@@ -407,7 +407,7 @@ class EmailService {
    * Send team domain down alert
    */
   async sendTeamDomainDownAlert(userId, userEmail, teamData) {
-    return await this.sendEmail({
+    return this.sendEmail({
       to: userEmail,
       subject: `Team domain offline: ${teamData.domainName}`,
       template: 'team-domain-down',
@@ -472,7 +472,7 @@ class EmailService {
       })
     );
 
-    return await Promise.allSettled(promises);
+    return Promise.allSettled(promises);
   }
 
   /**
@@ -514,7 +514,7 @@ class EmailService {
       })
     );
 
-    return await Promise.allSettled(promises);
+    return Promise.allSettled(promises);
   }
 
   /**
@@ -552,7 +552,7 @@ class EmailService {
       })
     );
 
-    return await Promise.allSettled(promises);
+    return Promise.allSettled(promises);
   }
 }
 

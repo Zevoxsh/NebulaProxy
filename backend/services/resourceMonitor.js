@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Resource Monitor — periodic CPU/memory/disk checks with alert auto-resolution.
  *

@@ -256,6 +256,14 @@ export const config = {
     get maxConnections() { return parseInt(getConfig('MINECRAFT_PROXY_MAX_CONNECTIONS', '0'), 10); }
   },
 
+  // Circuit Breaker
+  circuitBreaker: {
+    get failureThreshold() { return parseInt(getConfig('CB_FAILURE_THRESHOLD', '5'), 10); },
+    get successThreshold() { return parseInt(getConfig('CB_SUCCESS_THRESHOLD', '1'), 10); },
+    get timeoutMs() { return parseInt(getConfig('CB_TIMEOUT_MS', '10000'), 10); },
+    get probeIntervalMs() { return parseInt(getConfig('CB_PROBE_INTERVAL_MS', '2000'), 10); }
+  },
+
   // ACME / Let's Encrypt
   acme: {
     get email() { return getConfig('ACME_EMAIL', ''); },

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * MultiProxySyncService - Synchronizes proxy updates across multiple proxy instances
  *
@@ -306,7 +307,7 @@ export class MultiProxySyncService {
       );
 
       // Stop proxies that are in memory but not in DB
-      for (const [domainId, entry] of this.proxyManager.proxies) {
+      for (const [domainId, _entry] of this.proxyManager.proxies) {
         if (!activeDomainsInDb.has(domainId)) {
           logger.info(`[MultiProxySync] Stopping local proxy ${domainId} (not in active domains)`);
           try {

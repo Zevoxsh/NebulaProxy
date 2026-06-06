@@ -1,3 +1,4 @@
+// @ts-check
 // Log broadcast service for streaming proxy logs to WebSocket clients
 import { trafficStatsService } from './trafficStatsService.js';
 import { logger } from '../utils/logger.js';
@@ -95,7 +96,7 @@ class LogBroadcastService {
 
         // Wait before next batch to prevent overwhelming clients
         if (this.messageQueue.length > 0) {
-          await new Promise(resolve => setTimeout(resolve, this.batchInterval));
+          await new Promise(resolve => { setTimeout(resolve, this.batchInterval); });
         }
       }
     } catch (error) {

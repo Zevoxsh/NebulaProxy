@@ -1,8 +1,13 @@
 // Auto-extracted from proxyManager.js — do not edit directly.
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
+import net from 'net';
 import { lts } from '../proxyContext.js';
 import { logger } from '../../utils/logger.js';
+import { config } from '../../config/config.js';
+import { database } from '../database.js';
+import { parseHandshake } from '../minecraftProtocol.js';
+import { urlFilterService } from '../urlFilterService.js';
 
 export class MinecraftProxy {
 // ==================== MINECRAFT PROXY ====================
@@ -228,13 +233,13 @@ async _startSharedMinecraftServer() {
         }
 
         // Select backend (with load balancing if enabled)
-        let backendHost, backendPort, backendId;
+        let backendHost, backendPort, _backendId;
         const backendSelStart = Date.now();
         try {
           const target = await this._selectBackendForDomain(domain, clientIp, 'minecraft');
           backendHost = target.hostname;
           backendPort = target.port;
-          backendId = target.backendId;
+          _backendId = target.backendId;
           logger.debug(`[DEBUG:MC] client=${clientIp} backend selected ${backendHost}:${backendPort} in ${Date.now() - backendSelStart}ms t+${Date.now() - startTime}ms`);
         } catch (err) {
           errorMessage = `Backend selection failed: ${err.message}`;

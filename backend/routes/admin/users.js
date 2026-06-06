@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../../services/database.js';
 import { proxyManager } from '../../services/proxyManager.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../../utils/security.js';
@@ -13,7 +14,7 @@ function hashPassword(password) {
   return `scrypt$${salt}$${hash.toString('hex')}`;
 }
 
-export async function adminUserRoutes(fastify, options) {
+export async function adminUserRoutes(fastify, _options) {
 
   fastify.get('/users', {
     preHandler: fastify.authorize(['admin'])
@@ -108,7 +109,7 @@ export async function adminUserRoutes(fastify, options) {
         });
       }
 
-      const updatedUser = await database.updateUserQuotas(userId, maxDomains, user.max_proxies);
+      await database.updateUserQuotas(userId, maxDomains, user.max_proxies);
 
       if (maxRedirections !== undefined) {
         await database.updateUserRedirectionQuota(userId, maxRedirections);
@@ -634,7 +635,7 @@ export async function adminUserRoutes(fastify, options) {
         }
         try {
           // Already a valid absolute URL
-          // eslint-disable-next-line no-new
+           
           new URL(rawUrl);
           return rawUrl;
         } catch {

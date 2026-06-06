@@ -1,7 +1,8 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { emailService } from '../emails/emailService.js';
 
-export async function settingsRoutes(fastify, options) {
+export async function settingsRoutes(fastify, _options) {
   // ===== NOTIFICATION SETTINGS =====
 
   // Get notification settings

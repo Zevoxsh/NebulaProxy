@@ -1,11 +1,18 @@
+// @ts-check
 /**
  * LoadBalancer - Service for distributing traffic across multiple backends
  *
  * Supports multiple algorithms:
  * - round-robin: Distributes requests evenly in rotation
  * - random: Randomly selects a backend
- * - least-connections: Selects backend with fewest active connections (TODO)
+ * - least-connections: Selects backend with fewest active connections (tracked via increment/decrementConnections)
  * - ip-hash: Consistent hashing based on client IP
+ */
+
+/**
+ * @typedef {{ id: number, backend_url: string, backend_port?: number, is_active?: boolean, ab_weight?: number }} Backend
+ * @typedef {{ id: number, load_balancing_algorithm?: string, load_balancing_enabled?: boolean, sticky_sessions_enabled?: boolean, sticky_sessions_ttl?: number, backend_url?: string, backend_port?: number }} Domain
+ * @typedef {{ hostname: string, port: number, protocol: string, backendId?: number }} BackendTarget
  */
 
 class LoadBalancer {
@@ -83,7 +90,7 @@ class LoadBalancer {
    * Round-robin selection: rotate through backends
    */
   _roundRobin(domainId, backends) {
-    let counter = this.roundRobinCounters.get(domainId) || 0;
+    const counter = this.roundRobinCounters.get(domainId) || 0;
     const backend = backends[counter % backends.length];
     this.roundRobinCounters.set(domainId, counter + 1);
     return backend;
@@ -263,6 +270,6 @@ class LoadBalancer {
   }
 }
 
-// Export singleton instance
+export { LoadBalancer };
 export const loadBalancer = new LoadBalancer();
 export default loadBalancer;

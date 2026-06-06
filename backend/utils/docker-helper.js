@@ -1,3 +1,4 @@
+// @ts-check
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import net from 'net';
@@ -348,7 +349,7 @@ export class DockerHelper {
       } catch {
         // Container not ready yet
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => { setTimeout(resolve, 1000); });
     }
 
     throw new Error('PostgreSQL container failed to start within timeout');
@@ -357,7 +358,7 @@ export class DockerHelper {
   /**
    * Update docker-compose.yml to include PostgreSQL
    */
-  static async addPostgresToCompose(projectName = 'nebulaproxy') {
+  static async addPostgresToCompose(_projectName = 'nebulaproxy') {
     // This will be handled by updating the docker-compose.yml file
     // For now, we'll use standalone container
     return true;

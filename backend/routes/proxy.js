@@ -1,7 +1,8 @@
+// @ts-check
 import { config } from '../config/config.js';
 import { validateBackendUrlWithDNS } from '../utils/security.js';
 
-export async function proxyRoutes(fastify, options) {
+export async function proxyRoutes(fastify, _options) {
   // Proxy any request
   fastify.all('/*', {
     preHandler: fastify.authenticate

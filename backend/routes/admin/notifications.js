@@ -1,3 +1,4 @@
+// @ts-check
 import { pool } from '../../config/database.js';
 import nodemailer from 'nodemailer';
 import { zabbixService } from '../../services/zabbixService.js';
@@ -9,7 +10,7 @@ import { zabbixService } from '../../services/zabbixService.js';
  * POST /api/admin/notifications/test/email     - Test email
  * POST /api/admin/notifications/test/zabbix    - Test Zabbix connection
  */
-export async function notificationRoutes(fastify, options) {
+export async function notificationRoutes(fastify, _options) {
   const DEFAULT_ZABBIX = {
     enabled: false,
     server_host: '',

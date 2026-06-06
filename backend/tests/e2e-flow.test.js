@@ -162,7 +162,7 @@ describe('E2E — Authenticated domain access', () => {
     const { redisService } = await import('../services/redis.js');
     app.decorate('authenticate', async function (req, reply) {
       const authHeader   = req.headers.authorization;
-      const cookieHeader = req.headers.cookie;
+      const _cookieHeader = req.headers.cookie;
       let token;
       try {
         if (authHeader?.startsWith('Bearer ')) {

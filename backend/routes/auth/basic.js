@@ -1,3 +1,4 @@
+// @ts-check
 import { ldapAuth } from '../../services/ldap.js';
 import { config } from '../../config/config.js';
 import { autoRegisterUser } from '../../middleware/autoRegister.js';
@@ -15,7 +16,7 @@ import {
   sendAuthSuccess
 } from './helpers.js';
 
-export async function basicRoutes(fastify, options) {
+export async function basicRoutes(fastify, _options) {
   // Auth mode endpoint
   // SECURITY FIX: Return generic response to avoid information disclosure
   // Frontend can determine auth type from registration availability

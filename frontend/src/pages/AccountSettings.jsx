@@ -262,11 +262,11 @@ export default function AccountSettings() {
   const updateNotifPref = (key, value) => setNotifPrefs({ ...notifPrefs, [key]: value });
 
   const fetchApiKeys = async () => {
-    try { const r = await apiKeysAPI.list(); setApiKeys(r.data.apiKeys || []); } catch {}
+    try { const r = await apiKeysAPI.list(); setApiKeys(r.data.apiKeys || []); } catch { /* ignore */ }
   };
 
   const fetchUsageStats = async (keyId) => {
-    try { setLoadingUsage(true); const r = await apiKeysAPI.getUsage(keyId); setUsageStats(r.data); } catch {}
+    try { setLoadingUsage(true); const r = await apiKeysAPI.getUsage(keyId); setUsageStats(r.data); } catch { /* ignore */ }
     finally { setLoadingUsage(false); }
   };
 

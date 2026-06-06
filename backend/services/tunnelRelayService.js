@@ -1,3 +1,4 @@
+// @ts-check
 import crypto from 'crypto';
 import dgram from 'dgram';
 import net from 'net';
@@ -160,7 +161,7 @@ class TunnelRelayService {
       });
 
       let bytesSentToAgent = 0;
-      let bytesRecvFromAgent = 0;
+      const bytesRecvFromAgent = 0;
       let backpressureCount = 0;
       let backpressureAt = 0;
 
@@ -514,7 +515,7 @@ class TunnelRelayService {
         continue;
       }
 
-      await new Promise((resolve) => entry.server.close(() => resolve()));
+      await new Promise((resolve) => { entry.server.close(() => resolve()); });
     }
     this.bindingServers.clear();
 

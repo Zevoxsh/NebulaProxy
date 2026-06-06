@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Log Batch Queue - Batches request logs for efficient bulk inserts
  * Reduces per-request DB latency by 5-15% through batching

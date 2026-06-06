@@ -1,5 +1,5 @@
+// @ts-check
 import { config } from '../config/config.js';
-import { logger } from './logger.js';
 
 export function applyLogFilter() {
   const suppressed = new Set(config.logging.suppressPrefixes);

@@ -1,3 +1,4 @@
+// @ts-check
 import { pool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 

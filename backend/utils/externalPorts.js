@@ -1,3 +1,4 @@
+// @ts-check
 export const MIN_EXTERNAL_PORT = 1;
 export const MAX_EXTERNAL_PORT = 65535;
 export const AUTOMATIC_EXTERNAL_PORT_MIN = 1024;

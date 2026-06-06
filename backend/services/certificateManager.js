@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Certificate Manager - Gestion des certificats SSL depuis la BDD
  * Charge automatiquement les certificats depuis PostgreSQL/SQLite
@@ -223,7 +224,7 @@ class CertificateManager {
       ]
     });
 
-    const { issuer, issuedAt, expiresAt } = this.parseCertificateMetadata(pems.cert);
+    const { issuer: _issuer, issuedAt, expiresAt } = this.parseCertificateMetadata(pems.cert);
     const resolvedIssuer = 'NebulaProxy Self-Signed';
 
     await database.storeWildcardCert({

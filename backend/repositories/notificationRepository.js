@@ -1,3 +1,4 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
 

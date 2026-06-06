@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * ACME Manager - Let's Encrypt certificate management
  *
@@ -8,9 +9,8 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import net from 'net';
-import { CronJob } from 'cron';
+import cron from 'node-cron';
 import { database } from './database.js';
 import { certificateManager } from './certificateManager.js';
 import { sanitizeHostname } from '../utils/security.js';
@@ -348,12 +348,11 @@ ${trimmedStderr}`);
     }
 
     // Run daily at 3 AM
-    this.renewalJob = new CronJob('0 3 * * *', async () => {
+    this.renewalJob = cron.schedule('0 3 * * *', async () => {
       logger.info('[AcmeManager] Running scheduled renewal check...');
       await this.renewExpiringSoon();
     });
 
-    this.renewalJob.start();
     logger.info('[AcmeManager] Renewal cron started (daily at 3 AM)');
   }
 
@@ -470,15 +469,15 @@ ${trimmedStderr}`);
           '--non-interactive'
         ]);
 
-        let stdout = '';
-        let stderr = '';
+        let _stdout = '';
+        let _stderr = '';
 
         certbot.stdout.on('data', (data) => {
-          stdout += data.toString();
+          _stdout += data.toString();
         });
 
         certbot.stderr.on('data', (data) => {
-          stderr += data.toString();
+          _stderr += data.toString();
         });
 
         certbot.on('close', (code) => {
@@ -525,14 +524,14 @@ ${trimmedStderr}`);
       const certbot = spawn('certbot', ['certificates', '-d', safeDomain]);
 
       let stdout = '';
-      let stderr = '';
+      let _stderr = '';
 
       certbot.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
       certbot.stderr.on('data', (data) => {
-        stderr += data.toString();
+        _stderr += data.toString();
       });
 
       certbot.on('close', (code) => {
@@ -859,12 +858,12 @@ ${trimmedStderr}`);
     await database.updateDNSValidationStatus(domainId, 'validating');
 
     return new Promise((resolve, reject) => {
-      let stdout = '';
+      let _stdout = '';
       let stderr = '';
 
       // Capture stdout and stderr for better error reporting
       certbot.stdout.on('data', (data) => {
-        stdout += data.toString();
+        _stdout += data.toString();
         logger.info(`[AcmeManager DNS Validation] ${data.toString().trim()}`);
       });
 
@@ -883,7 +882,8 @@ ${trimmedStderr}`);
         database.updateDNSValidationStatus(domainId, 'failed').catch((dbError) => {
           logger.error(`[AcmeManager] Failed to update DNS validation status:`, dbError.message);
         });
-        return reject(new Error('Failed to communicate with certbot process'));
+        reject(new Error('Failed to communicate with certbot process'));
+        return;
       }
 
       certbot.on('close', async (code) => {

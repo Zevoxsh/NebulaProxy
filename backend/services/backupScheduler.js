@@ -1,3 +1,4 @@
+// @ts-check
 import cron from 'node-cron';
 import { pool } from '../config/database.js';
 import { databaseBackupService } from './databaseBackupService.js';

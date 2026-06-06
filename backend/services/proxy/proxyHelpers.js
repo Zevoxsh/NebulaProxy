@@ -2,7 +2,12 @@
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
 
+import net from 'net';
 import { logger } from '../../utils/logger.js';
+import { config } from '../../config/config.js';
+import { database } from '../database.js';
+import { loadBalancer } from '../loadBalancer.js';
+
 export class ProxyHelpers {
 // ==================== HELPERS ====================
 
@@ -214,15 +219,6 @@ _getRealClientIp(req) {
  * @returns {Object} { hostname, port, protocol }
  */
 async _selectBackendForDomain(domain, clientIp, protocol, opts = {}) {
-  // Default port based on protocol
-  const defaultPorts = {
-    http: 80,
-    https: 443,
-    tcp: 443,
-    udp: 53,
-    minecraft: 25565
-  };
-
   // FAST PATH: If load balancing is not enabled, use the default backend_url directly
   // This avoids querying the database entirely for simple single-backend domains
   if (!domain.load_balancing_enabled) {

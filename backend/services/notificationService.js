@@ -1,3 +1,4 @@
+// @ts-check
 import nodemailer from 'nodemailer';
 import { pool } from '../config/database.js';
 import { zabbixService } from './zabbixService.js';
@@ -34,7 +35,7 @@ class NotificationService {
    * Send notification via all enabled channels
    */
   async send(notification, options = {}) {
-    const { title, message, severity = 'info', event = 'general' } = notification;
+    const { title, message, severity = 'info' } = notification;
     const {
       channels = null,
       reloadConfig = true
@@ -74,7 +75,7 @@ class NotificationService {
 
   async sendZabbixEvent(notification) {
     try {
-      const { event = 'general', severity = 'info', metadata = {} } = notification;
+      const { event = 'general', metadata = {} } = notification;
 
       // Map notification events to Zabbix trapper keys
       if (event === 'domain_down' && metadata.domain) {

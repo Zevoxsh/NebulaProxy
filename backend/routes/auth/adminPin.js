@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../../services/database.js';
 import { pool } from '../../config/database.js';
 import {
@@ -16,7 +17,7 @@ import {
   ADMIN_PIN_LOCK_MINUTES
 } from './helpers.js';
 
-export async function adminPinRoutes(fastify, options) {
+export async function adminPinRoutes(fastify, _options) {
   // Admin PIN status (required to enter admin panel)
   fastify.get('/admin-pin/status', {
     preHandler: fastify.authenticate

@@ -1,3 +1,4 @@
+// @ts-check
 import { adminUserRoutes } from './users.js';
 import { adminConfigRoutes } from './config.js';
 import { adminSystemRoutes } from './system.js';
@@ -7,7 +8,7 @@ import { trafficAdminRoutes } from './traffic.js';
 import { backupRoutes } from './backups.js';
 import { oidcAdminRoutes } from './oidc.js';
 
-export async function adminRoutes(fastify, options) {
+export async function adminRoutes(fastify, _options) {
   await fastify.register(adminUserRoutes);
   await fastify.register(adminConfigRoutes);
   await fastify.register(adminSystemRoutes);

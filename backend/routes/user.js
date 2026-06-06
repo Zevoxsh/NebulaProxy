@@ -1,3 +1,4 @@
+// @ts-check
 import validator from 'validator';
 import { database } from '../services/database.js';
 import { config } from '../config/config.js';
@@ -32,7 +33,7 @@ function getWebauthnContext(request) {
 
 const pendingPasskeyRegistrations = new Map();
 
-export async function userRoutes(fastify, options) {
+export async function userRoutes(fastify, _options) {
   // Get current user info
   fastify.get('/me', {
     preHandler: fastify.authenticate

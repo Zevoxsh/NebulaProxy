@@ -1,3 +1,4 @@
+// @ts-check
 import { queueService } from './queueService.js';
 import { emailNotificationService } from './emailNotificationService.js';
 import { database } from './database.js';
@@ -180,7 +181,7 @@ class RetryWorker {
 
       // Call email service WITHOUT retry (to avoid infinite loop)
       // We'll temporarily disable retry by not catching errors
-      const result = await emailNotificationService.transporter.sendMail({
+      await emailNotificationService.transporter.sendMail({
         from: `"${config.smtp.fromName}" <${config.smtp.fromEmail}>`,
         to: Array.isArray(to) ? to.join(', ') : to,
         subject,
@@ -201,7 +202,7 @@ class RetryWorker {
    * @param {object} payload - ACME payload { domain }
    * @returns {boolean} True if succeeded
    */
-  async executeAcmeJob(payload) {
+  async executeAcmeJob(_payload) {
     try {
       // Optional: ACME cert renewal retry
       // const { domain } = payload;

@@ -17,7 +17,11 @@
     "config:import": "node scripts/config-manager.js import",
     "admin:reset-password": "node scripts/reset-admin-password.js",
     "admin:disable-2fa": "node scripts/disable-user-2fa.js",
-    "tunnel:agent": "node scripts/tunnel-agent.js"
+    "tunnel:agent": "node scripts/tunnel-agent.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",
@@ -25,7 +29,6 @@
     "@fastify/cookie": "^9.3.1",
     "@fastify/cors": "^8.5.0",
     "@fastify/csrf-protection": "^6.4.1",
-    "@fastify/http-proxy": "^9.5.0",
     "@fastify/jwt": "^7.2.4",
     "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^9.1.0",
@@ -33,7 +36,6 @@
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "@simplewebauthn/server": "^13.2.2",
-    "cron": "^4.4.0",
     "dotenv": "^16.3.1",
     "fastify": "^4.25.2",
     "http-proxy": "^1.18.1",
@@ -50,7 +52,11 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
     "vitest": "^2.1.8"
   }
 }

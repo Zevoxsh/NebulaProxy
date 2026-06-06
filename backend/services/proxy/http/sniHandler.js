@@ -2,7 +2,12 @@
 // Mixed into HttpProxy.prototype in httpProxy.js.
 
 
+import tls from 'tls';
+import selfsigned from 'selfsigned';
 import { logger } from '../../../utils/logger.js';
+import { database } from '../../database.js';
+import { certificateManager } from '../../certificateManager.js';
+
 export class SniHandler {
 async _getSniContext(servername, callback) {
 try {

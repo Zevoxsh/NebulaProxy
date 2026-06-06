@@ -1,3 +1,4 @@
+// @ts-check
 import { database }             from '../services/database.js';
 import { redisService }         from '../services/redis.js';
 import { trafficStatsService }  from '../services/trafficStatsService.js';
@@ -61,7 +62,7 @@ async function withCache(cacheKey, ttl, fn) {
   return result;
 }
 
-export async function analyticsRoutes(fastify, options) {
+export async function analyticsRoutes(fastify, _options) {
 
   // ────────────────── GET /stats ──────────────────
   fastify.get('/stats', {

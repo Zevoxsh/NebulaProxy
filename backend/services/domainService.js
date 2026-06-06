@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Domain service — pure business-logic functions extracted from routes/domains.js.
  * None of these functions reference the Fastify instance, request, or reply objects.

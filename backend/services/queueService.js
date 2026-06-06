@@ -1,3 +1,4 @@
+// @ts-check
 import { v4 as uuidv4 } from 'uuid';
 import configManager from '../config/config-manager.js';
 import { config } from '../config/config.js';

@@ -1,8 +1,8 @@
+// @ts-check
 import { database } from '../../services/database.js';
 import { generateTotpSecret, generateOtpAuthUrl, verifyTotpCode } from '../../utils/totp.js';
 import {
   normalizeOtpCode,
-  createPendingTwoFactorToken,
   getTwoFactorEmailMask,
   encryptTotpSecret,
   decryptTotpSecret,
@@ -18,7 +18,7 @@ import {
   sendAuthSuccess
 } from './helpers.js';
 
-export async function mfaRoutes(fastify, options) {
+export async function mfaRoutes(fastify, _options) {
   // Initiate selected second-factor challenge for pending login
   fastify.post('/2fa/challenge', {
     schema: {

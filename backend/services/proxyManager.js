@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * ProxyManager - Core proxy management service
  *
@@ -5,27 +6,9 @@
  * Adapted from neb project with simplifications for NebulaProxy architecture
  */
 
-import net from 'net';
-import dgram from 'dgram';
-import http from 'http';
-import https from 'https';
-import tls from 'tls';
-import fs from 'fs';
-import path from 'path';
 import { EventEmitter } from 'events';
-import selfsigned from 'selfsigned';
 import { config } from '../config/config.js';
 import { database } from './database.js';
-import { certificateManager } from './certificateManager.js';
-import { websocketProxy } from './websocketProxy.js';
-import { parseHandshake } from './minecraftProtocol.js';
-import { loadBalancer } from './loadBalancer.js';
-import { urlFilterService } from './urlFilterService.js';
-import { circuitBreaker } from './circuitBreaker.js';
-import { geoIpService } from './geoIpService.js';
-import { redisService } from './redis.js';
-import { logBatchQueue } from './logBatchQueue.js';
-import { bandwidthTracker } from './bandwidthTracker.js';
 import { logger } from '../utils/logger.js';
 
 
@@ -230,7 +213,7 @@ import { logger } from '../utils/logger.js';
   async reloadProxy(domainId) {
     // SECURITY: Acquire reload lock (prevent race conditions)
     while (this.reloadLock) {
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => { setTimeout(resolve, 10); });
     }
     this.reloadLock = true;
 
@@ -314,7 +297,7 @@ import { logger } from '../utils/logger.js';
     // Retry failed proxies once after a short delay (handles transient boot errors)
     if (failed.length > 0) {
       logger.info(`[ProxyManager] Retrying ${failed.length} failed proxies in 3s...`);
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => { setTimeout(r, 3000); });
       for (const domain of failed) {
         try {
           await this.reloadProxy(domain.id);
@@ -353,8 +336,6 @@ import { UdpProxy } from './proxy/udpProxy.js';
 import { MinecraftProxy } from './proxy/minecraftProxy.js';
 import { HttpProxy } from './proxy/httpProxy.js';
 import { ProxyHelpers } from './proxy/proxyHelpers.js';
-import { lts, getDdos, escapeHtml } from './proxyContext.js';
-
 const _proxyModules = [
   TcpProxy,
   UdpProxy,

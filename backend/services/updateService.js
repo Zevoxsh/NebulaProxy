@@ -1,3 +1,4 @@
+// @ts-check
 import gitService from './gitService.js';
 import { getPgPool } from '../config/database.js';
 import { config } from '../config/config.js';
@@ -332,7 +333,7 @@ class UpdateService {
     }
 
     this.updateInProgress = true;
-    const startTime = Date.now();
+    const _startTime = Date.now();
     let updateId = null;
     let rollbackTag = null;
 
@@ -364,7 +365,7 @@ class UpdateService {
         const notifyBeforeMinutes = parseInt(await this.getConfigValue('AUTO_UPDATE_NOTIFY_BEFORE_MINUTES', '5'), 10);
         if (notifyBeforeMinutes > 0) {
           this.logger.info(`[UpdateService] Waiting ${notifyBeforeMinutes} minutes before applying update...`);
-          await new Promise(resolve => setTimeout(resolve, notifyBeforeMinutes * 60 * 1000));
+          await new Promise(resolve => { setTimeout(resolve, notifyBeforeMinutes * 60 * 1000); });
         }
       } else {
         this.logger.info(`[UpdateService] Skipping wait (manual update)`);
@@ -469,7 +470,7 @@ class UpdateService {
       await this.dockerComposeRebuild(true, true);
 
       // Wait and verify
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => { setTimeout(resolve, 5000); });
       const healthCheckPassed = await this.performHealthCheck();
 
       // Update record
@@ -518,7 +519,7 @@ class UpdateService {
         // Continue trying
       }
 
-      await new Promise(resolve => setTimeout(resolve, checkInterval));
+      await new Promise(resolve => { setTimeout(resolve, checkInterval); });
     }
 
     this.logger.error('[UpdateService] Health check timeout');

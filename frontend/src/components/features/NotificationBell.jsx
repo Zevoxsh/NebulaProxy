@@ -32,14 +32,14 @@ export default function NotificationBell() {
     fetchAll();
     const interval = setInterval(fetchAll, 30000); // Refresh every 30s
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {
     if (isOpen) {
       fetchAll();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isOpen]);
 
   const handleAcceptInvitation = async (invitationId) => {

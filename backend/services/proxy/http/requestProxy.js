@@ -1,7 +1,18 @@
 // Auto-extracted from httpProxy.js — do not edit directly.
 // Mixed into HttpProxy.prototype in httpProxy.js.
 
-import { lts, getDdos, escapeHtml } from '../../proxyContext.js';
+import http from 'http';
+import https from 'https';
+import { lts, getDdos, escapeHtml, getLb } from '../../proxyContext.js';
+import { logger } from '../../../utils/logger.js';
+import { config } from '../../../config/config.js';
+import { database } from '../../database.js';
+import { circuitBreaker } from '../../circuitBreaker.js';
+import { geoIpService } from '../../geoIpService.js';
+import { redisService } from '../../redis.js';
+import { bandwidthTracker } from '../../bandwidthTracker.js';
+import { urlFilterService } from '../../urlFilterService.js';
+import { logBatchQueue } from '../../logBatchQueue.js';
 
 export class RequestProxy {
 async _proxyHttpRequest(req, res, domain) {
@@ -231,7 +242,10 @@ try {
   backendPort     = target.port;
   backendProtocol = target.protocol || 'http:';
   backendId       = target.backendId || null;
-  
+
+  // Least-connections tracking: increment active count for selected backend
+  if (backendId) { const lb = getLb(); if (lb) lb.incrementConnections(backendId); }
+
   // Debug logging for troubleshooting connection issues
   if (req.url.includes('/System/') || req.url.includes('/Branding/') || req.url.includes('/QuickConnect/')) {
     logger.info(`[HTTP Proxy] Forwarding ${req.method} ${req.url} to ${backendProtocol}//${backendHost}:${backendPort}`);
@@ -367,6 +381,11 @@ const proxyReq = protocol.request(options, (proxyRes) => {
   if (statusCode >= 500) logLevel = 'error';
   else if (statusCode >= 400) logLevel = 'warning';
   else if (statusCode >= 300) logLevel = 'info';
+
+  // Least-connections: decrement when response is done
+  proxyRes.on('end', () => {
+    if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
+  });
 
   // Bandwidth tracking (fire-and-forget — never blocks response)
   proxyRes.on('end', () => {
@@ -506,6 +525,9 @@ proxyReq.setTimeout(upstreamTimeoutMs, () => {
 
 proxyReq.on('error', (error) => {
   const responseTime = Date.now() - startTime;
+
+  // Least-connections: decrement on error so the backend isn't penalised indefinitely
+  if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
 
   // Circuit breaker: failure (but not for ECONNRESET which might be normal close)
   if (error.code !== 'ECONNRESET') {
@@ -803,7 +825,7 @@ line-height: 1.5;
  * Wrap custom HTML error page content in a standard HTTP response.
  * The `html` is admin-defined content — render it as-is.
  */
-_renderCustomErrorPage(html, code) {
+_renderCustomErrorPage(html, _code) {
 return html;
 }
 
@@ -898,12 +920,12 @@ const title = escapeHtml(copy.title || 'Service amont indisponible');
 const subtitle = escapeHtml(copy.subtitle || "Le proxy ne peut pas joindre le backend pour ce domaine. L'ecran suit le meme theme que l'interface admin afin de garder une experience coherente.");
 const message = escapeHtml(copy.message || 'The backend server is temporarily unavailable');
 const domainLabel = escapeHtml(copy.domainLabel || 'Domaine');
-const proxyLabel = escapeHtml(copy.proxyLabel || 'Proxy');
-const proxyValue = escapeHtml(copy.proxyValue || 'NebulaProxy');
-const causeLabel = escapeHtml(copy.causeLabel || 'Cause');
-const causeValue = escapeHtml(copy.causeValue || 'Backend not reachable');
-const statusLabel = escapeHtml(copy.statusLabel || 'Statut');
-const statusValue = escapeHtml(copy.statusValue || '502 Service Unavailable');
+const _proxyLabel = escapeHtml(copy.proxyLabel || 'Proxy');
+const _proxyValue = escapeHtml(copy.proxyValue || 'NebulaProxy');
+const _causeLabel = escapeHtml(copy.causeLabel || 'Cause');
+const _causeValue = escapeHtml(copy.causeValue || 'Backend not reachable');
+const _statusLabel = escapeHtml(copy.statusLabel || 'Statut');
+const _statusValue = escapeHtml(copy.statusValue || '502 Service Unavailable');
 const retryButton = escapeHtml(copy.retryButton || 'Reessayer');
 const backButton = escapeHtml(copy.backButton || 'Retour');
 const footerText = escapeHtml(copy.footerText || "Contactez l'administrateur si le probleme persiste.");

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Health Check Service
  * Pings all active domain backends at a regular interval and records results.
@@ -196,7 +197,7 @@ class HealthCheckService {
       database.cleanOldHealthChecks(100).catch(() => {});
     }
 
-    const elapsed = Date.now() - t0;
+    const _elapsed = Date.now() - t0;
     // Disabled verbose summary logging to reduce console clutter
     // logger.info(`[HealthCheck] Checked ${checked} domains in ${elapsed}ms`);
   }

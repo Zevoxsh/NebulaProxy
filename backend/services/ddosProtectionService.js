@@ -1,3 +1,4 @@
+// @ts-check
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 
@@ -57,11 +58,6 @@ function verifyChallengeToken(ip, token, scope = '') {
   const normalizedScope = String(scope || '').toLowerCase();
   const expected = crypto.createHmac('sha256', CHALLENGE_SECRET).update(`${ip}:${normalizedScope}:${expires}`).digest('hex').slice(0, 16);
   try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
-}
-
-// Keep legacy name as alias (used by proxyManager + server)
-function verifyMathToken(ip, token, userAnswer) {
-  return verifyChallengeAnswer(ip, token, userAnswer);
 }
 
 // null = all types active; array = only listed types active

@@ -52,7 +52,7 @@ function logSection(name) {
 }
 
 async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => { setTimeout(resolve, ms); });
 }
 
 // Wait for API to be ready
@@ -148,7 +148,7 @@ async function testAPIKeys() {
     }
 
     // Test API key authentication
-    const testResponse = await axios.get(`${API_BASE_URL}/domains`, {
+    await axios.get(`${API_BASE_URL}/domains`, {
       headers: { 'X-API-Key': testApiKey }
     });
 
@@ -211,7 +211,7 @@ async function testDomains() {
     logTest('GET /api/domains/:id', 'PASS', `Retrieved domain: ${getResponse.data.hostname}`);
 
     // Update domain
-    const updateResponse = await axios.put(`${API_BASE_URL}/domains/${testDomainId}`, {
+    await axios.put(`${API_BASE_URL}/domains/${testDomainId}`, {
       description: 'Updated smoke test domain'
     }, {
       headers: { 'X-API-Key': testApiKey }
@@ -272,14 +272,14 @@ async function testSSL() {
 
   try {
     // Get certificates
-    const listResponse = await axios.get(`${API_BASE_URL}/ssl/certificates`, {
+    await axios.get(`${API_BASE_URL}/ssl/certificates`, {
       headers: { 'X-API-Key': testApiKey }
     });
 
     logTest('GET /api/ssl/certificates', 'PASS', 'SSL certificates listed');
 
     // Get SSL stats
-    const statsResponse = await axios.get(`${API_BASE_URL}/ssl/stats`, {
+    await axios.get(`${API_BASE_URL}/ssl/stats`, {
       headers: { 'X-API-Key': testApiKey }
     });
 
@@ -298,7 +298,7 @@ async function testMonitoring() {
 
   try {
     // Get health status
-    const healthResponse = await axios.get(`${API_BASE_URL}/monitoring`, {
+    await axios.get(`${API_BASE_URL}/monitoring`, {
       headers: { 'X-API-Key': testApiKey }
     });
 

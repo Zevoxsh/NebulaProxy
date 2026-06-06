@@ -1,3 +1,4 @@
+// @ts-check
 import net from 'net';
 import { database } from './database.js';
 import { logger } from '../utils/logger.js';
@@ -25,7 +26,7 @@ class UrlFilterService {
    * @param {string} clientIp - Client IP address
    * @returns {Promise<{blocked: boolean, rule: Object|null, response: {code: number, message: string}}>}
    */
-  async checkUrl(domainId, path, method = 'GET', clientIp = '') {
+  async checkUrl(domainId, path, _method = 'GET', clientIp = '') {
     try {
       const rules = await this.getRulesForDomain(domainId);
 
@@ -531,5 +532,5 @@ class UrlFilterService {
   }
 }
 
-// Export singleton instance
+export { UrlFilterService };
 export const urlFilterService = new UrlFilterService();

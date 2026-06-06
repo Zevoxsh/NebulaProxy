@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { acmeManager } from '../services/acmeManager.js';
 import { certificateManager } from '../services/certificateManager.js';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function sslRoutes(fastify, options) {
+export async function sslRoutes(fastify, _options) {
   const canAccessDomain = async (domain, userId, isAdmin) => {
     if (isAdmin || domain.user_id === userId) {
       return true;
@@ -112,7 +113,7 @@ export async function sslRoutes(fastify, options) {
           try {
             const safeHostname = sanitizeHostname(domain.hostname);
             const certbot = spawn('certbot', ['delete', '--cert-name', safeHostname, '--non-interactive']);
-            await new Promise((resolve) => certbot.on('close', resolve));
+            await new Promise((resolve) => { certbot.on('close', resolve); });
           } catch (err) {
             fastify.log.warn({ error: err, domainId }, 'Failed to delete ACME cert via certbot');
           }
@@ -1071,10 +1072,10 @@ async function parseCertificateDetails(certContent) {
  * @returns {Promise<Object>} - Validation result with expiry date
  */
 async function validateCertificate(certificate, privateKey, hostname) {
-  return new Promise(async (resolve, reject) => {
-    let tempFiles;
+  const tempFiles = await createSecureTempFiles({ cert: certificate, key: privateKey });
+
+  return new Promise((resolve, reject) => {
     try {
-      tempFiles = await createSecureTempFiles({ cert: certificate, key: privateKey });
       const tempCertPath = tempFiles.paths.cert;
       const tempKeyPath = tempFiles.paths.key;
 
@@ -1200,10 +1201,7 @@ async function validateCertificate(certificate, privateKey, hostname) {
         });
       });
     } catch (err) {
-      if (tempFiles) {
-        await tempFiles.cleanup();
-      }
-      reject(new Error(`Validation failed: ${err.message}`));
+      tempFiles.cleanup().finally(() => reject(new Error(`Validation failed: ${err.message}`)));
     }
   });
 }

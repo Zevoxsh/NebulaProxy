@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * CircuitBreaker — Per-backend circuit breaker for NebulaProxy
  *
@@ -24,6 +25,7 @@
  */
 
 import net from 'net';
+import { config } from '../config/config.js';
 import { logger } from '../utils/logger.js';
 
 const STATES = {
@@ -40,13 +42,9 @@ class CircuitBreaker {
     // Active background TCP probes: key → intervalId
     this._probeIntervals = new Map();
 
-    // Configuration
-    this.FAILURE_THRESHOLD = parseInt(process.env.CB_FAILURE_THRESHOLD || '5', 10);
-    this.SUCCESS_THRESHOLD = parseInt(process.env.CB_SUCCESS_THRESHOLD || '1', 10); // 1 suffit : le probe TCP a déjà confirmé que le backend est up
-    this.TIMEOUT_MS = parseInt(process.env.CB_TIMEOUT_MS || '10000', 10);           // fallback si le probe actif ne peut pas tourner
+    // Configuration — reads from the unified config system (Redis-first, then .env, then defaults)
     this.HALF_OPEN_MAX_CALLS = 1;
-    this.PROBE_INTERVAL_MS = parseInt(process.env.CB_PROBE_INTERVAL_MS || '2000', 10); // probe TCP toutes les 2 s
-    this.PROBE_TIMEOUT_MS = 1500; // timeout du probe TCP
+    this.PROBE_TIMEOUT_MS = 1500;
 
     // Cleanup stale breakers every 5 minutes
     setInterval(() => this._cleanup(), 5 * 60 * 1000);
@@ -102,7 +100,7 @@ class CircuitBreaker {
 
       socket.once('timeout', () => socket.destroy());
       socket.once('error', () => socket.destroy());
-    }, this.PROBE_INTERVAL_MS);
+    }, config.circuitBreaker.probeIntervalMs);
 
     this._probeIntervals.set(key, intervalId);
   }
@@ -151,7 +149,7 @@ class CircuitBreaker {
 
       case STATES.OPEN: {
         const elapsed = Date.now() - breaker.openedAt;
-        if (elapsed >= this.TIMEOUT_MS) {
+        if (elapsed >= config.circuitBreaker.timeoutMs) {
           // Transition to HALF_OPEN to allow one probe request
           breaker.state = STATES.HALF_OPEN;
           breaker.halfOpenCalls = 0;
@@ -184,7 +182,7 @@ class CircuitBreaker {
 
     if (breaker.state === STATES.HALF_OPEN) {
       breaker.successes++;
-      if (breaker.successes >= this.SUCCESS_THRESHOLD) {
+      if (breaker.successes >= config.circuitBreaker.successThreshold) {
         logger.info(`[CircuitBreaker] ${key} → CLOSED (recovered after ${breaker.successes} successes)`);
         breaker.state = STATES.CLOSED;
         breaker.failures = 0;
@@ -196,7 +194,7 @@ class CircuitBreaker {
         // Sans ça, le circuit restait bloqué en HALF_OPEN indéfiniment après
         // un premier probe réussi (halfOpenCalls = 1 = HALF_OPEN_MAX_CALLS → tout bloqué)
         breaker.halfOpenCalls = 0;
-        logger.info(`[CircuitBreaker] ${key} probe ok (${breaker.successes}/${this.SUCCESS_THRESHOLD}), waiting for next probe`);
+        logger.info(`[CircuitBreaker] ${key} probe ok (${breaker.successes}/${config.circuitBreaker.successThreshold}), waiting for next probe`);
       }
     } else if (breaker.state === STATES.CLOSED) {
       // Reset failure counter on success in CLOSED state
@@ -226,7 +224,7 @@ class CircuitBreaker {
       breaker.failures++;
       breaker.lastFailure = Date.now();
 
-      if (breaker.failures >= this.FAILURE_THRESHOLD) {
+      if (breaker.failures >= config.circuitBreaker.failureThreshold) {
         logger.warn(`[CircuitBreaker] ${key} → OPEN (${breaker.failures} consecutive failures)`);
         breaker.state = STATES.OPEN;
         breaker.openedAt = Date.now();
@@ -285,4 +283,5 @@ class CircuitBreaker {
   }
 }
 
+export { CircuitBreaker };
 export const circuitBreaker = new CircuitBreaker();

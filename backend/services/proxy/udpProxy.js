@@ -1,8 +1,13 @@
 // Auto-extracted from proxyManager.js — do not edit directly.
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
+import dgram from 'dgram';
 import { lts } from '../proxyContext.js';
 import { logger } from '../../utils/logger.js';
+import { database } from '../database.js';
+import { loadBalancer } from '../loadBalancer.js';
+import { urlFilterService } from '../urlFilterService.js';
+import { logBatchQueue } from '../logBatchQueue.js';
 
 export class UdpProxy {
 // ==================== UDP PROXY ====================

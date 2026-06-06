@@ -289,7 +289,6 @@ process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 // ── Start ─────────────────────────────────────────────────────────────────────
 const start = async () => {
   try {
-    await initializeConfig();
     applyLogFilter();
     await startupSequence(fastify, config);
   } catch (err) {

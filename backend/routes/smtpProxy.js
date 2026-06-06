@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * SMTP Proxy Management Routes
  */
@@ -6,7 +7,7 @@ import { smtpProxyService } from '../services/smtpProxyService.js';
 import { pool } from '../config/database.js';
 import { escapeLikePattern } from '../utils/security.js';
 
-export async function smtpProxyRoutes(fastify, options) {
+export async function smtpProxyRoutes(fastify, _options) {
   // Get SMTP Proxy statistics
   fastify.get('/stats', {
     preHandler: fastify.authorize(['admin'])

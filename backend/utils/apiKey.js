@@ -1,3 +1,4 @@
+// @ts-check
 import crypto from 'crypto';
 import { promisify } from 'util';
 

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Service Container — dependency injection without a framework.
  *

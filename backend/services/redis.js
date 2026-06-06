@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Redis service for JWT token blacklist and session management
  */

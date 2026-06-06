@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Bandwidth Tracker
  *

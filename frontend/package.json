@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -29,7 +33,6 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@simplewebauthn/browser": "^13.2.2",
     "axios": "^1.6.5",
-    "blueimp-md5": "^2.19.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.0",
     "cmdk": "^1.1.1",
@@ -46,11 +49,16 @@
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/react": "^18.2.47",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "postcss": "^8.4.33",
+    "prettier": "^3.8.3",
     "tailwindcss": "^3.4.1",
     "vite": "^5.0.11"
   }

@@ -1,3 +1,4 @@
+// @ts-check
 import { WebSocketServer } from 'ws';
 import { URL } from 'url';
 

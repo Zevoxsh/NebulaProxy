@@ -133,24 +133,29 @@ export async function startupSequence(fastify, config) {
     step('Retry Worker', 'SKIP', 'disabled');
   }
 
-  // 6.6. SMTP proxy
-  try {
-    await smtpProxyService.start();
-    const stats = smtpProxyService.getStats();
-    if (stats.isRunning) {
-      const ports = stats.servers.map(s => `${s.name}:${s.port}`).join(', ');
-      step('SMTP Proxy', 'OK', ports);
-    } else {
-      step('SMTP Proxy', 'SKIP', 'disabled');
-    }
-  } catch (error) {
-    fastify.log.error({ error }, 'SMTP proxy start failed');
-    step('SMTP Proxy', 'WARN', error.message);
-  }
-
-  // 6.7. Update service
-  await updateService.init(fastify);
-  step('Update Service', 'OK', 'initialized');
+  // 6.6. SMTP proxy + Update service in parallel (independent)
+  await Promise.allSettled([
+    smtpProxyService.start()
+      .then(() => {
+        const stats = smtpProxyService.getStats();
+        if (stats.isRunning) {
+          const ports = stats.servers.map(s => `${s.name}:${s.port}`).join(', ');
+          step('SMTP Proxy', 'OK', ports);
+        } else {
+          step('SMTP Proxy', 'SKIP', 'disabled');
+        }
+      })
+      .catch(error => {
+        fastify.log.error({ error }, 'SMTP proxy start failed');
+        step('SMTP Proxy', 'WARN', error.message);
+      }),
+    updateService.init(fastify)
+      .then(() => step('Update Service', 'OK', 'initialized'))
+      .catch(error => {
+        fastify.log.error({ error }, 'Update service init failed');
+        step('Update Service', 'WARN', error.message);
+      })
+  ]);
 
   // 7. Start Fastify listener
   // Always bind to all interfaces inside the container so the healthcheck
@@ -199,25 +204,24 @@ export async function startupSequence(fastify, config) {
     step('WebSocket/Notifications', 'WARN', 'init failed');
   }
 
-  // 7.6. Health checks
-  try {
-    await healthCheckService.start();
-    step('Health Checks', 'OK', `interval ${config.healthChecks.intervalSeconds}s`);
-  } catch (error) {
-    fastify.log.error({ error }, 'Health check service failed to start');
-    step('Health Checks', 'WARN', error.message);
-  }
-
-  // 7.7. Backup scheduler
-  try {
-    const backupScheduler = new BackupScheduler(fastify.log);
-    await backupScheduler.initialize();
-    fastify.backupScheduler = backupScheduler;
-    step('Backup Scheduler', 'OK', 'automatic DB backups');
-  } catch (error) {
-    fastify.log.error({ error }, 'Backup scheduler init failed');
-    step('Backup Scheduler', 'WARN', error.message);
-  }
+  // 7.6 + 7.7. Health checks and Backup scheduler in parallel (independent)
+  const [,_] = await Promise.allSettled([
+    healthCheckService.start()
+      .then(() => step('Health Checks', 'OK', `interval ${config.healthChecks.intervalSeconds}s`))
+      .catch(error => {
+        fastify.log.error({ error }, 'Health check service failed to start');
+        step('Health Checks', 'WARN', error.message);
+      }),
+    (async () => {
+      const backupScheduler = new BackupScheduler(fastify.log);
+      await backupScheduler.initialize();
+      fastify.backupScheduler = backupScheduler;
+      step('Backup Scheduler', 'OK', 'automatic DB backups');
+    })().catch(error => {
+      fastify.log.error({ error }, 'Backup scheduler init failed');
+      step('Backup Scheduler', 'WARN', error.message);
+    })
+  ]);
 
   if (config.logging.startupSummary) {
     process.stdout.write('-------------------------------------------------------------------\n');

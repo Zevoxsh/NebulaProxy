@@ -291,6 +291,7 @@ export default function DomainDetail() {
       const res = await domainAPI.getLiveTraffic(id);
       setTrafficData(res.data.connections || []);
     } catch (_) {
+      /* ignore */
     } finally {
       setTrafficLoading(false);
     }
@@ -301,7 +302,7 @@ export default function DomainDetail() {
     try {
       await domainAPI.clearLiveTraffic(id);
       setTrafficData([]);
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   };
 
   const loadDomainData = async () => {

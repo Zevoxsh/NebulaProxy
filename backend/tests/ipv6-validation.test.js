@@ -47,7 +47,7 @@ describe('IPv6 Backend URL Validation', () => {
 
     it('should not flag IPv6 addresses as containing a port', () => {
       // The regex /:\d+$/ used for port detection MUST NOT match pure IPv6 addresses
-      const portRegex = /:\d+$/;
+      const _portRegex = /:\d+$/;
       // These would be false positives — IPv6, no port
       // NOTE: ::1 ends with ":1" which IS matched — that's why the fix checks isValidIpv6 first
       const isIpv6 = (s) => /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(s);

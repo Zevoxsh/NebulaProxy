@@ -1,17 +1,10 @@
+// @ts-check
 import crypto from 'crypto';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getPgPool } from '../config/database.js';
 import { config } from '../config/config.js';
-import { logBroadcastService } from './logBroadcastService.js';
-import {
-  AUTOMATIC_EXTERNAL_PORT_MIN,
-  MAX_EXTERNAL_PORT,
-  getRandomExternalPortCandidate,
-  isReservedExternalPort
-} from '../utils/externalPorts.js';
-
 import { logger } from '../utils/logger.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { DomainRepository } from '../repositories/domainRepository.js';
@@ -223,7 +216,7 @@ class DatabaseService {
   async queryOne(sql, params = []) {
     // Convert SQLite ? placeholders to PostgreSQL $1, $2, etc.
     let pgSql = sql;
-    let pgParams = [...params];
+    const pgParams = [...params];
     let paramIndex = 1;
     pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
 
@@ -234,7 +227,7 @@ class DatabaseService {
   // Helper: Execute a query and return all rows
   async queryAll(sql, params = []) {
     let pgSql = sql;
-    let pgParams = [...params];
+    const pgParams = [...params];
     let paramIndex = 1;
     pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
 
@@ -245,7 +238,7 @@ class DatabaseService {
   // Helper: Execute a query (INSERT/UPDATE/DELETE)
   async execute(sql, params = []) {
     let pgSql = sql;
-    let pgParams = [...params];
+    const pgParams = [...params];
     let paramIndex = 1;
     pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
 

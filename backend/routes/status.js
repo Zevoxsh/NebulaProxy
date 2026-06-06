@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Public status endpoint — no authentication required.
  * Returns the health status of all active domains without exposing
@@ -5,7 +6,7 @@
  */
 import { database } from '../services/database.js';
 
-export async function statusRoutes(fastify, options) {
+export async function statusRoutes(fastify, _options) {
   fastify.get('/', {
     handler: async (request, reply) => {
       try {

@@ -1,3 +1,4 @@
+// @ts-check
 import { ddosProtectionService } from '../../services/ddosProtectionService.js';
 
 export async function ddosAdminRoutes(fastify) {

@@ -1,3 +1,4 @@
+// @ts-check
 import { createHmac, createHash } from 'crypto';
 import { inflateSync } from 'zlib';
 

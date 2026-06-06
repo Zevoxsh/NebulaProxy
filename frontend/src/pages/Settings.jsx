@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Shield, Save, RefreshCw, Bell, Mail } from 'lucide-react';
+import { Shield, Save, RefreshCw, Bell, Mail, X } from 'lucide-react';
 import { settingsAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { Switch } from '@/components/ui/switch';

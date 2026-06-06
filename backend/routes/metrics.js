@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Prometheus / OpenMetrics compatible metrics endpoint.
  *

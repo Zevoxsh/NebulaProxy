@@ -1,10 +1,10 @@
+// @ts-check
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { config } from '../../config/config.js';
-import { database } from '../../services/database.js';
 import { pool } from '../../config/database.js';
 
 export const DEFAULT_BOOTSTRAP_ADMIN_HASH = 'scrypt$1234567890abcdef$30d5078d009e954c799fe00cb0c48210d1794ae08af401f602b3a309996d59ad998fbd746822433568d272f3f0e9d504248cae9c57d4d0c36ab58f3d62eec384';
@@ -292,7 +292,7 @@ export async function sendTwoFactorEmailCode(fastify, toEmail, code, purpose = '
   });
 }
 
-export function getAppPublicBaseUrl(request) {
+export function getAppPublicBaseUrl(_request) {
   const configured =
     process.env.PUBLIC_APP_URL
     || process.env.APP_URL

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * SMTP Proxy Service with PROXY Protocol v2
  *

@@ -1,7 +1,10 @@
 // Auto-extracted from proxyManager.js — do not edit directly.
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
-import { lts, getDdos, escapeHtml } from '../proxyContext.js';
+import http from 'http';
+import https from 'https';
+import tls from 'tls';
+import { logger } from '../../utils/logger.js';
 
 export class HttpProxy {
 // ==================== HTTP/HTTPS PROXY ====================
@@ -42,7 +45,7 @@ async _startHttpProxy(domain) {
  * Handles all HTTP domains and ACME challenges
  */
   async _startSharedHttpServer() {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       this.httpServer = http.createServer((req, res) => {
         if (this._handleProxyCheck(req, res)) {
           return;
@@ -117,7 +120,7 @@ async _startHttpProxy(domain) {
  * Uses SNI (Server Name Indication) for multi-domain SSL
  */
   async _startSharedHttpsServer() {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
     // Create default self-signed certificate
     const defaultCert = this._generateSelfSignedCert('default.local');
     this.defaultSecureContext = tls.createSecureContext({

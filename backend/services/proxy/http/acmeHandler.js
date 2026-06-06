@@ -2,7 +2,10 @@
 // Mixed into HttpProxy.prototype in httpProxy.js.
 
 
+import path from 'path';
+import fs from 'fs';
 import { logger } from '../../../utils/logger.js';
+
 export class AcmeHandler {
 async _handleAcmeChallenge(req, res) {
 // Serve files from ACME webroot

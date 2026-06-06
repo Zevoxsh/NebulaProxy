@@ -1,10 +1,11 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { urlFilterService } from '../services/urlFilterService.js';
 
 /**
  * URL Blocking Rules API Routes
  */
-export default async function urlBlockingRoutes(fastify, options) {
+export default async function urlBlockingRoutes(fastify, _options) {
 
   /**
    * Get all URL blocking rules for a domain

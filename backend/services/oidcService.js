@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * OIDC Service — generic OpenID Connect 1.0 client.
  * Works with Keycloak, Okta, Azure AD, Google, Auth0, and any compliant provider.
@@ -111,8 +112,7 @@ async function fetchJson(url) {
 
 class OidcService {
   #discovery  = null;                 // cached discovery document
-  #jwks       = null;                 // cached JWK set (raw, legacy)
-  #jwksCache  = new Map();            // jwks_uri → keys[] for signature verification
+#jwksCache  = new Map();            // jwks_uri → keys[] for signature verification
 
   async loadConfig() {
     const { rows } = await pool.query(
@@ -131,7 +131,6 @@ class OidcService {
     if (this.#discovery?.issuer === issuerUrl) return this.#discovery;
     const url = `${issuerUrl.replace(/\/$/, '')}/.well-known/openid-configuration`;
     this.#discovery = await fetchJson(url);
-    this.#jwks = null;  // reset JWKs when issuer changes
     return this.#discovery;
   }
 

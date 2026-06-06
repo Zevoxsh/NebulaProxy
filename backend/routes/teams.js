@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -7,7 +8,7 @@ import { emailService } from '../emails/emailService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export async function teamRoutes(fastify, options) {
+export async function teamRoutes(fastify, _options) {
 
   // Get all teams for the current user
   fastify.get('/', {
@@ -207,7 +208,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const { name, maxDomains } = request.body;
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -411,7 +412,7 @@ export async function teamRoutes(fastify, options) {
     try {
       const teamId = parseInt(request.params.id, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -486,7 +487,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const { username, permissions = {} } = request.body;
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -579,7 +580,7 @@ export async function teamRoutes(fastify, options) {
       const memberId = parseInt(request.params.memberId, 10);
       const { permissions } = request.body;
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -654,7 +655,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const memberId = parseInt(request.params.memberId, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -755,7 +756,7 @@ export async function teamRoutes(fastify, options) {
     try {
       const teamId = parseInt(request.params.id, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -797,7 +798,7 @@ export async function teamRoutes(fastify, options) {
     try {
       const teamId = parseInt(request.params.id, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
 
@@ -843,7 +844,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const domainId = parseInt(request.params.domainId, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
       if (!team) {
@@ -937,7 +938,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const domainId = parseInt(request.params.domainId, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
       if (!team) {
@@ -1042,7 +1043,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const { username, permissions = {} } = request.body;
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
       if (!team) {
@@ -1155,7 +1156,7 @@ export async function teamRoutes(fastify, options) {
     try {
       const teamId = parseInt(request.params.id, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
       if (!team) {
@@ -1196,7 +1197,7 @@ export async function teamRoutes(fastify, options) {
       const teamId = parseInt(request.params.id, 10);
       const invitationId = parseInt(request.params.invitationId, 10);
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       const team = await database.getTeamById(teamId);
       if (!team) {

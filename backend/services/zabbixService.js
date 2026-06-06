@@ -1,3 +1,4 @@
+// @ts-check
 import net from 'net';
 import { pool } from '../config/database.js';
 

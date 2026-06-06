@@ -1,3 +1,4 @@
+// @ts-check
 import WebSocket, { WebSocketServer } from 'ws';
 import net from 'net';
 import tls from 'tls';

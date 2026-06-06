@@ -1,7 +1,13 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
 
 import { logger } from '../utils/logger.js';
+import { randomBytes } from 'crypto';
+
+function generateTunnelPublicSlug(length = 12) {
+  return randomBytes(16).toString('hex').slice(0, length);
+}
 
 export class TunnelRepository {
 // ===== TUNNEL MANAGEMENT =====

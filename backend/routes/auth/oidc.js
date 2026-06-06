@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * OIDC Authentication Routes
  * GET  /auth/oidc/login      — redirect to provider authorization URL

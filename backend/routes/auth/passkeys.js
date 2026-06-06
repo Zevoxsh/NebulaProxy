@@ -1,3 +1,4 @@
+// @ts-check
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { database } from '../../services/database.js';
 import { pool } from '../../config/database.js';
@@ -5,7 +6,7 @@ import { getWebauthnContext, sendAuthSuccess } from './helpers.js';
 
 const pendingPasskeyAuthentications = new Map();
 
-export async function passkeyRoutes(fastify, options) {
+export async function passkeyRoutes(fastify, _options) {
   // Begin passkey authentication (supports username-less autofill)
   fastify.post('/passkey/options', {
     schema: {
@@ -95,7 +96,7 @@ export async function passkeyRoutes(fastify, options) {
     }
   }, async (request, reply) => {
     const responsePayload = request.body.response;
-    const challenge = responsePayload?.response?.clientDataJSON
+    const _challenge = responsePayload?.response?.clientDataJSON
       ? undefined
       : responsePayload?.challenge;
 

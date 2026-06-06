@@ -619,7 +619,7 @@ export default function RealtimeTraffic() {
             const histRes = await analyticsAPI.getRealtimeHistory();
             const history = histRes.data?.history || {};
             seedRealtimeSeries(history, list, seriesRef, emaRef);
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
         }
       })
       .catch(() => {});
@@ -631,7 +631,7 @@ export default function RealtimeTraffic() {
       try {
         const res = await analyticsAPI.getTraffic24h();
         setData24h(res.data?.data || {});
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
     fetch24h();
     const t = setInterval(fetch24h, 60_000);

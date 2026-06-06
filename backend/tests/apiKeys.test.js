@@ -1,4 +1,4 @@
-import { test, describe, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { test, describe, expect } from 'vitest';
 import {
   generateApiKey,
   hashApiKey,
@@ -262,7 +262,7 @@ describe('API Key Utilities', () => {
   describe('Integration: Full API Key Lifecycle', () => {
     test('should generate, hash, and verify API key successfully', async () => {
       // Generate key
-      const { fullKey, prefix } = await generateApiKey(false);
+      const { fullKey, prefix: _prefix } = await generateApiKey(false);
 
       // Validate format
       expect(isValidApiKeyFormat(fullKey)).toBe(true);

@@ -1,8 +1,11 @@
 // Auto-extracted from proxyManager.js — do not edit directly.
 // Mixed into ProxyManager.prototype in proxyManager.js.
 
-import { lts } from '../proxyContext.js';
+import net from 'net';
+import { lts, getLb } from '../proxyContext.js';
 import { logger } from '../../utils/logger.js';
+import { urlFilterService } from '../urlFilterService.js';
+import { logBatchQueue } from '../logBatchQueue.js';
 
 export class TcpProxy {
 // ==================== TCP PROXY ====================
@@ -59,10 +62,13 @@ export class TcpProxy {
 
       // Load balancing: select backend
       const backendSelStart = Date.now();
+      let tcpBackendId = null;
       try {
         const target = await this._selectBackendForDomain(domain, clientIp, 'tcp');
         backendHost = target.hostname;
         backendPort = target.port;
+        tcpBackendId = target.backendId || null;
+        if (tcpBackendId) { const lb = getLb(); if (lb) lb.incrementConnections(tcpBackendId); }
         logger.debug(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend selected ${backendHost}:${backendPort} in ${Date.now() - backendSelStart}ms t+${Date.now() - startTime}ms`);
       } catch (err) {
         logger.error(`[TCP Proxy ${domain.id}] Backend selection failed (${Date.now() - backendSelStart}ms):`, err.message);
@@ -84,6 +90,9 @@ export class TcpProxy {
       const cleanup = () => {
         if (isClosing) return;
         isClosing = true;
+
+        // Least-connections: release the slot for this backend
+        if (tcpBackendId) { const lb = getLb(); if (lb) lb.decrementConnections(tcpBackendId); }
 
         if (connectTimeout) {
           clearTimeout(connectTimeout);

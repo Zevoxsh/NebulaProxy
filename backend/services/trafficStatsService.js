@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Traffic Stats Service
  * Records traffic events in Redis for realtime chart persistence and 24h history.
@@ -62,7 +63,7 @@ async function getRealtimeHistory(domainIds) {
     const results = await pipeline.exec();
     const history  = {};
     let   idx      = 0;
-    const RANGE    = currentSec - startSec + 1;
+    const _RANGE    = currentSec - startSec + 1;
 
     for (const domainId of domainIds) {
       history[domainId] = [];

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Admin OIDC Configuration Routes
  * GET  /api/admin/oidc/config  — read OIDC config

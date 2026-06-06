@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * GeoIP Service — Country lookup via ipwho.is
  *

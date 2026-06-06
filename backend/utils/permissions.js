@@ -1,9 +1,16 @@
+// @ts-check
 /**
  * Unified Permission Checker
  * Provides consistent authorization logic across the application
  *
  * SECURITY: This module centralizes all permission checks to prevent
  * authorization bypass vulnerabilities caused by inconsistent logic
+ */
+
+/**
+ * @typedef {{ id: number, user_id: number, team_id: number|null, hostname: string }} Domain
+ * @typedef {{ id: number, user_id: number, team_id: number|null }} Redirection
+ * @typedef {{ id: number, team_id: number, can_manage_domains: boolean }} TeamMember
  */
 
 import { database } from '../services/database.js';

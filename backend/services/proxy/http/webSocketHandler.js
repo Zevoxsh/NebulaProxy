@@ -3,6 +3,8 @@
 
 
 import { logger } from '../../../utils/logger.js';
+import { websocketProxy } from '../../websocketProxy.js';
+
 export class WebSocketHandler {
 _handleWebSocketUpgrade(req, socket, head, isTls) {
 const hostname = this._extractHostname(req.headers.host);

@@ -1,3 +1,4 @@
+// @ts-check
 import { pool } from '../../config/database.js';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
@@ -57,7 +58,7 @@ function createS3Job() {
   return job;
 }
 
-export async function backupRoutes(fastify, options) {
+export async function backupRoutes(fastify, _options) {
   const normalizeSchedule = (raw) => {
     const defaultItem = {
       enabled: false,

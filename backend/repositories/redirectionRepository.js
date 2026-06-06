@@ -1,3 +1,4 @@
+// @ts-check
 // Auto-extracted from database.js — do not edit the methods here; edit database.js source.
 // Prototype methods are mixed into DatabaseService in database.js via prototype iteration.
 
@@ -139,7 +140,7 @@ async updateUserRedirectionQuota(userId, maxRedirections) {
 }
 
 // Get redirection statistics
-async getRedirectionStats(redirectionId, days = 30) {
+async getRedirectionStats(redirectionId, _days = 30) {
   const redirection = await this.getRedirectionById(redirectionId);
   if (!redirection) return null;
 

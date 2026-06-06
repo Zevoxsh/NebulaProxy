@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * LiveTrafficService - Real-time connection/request tracking per domain
  * Stores hits in Redis hashes with a hard retention window.
@@ -163,7 +164,7 @@ class LiveTrafficService {
           item.entry.country = country;
           try { await redis.hset(item.key, item.field, JSON.stringify(item.entry)); } catch (_) {}
         }
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => { setTimeout(r, 500); });
       }
     } catch (_) {}
   }

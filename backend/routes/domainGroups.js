@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../services/database.js';
 
 // Helper: check if user can access group
@@ -10,7 +11,7 @@ async function canAccessGroup(group, userId) {
   // Team group: ANY team member has access automatically
   // No need to be added as a group member - team membership is enough
   if (group.team_id) {
-    return await database.isTeamMember(group.team_id, userId);
+    return database.isTeamMember(group.team_id, userId);
   }
 
   return false;
@@ -28,13 +29,13 @@ async function canModifyGroup(group, userId) {
     const teamRole = await database.getTeamMemberRole(group.team_id, userId);
     if (teamRole === 'owner') return true;
 
-    return await database.hasGroupPermission(group.id, userId, 'can_manage_group');
+    return database.hasGroupPermission(group.id, userId, 'can_manage_group');
   }
 
   return false;
 }
 
-export async function domainGroupRoutes(fastify, options) {
+export async function domainGroupRoutes(fastify, _options) {
 
   // Get all groups accessible by user
   fastify.get('/', {

@@ -1,7 +1,7 @@
+// @ts-check
 import os from 'os';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
-import path from 'path';
 
 /**
  * Execute command with spawn (prevents command injection)
@@ -87,7 +87,7 @@ export class MonitoringService {
     }
 
     const s1 = snapshot();
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => { setTimeout(r, 200); });
     const s2 = snapshot();
 
     const idleDelta = s2.idle - s1.idle;

@@ -1,3 +1,4 @@
+// @ts-check
 import nodemailer from 'nodemailer';
 import { config } from '../config/config.js';
 import { logger } from '../utils/logger.js';
@@ -83,7 +84,7 @@ class EmailNotificationService {
   createAggregatedEmailHtml(payload) {
     const {
       status,
-      previousStatus,
+      previousStatus: _previousStatus,
       backendLabel,
       proxyType,
       domains,
@@ -93,7 +94,7 @@ class EmailNotificationService {
 
     const isUp = status === 'up';
     const statusIcon = isUp ? '[OK]' : '[DOWN]';
-    const statusColor = isUp ? '#10B981' : '#EF4444';
+    const _statusColor = isUp ? '#10B981' : '#EF4444';
     const statusBgGradient = isUp
       ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
       : 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)';

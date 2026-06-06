@@ -1,7 +1,8 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { escapeLikePattern } from '../utils/security.js';
 
-export async function logsRoutes(fastify, options) {
+export async function logsRoutes(fastify, _options) {
   // Get proxy logs
   fastify.get('/', {
     onRequest: [fastify.authenticate],

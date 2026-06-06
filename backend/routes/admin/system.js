@@ -1,10 +1,11 @@
+// @ts-check
 import { database } from '../../services/database.js';
 import { monitoringService } from '../../services/monitoringService.js';
 import { databaseBackupService } from '../../services/databaseBackupService.js';
 import { dockerService } from '../../services/dockerService.js';
 import { readFile } from 'fs/promises';
 
-export async function adminSystemRoutes(fastify, options) {
+export async function adminSystemRoutes(fastify, _options) {
 
   // ==========================================
   // Retry Queue & Dead Letter Queue Endpoints

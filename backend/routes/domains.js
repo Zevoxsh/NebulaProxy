@@ -1,3 +1,4 @@
+// @ts-check
 import { database } from '../services/database.js';
 import { liveTrafficService } from '../services/liveTrafficService.js';
 import { checkDomainQuota } from '../middleware/quotaCheck.js';
@@ -7,7 +8,6 @@ import { multiProxySyncService } from '../services/multiProxySyncService.js';
 import { redisService } from '../services/redis.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../utils/security.js';
 import { PermissionChecker } from '../utils/permissions.js';
-import { config } from '../config/config.js';
 import { allocateAvailablePort, isPortAvailable, validateExternalPort, MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT } from '../services/portAllocator.js';
 import net from 'net';
 import validator from 'validator';
@@ -19,7 +19,7 @@ import {
   canAccessDomain, canModifyDomain
 } from '../services/domainService.js';
 
-export async function domainRoutes(fastify, options) {
+export async function domainRoutes(fastify, _options) {
   // Admin: check if an external port is available (TCP/UDP only)
   fastify.get('/ports/check', {
     preHandler: fastify.authorize(['admin'])
@@ -67,7 +67,7 @@ export async function domainRoutes(fastify, options) {
   }, async (request, reply) => {
     try {
       const userId = request.user.id;
-      const isAdmin = request.user.role === 'admin';
+      const _isAdmin = request.user.role === 'admin';
 
       // All users (including admins) only see their own domains + team domains
       // To see all domains, use the admin panel endpoint /api/admin/domains

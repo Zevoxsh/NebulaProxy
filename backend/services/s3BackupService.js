@@ -1,6 +1,6 @@
+// @ts-check
 import {
   S3Client,
-  PutObjectCommand,
   ListObjectsV2Command,
   DeleteObjectCommand,
   HeadBucketCommand,

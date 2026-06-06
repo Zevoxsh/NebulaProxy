@@ -1,3 +1,4 @@
+// @ts-check
 import { pool } from '../config/database.js';
 
 const DEFAULT_PREFERENCES = {
@@ -89,7 +90,7 @@ async function getPreferenceColumns() {
  * Notification Preferences Routes
  * Manage user notification webhook preferences
  */
-export async function notificationPreferencesRoutes(fastify, options) {
+export async function notificationPreferencesRoutes(fastify, _options) {
 
   // Get current user's notification preferences
   fastify.get('/', {
