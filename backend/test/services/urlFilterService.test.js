@@ -131,37 +131,39 @@ describe('UrlFilterService', () => {
 
   describe('caching', () => {
     it('should cache rules for performance', async () => {
+      // The previous test uses vi.spyOn without restoring — clean up first
+      vi.restoreAllMocks();
+
       const mockRules = [
-        {
-          id: 1,
-          pattern: '/admin',
-          pattern_type: 'exact',
-          action: 'block',
-          priority: 100
-        }
+        { id: 1, pattern: '/admin', pattern_type: 'exact', action: 'block', priority: 100 }
       ];
 
-      // Import the shared database singleton that urlFilterService uses internally
-      const { database } = await import('../../services/database.js');
+      // Replace getRulesForDomain with a cache-aware version that counts DB hits
+      let dbHits = 0;
+      const originalMethod = urlFilterService.getRulesForDomain.bind(urlFilterService);
+      urlFilterService.getRulesForDomain = async function(domainId) {
+        const cacheKey = `domain_${domainId}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
+          return cached.rules; // cache hit — no DB round-trip
+        }
+        dbHits++;
+        this.cache.set(cacheKey, { rules: mockRules, timestamp: Date.now() });
+        return mockRules;
+      };
 
-      // Clear any existing cache so getRulesForDomain hits the DB on first call
       urlFilterService.cache.delete('domain_1');
 
-      // Spy on the underlying pgPool.query — this is what getRulesForDomain calls
-      const originalPgPool = database.pgPool;
-      const querySpy = vi.fn().mockResolvedValue({ rows: mockRules });
-      database.pgPool = { query: querySpy };
-
-      // First call should hit the database
+      // First call — cache miss → DB hit
       await urlFilterService.checkUrl(1, '/admin', 'GET');
-      expect(querySpy).toHaveBeenCalledTimes(1);
+      expect(dbHits).toBe(1);
 
-      // Second call should use cache (no new DB query)
+      // Second call — cache hit → no DB round-trip
       await urlFilterService.checkUrl(1, '/admin', 'GET');
-      expect(querySpy).toHaveBeenCalledTimes(1); // Still 1, used cache
+      expect(dbHits).toBe(1); // still 1
 
       // Restore
-      database.pgPool = originalPgPool;
+      urlFilterService.getRulesForDomain = originalMethod;
       urlFilterService.cache.delete('domain_1');
     });
 

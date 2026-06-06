@@ -73,7 +73,7 @@ describe('Domain Routes - Security Validation', () => {
         },
         payload: {
           hostname: 'example.com',
-          backendUrl: 'http://localhost:8080'
+          backendUrl: 'http://localhost' // no port — avoids "URL must not include a port" check before SSRF check
         }
       });
 
