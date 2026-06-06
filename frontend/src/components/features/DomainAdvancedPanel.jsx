@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Wrench, Shield, Globe, Zap, GitBranch, Cookie, AlertTriangle,
   RefreshCw, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
-  Clock, Code, Gauge, FlipHorizontal, Gamepad2
+  Code, Gauge, FlipHorizontal, Gamepad2
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
@@ -413,7 +413,7 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
         {sticky.enabled && domain?.load_balancing_algorithm !== 'sticky-session' && (
           <div className="flex items-start gap-2 p-3 bg-[#FBBF24]/10 border border-[#FBBF24]/20 rounded-lg text-xs text-[#FBBF24]">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-            <span>Pour que les sticky sessions fonctionnent correctement, sélectionnez l'algorithme <strong>Sticky Session</strong> dans l'onglet Load Balancing.</span>
+            <span>Pour que les sticky sessions fonctionnent correctement, sélectionnez l&apos;algorithme <strong>Sticky Session</strong> dans l&apos;onglet Load Balancing.</span>
           </div>
         )}
         <Msg skey="sticky" />

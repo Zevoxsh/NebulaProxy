@@ -81,7 +81,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     additionalBackends: [] // Array of { url: '', port: '' }
   });
   const [error, setError] = useState('');
-  const [loadingBackends, setLoadingBackends] = useState(false);
+  const [_loadingBackends, setLoadingBackends] = useState(false);
 
   useEffect(() => {
     if (domain) {
@@ -164,7 +164,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     if (formData.proxyType === 'minecraft' && !formData.backendPort) {
       setFormData(prev => ({ ...prev, backendPort: '25565' }));
     }
-  }, [formData.proxyType]);
+  }, [formData.proxyType, formData.backendPort]);
 
   const selectMcVariant = (variant) => {
     setMcVariant(variant);
@@ -777,7 +777,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                   {formData.challengeType === 'dns-01' && !formData.hostname.startsWith('*.') && (
                     <div className="mt-2 p-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
                       <p className="text-xs text-white/70 leading-relaxed">
-                        DNS-01 requires manual DNS TXT record creation. You'll receive instructions after domain creation.
+                        DNS-01 requires manual DNS TXT record creation. You&apos;ll receive instructions after domain creation.
                       </p>
                     </div>
                   )}

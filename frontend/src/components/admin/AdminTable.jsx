@@ -41,7 +41,7 @@ export function AdminTable({
   const [searchQuery, setSearchQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null })
   const [currentPage, setCurrentPage] = useState(0)
-  const [pageSize, setPageSize] = useState(initialPageSize)
+  const [pageSize, _setPageSize] = useState(initialPageSize)
 
   // Filter data based on search query
   const filteredData = useMemo(() => {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Server, Plus, Trash2, Power, PowerOff, Edit2, Save, X,
-  RefreshCw, AlertCircle, CheckCircle, Settings, Layers,
+  RefreshCw, AlertCircle, CheckCircle, Layers,
   Activity, Shuffle
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';

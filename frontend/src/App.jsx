@@ -153,7 +153,7 @@ function RouteMetadata() {
     upsertMetaTag('name', 'twitter:description', description);
     upsertMetaTag('name', 'theme-color', '#09090b');
     upsertCanonical(absoluteUrl);
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, appName]);
 
   return null;
 }
@@ -181,7 +181,7 @@ function App() {
   const [authChecked, setAuthChecked] = useState(false);
 
   // Fetch branding (app name) on first load — public endpoint, no auth needed
-  useEffect(() => { fetchBranding(); }, []);
+  useEffect(() => { fetchBranding(); }, [fetchBranding]);
 
   // Check authentication on mount (skip for login/register pages to avoid infinite loop)
   useEffect(() => {
