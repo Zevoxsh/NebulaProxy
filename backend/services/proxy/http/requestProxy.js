@@ -4,6 +4,15 @@
 import http from 'http';
 import https from 'https';
 import { lts, getDdos, escapeHtml, getLb } from '../../proxyContext.js';
+import {
+  renderMaintenancePage,
+  renderBadGatewayPage,
+  renderServiceUnavailablePage,
+  renderBlockedPage,
+  renderBandwidthExceededPage,
+  renderRateLimitPage,
+  renderPayloadTooLargePage,
+} from '../renderers.js';
 import { logger } from '../../../utils/logger.js';
 import { config } from '../../../config/config.js';
 import { database } from '../../database.js';
@@ -38,7 +47,7 @@ const queryString = req.url.includes('?') ? req.url.split('?')[1] : null;
 if (domain.maintenance_mode) {
   const html = domain.custom_maintenance_page
     ? this._renderCustomErrorPage(domain.custom_maintenance_page, 503)
-    : this._renderMaintenancePage(domain);
+    : renderMaintenancePage(domain);
   res.writeHead(503, {
     'Content-Type': 'text/html; charset=utf-8',
     'Retry-After': '3600'
@@ -55,7 +64,7 @@ if (domain.geoip_blocking_enabled) {
       const wantsHtml = (req.headers.accept || '').includes('text/html');
       if (wantsHtml) {
         res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(this._renderBlockedPage(
+        res.end(renderBlockedPage(
           `Access from ${geoResult.countryCode} is not permitted.`, 403
         ));
       } else {
@@ -96,7 +105,7 @@ if (domain.user_id) {
         const wantsHtml = (req.headers.accept || '').includes('text/html');
         if (wantsHtml) {
           res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '3600' });
-          res.end(this._renderBandwidthExceededPage(domain));
+          res.end(renderBandwidthExceededPage(domain));
         } else {
           res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '3600' });
           res.end(JSON.stringify({ error: 'Bandwidth Quota Exceeded', message: 'Monthly bandwidth limit reached.' }));
@@ -123,13 +132,24 @@ if (domain.rate_limit_enabled) {
         await redisService.client.expire(rlKey, rlWin);
       }
       if (count > rlMax) {
-        res.writeHead(429, {
-          'Content-Type': 'application/json',
-          'Retry-After': String(rlWin),
-          'X-RateLimit-Limit': String(rlMax),
-          'X-RateLimit-Remaining': '0'
-        });
-        res.end(JSON.stringify({ error: 'Too Many Requests', message: 'Rate limit exceeded' }));
+        const rlWantsHtml = (req.headers.accept || '').includes('text/html');
+        if (rlWantsHtml) {
+          res.writeHead(429, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Retry-After': String(rlWin),
+            'X-RateLimit-Limit': String(rlMax),
+            'X-RateLimit-Remaining': '0'
+          });
+          res.end(renderRateLimitPage(domain.hostname));
+        } else {
+          res.writeHead(429, {
+            'Content-Type': 'application/json',
+            'Retry-After': String(rlWin),
+            'X-RateLimit-Limit': String(rlMax),
+            'X-RateLimit-Remaining': '0'
+          });
+          res.end(JSON.stringify({ error: 'Too Many Requests', message: 'Rate limit exceeded' }));
+        }
         return;
       }
     }
@@ -215,7 +235,7 @@ try {
     const wantsHtml = (req.headers.accept || '').includes('text/html');
     if (wantsHtml) {
       res.writeHead(filterResult.response.code, { 'Content-Type': 'text/html' });
-      res.end(this._renderBlockedPage(filterResult.response.message, filterResult.response.code));
+      res.end(renderBlockedPage(filterResult.response.message, filterResult.response.code));
     } else {
       res.writeHead(filterResult.response.code, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Access Denied', message: filterResult.response.message }));
@@ -254,15 +274,18 @@ try {
   { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'http', `${backendHost}:${backendPort}`); }
 } catch (err) {
   logger.error(`[HTTP Proxy ${domain.id}] Backend selection failed:`, err.message);
-  const html503 = domain.custom_503_page
-    ? this._renderCustomErrorPage(domain.custom_503_page, 503)
-    : null;
-  if (html503) {
+  if (domain.custom_503_page) {
     res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html503);
+    res.end(this._renderCustomErrorPage(domain.custom_503_page, 503));
   } else {
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Service Unavailable', message: 'No available backend' }));
+    const accept = String(req.headers.accept || '');
+    if (accept.includes('text/html')) {
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderServiceUnavailablePage(domain.hostname));
+    } else {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Service Unavailable', message: 'No available backend' }));
+    }
   }
   return;
 }
@@ -582,7 +605,7 @@ proxyReq.on('error', (error) => {
       // Use custom 502 page if configured, otherwise fall back to styled default
       const html = domain.custom_502_page
         ? this._renderCustomErrorPage(domain.custom_502_page, 502)
-        : this._renderBadGatewayPage(domain.hostname);
+        : renderBadGatewayPage(domain.hostname, { errorCode: error.code, errorMessage: error.message });
       res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
     } else {
@@ -613,11 +636,17 @@ req.on('data', (chunk) => {
 
     // Send 413 response if headers not sent
     if (!res.headersSent) {
-      res.writeHead(413, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: 'Payload Too Large',
-        message: `Request body exceeds maximum allowed size (${MAX_BODY_SIZE} bytes)`
-      }));
+      const plWantsHtml = (req.headers.accept || '').includes('text/html');
+      if (plWantsHtml) {
+        res.writeHead(413, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(renderPayloadTooLargePage(domain.hostname, MAX_BODY_SIZE));
+      } else {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Payload Too Large',
+          message: `Request body exceeds maximum allowed size (${MAX_BODY_SIZE} bytes)`
+        }));
+      }
     }
   }
 });
@@ -644,210 +673,11 @@ return result;
 }
 
 /**
- * Render a themed maintenance page for a domain.
- */
-_renderMaintenancePage(domain) {
-const safeHost = (domain.hostname || '').replace(/[<>"&]/g, '');
-const safeMsg  = (domain.maintenance_message || 'Service en maintenance. Veuillez réessayer plus tard.').replace(/[<>"&]/g, c => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' }[c]));
-let endInfo = '';
-if (domain.maintenance_end_time) {
-  const end = new Date(domain.maintenance_end_time);
-  endInfo = `<p class="eta">Reprise prévue : <strong>${end.toLocaleString()}</strong></p>`;
-}
-return `<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Maintenance — ${safeHost}</title>
-<style>
-:root {
-color-scheme: dark;
---background: #09090b;
---surface: #18181b;
---surface-2: #1f1f23;
---border: #27272a;
---border-strong: #3f3f46;
---text: #fafafa;
---muted: #a1a1aa;
---subtle: #71717a;
---accent: #f59e0b;
---accent-strong: #fbbf24;
---info: #22d3ee;
-}
-* { box-sizing: border-box; }
-body {
-margin: 0;
-min-height: 100vh;
-display: grid;
-place-items: center;
-padding: 32px 16px;
-color: var(--text);
-font-family: "Segoe UI", Tahoma, sans-serif;
-background:
-  radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.08), transparent 56%),
-  radial-gradient(900px 480px at 92% -15%, rgba(255, 255, 255, 0.04), transparent 52%),
-  var(--background);
-}
-.card {
-width: min(760px, 100%);
-border-radius: 24px;
-border: 1px solid var(--border);
-background: linear-gradient(180deg, rgba(24, 24, 27, 0.98) 0%, rgba(17, 17, 19, 0.98) 100%);
-box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-padding: 24px;
-}
-.header {
-display: flex;
-flex-direction: column;
-gap: 10px;
-padding-bottom: 18px;
-border-bottom: 1px solid var(--border);
-}
-.badge {
-align-self: flex-start;
-display: inline-flex;
-align-items: center;
-gap: 8px;
-padding: 6px 12px;
-border-radius: 999px;
-border: 1px solid rgba(245, 158, 11, 0.35);
-background: rgba(245, 158, 11, 0.12);
-color: var(--accent-strong);
-font-size: 11px;
-letter-spacing: 0.18em;
-text-transform: uppercase;
-font-weight: 700;
-}
-h1 {
-margin: 0;
-font-size: clamp(28px, 4vw, 42px);
-line-height: 1.05;
-letter-spacing: -0.04em;
-}
-.subtitle {
-margin: 0;
-color: var(--muted);
-font-size: 14px;
-line-height: 1.6;
-max-width: 62ch;
-}
-.content {
-padding-top: 18px;
-display: grid;
-gap: 16px;
-}
-.message {
-border-radius: 18px;
-border: 1px solid var(--border);
-background: rgba(255, 255, 255, 0.03);
-padding: 18px;
-}
-.message p {
-margin: 0;
-color: var(--text);
-font-size: 15px;
-line-height: 1.7;
-}
-.grid {
-display: grid;
-grid-template-columns: repeat(2, minmax(0, 1fr));
-gap: 14px;
-}
-.tile {
-border-radius: 18px;
-border: 1px solid var(--border);
-background: var(--surface-2);
-padding: 16px;
-}
-.tile span {
-display: block;
-margin-bottom: 8px;
-color: var(--subtle);
-font-size: 11px;
-letter-spacing: 0.18em;
-text-transform: uppercase;
-}
-.tile strong {
-display: block;
-color: var(--text);
-font-size: 14px;
-line-height: 1.5;
-word-break: break-word;
-}
-.actions {
-display: flex;
-flex-wrap: wrap;
-gap: 12px;
-}
-.button {
-appearance: none;
-border: 1px solid var(--border-strong);
-background: var(--surface-2);
-color: var(--text);
-padding: 11px 16px;
-border-radius: 14px;
-font-size: 13px;
-cursor: pointer;
-transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-}
-.button:hover {
-transform: translateY(-1px);
-border-color: #52525b;
-background: #27272a;
-}
-.button.primary {
-border-color: rgba(34, 211, 238, 0.35);
-background: rgba(34, 211, 238, 0.08);
-color: #a5f3fc;
-}
-.button.primary:hover {
-border-color: rgba(34, 211, 238, 0.5);
-background: rgba(34, 211, 238, 0.14);
-}
-footer {
-margin-top: 18px;
-color: var(--subtle);
-font-size: 11px;
-line-height: 1.5;
-}
-@media (max-width: 640px) {
-.card { padding: 18px; border-radius: 20px; }
-.grid { grid-template-columns: 1fr; }
-}
-</style></head>
-<body><div class="card"><div class="header"><div class="badge">Maintenance</div><h1>Service temporairement indisponible</h1><p class="subtitle">Le domaine est en maintenance ou le service est en cours de redémarrage. L’apparence suit le thème admin pour rester cohérente avec le panneau de gestion.</p></div><div class="content"><div class="message"><p>${safeMsg}</p>${endInfo}</div><div class="grid"><div class="tile"><span>Domaine</span><strong>${safeHost}</strong></div><div class="tile"><span>Plateforme</span><strong>NebulaProxy</strong></div></div><div class="actions"><button class="button primary" onclick="location.reload()">Rafraîchir</button><button class="button" onclick="history.back()">Retour</button></div></div><footer>Si le service reste indisponible, contactez l’administrateur. Timestamp: ${new Date().toISOString()}</footer></div></body></html>`;
-}
-
-/**
  * Wrap custom HTML error page content in a standard HTTP response.
  * The `html` is admin-defined content — render it as-is.
  */
 _renderCustomErrorPage(html, _code) {
 return html;
-}
-
-_renderBandwidthExceededPage(domain) {
-const host = (domain?.hostname || 'this service').replace(/[<>"&]/g, '');
-return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Bandwidth Limit Reached — ${host}</title>
-<style>
-:root { color-scheme: dark; --bg:#09090b; --surface:#18181b; --border:#27272a; --text:#fafafa; --muted:#a1a1aa; --accent:#f59e0b; }
-*{box-sizing:border-box;} body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 40px;max-width:480px;width:100%;text-align:center;}
-.icon{font-size:48px;margin-bottom:20px;}
-h1{font-size:22px;font-weight:600;margin:0 0 12px;color:var(--text);}
-p{font-size:14px;color:var(--muted);line-height:1.6;margin:0 0 12px;}
-.badge{display:inline-block;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--accent);font-size:12px;font-weight:500;padding:4px 12px;border-radius:20px;margin-bottom:24px;}
-.footer{font-size:11px;color:#52525b;margin-top:24px;padding-top:20px;border-top:1px solid var(--border);}
-</style></head><body>
-<div class="card">
-<div class="icon">📊</div>
-<div class="badge">429 Bandwidth Limit</div>
-<h1>Data Limit Reached</h1>
-<p>The monthly bandwidth quota for <strong>${host}</strong> has been reached.</p>
-<p>Service will resume automatically when the quota resets. If you are the account owner, contact your administrator to increase your limit.</p>
-<div class="footer">Powered by NebulaProxy</div>
-</div>
-</body></html>`;
 }
 
 /**
@@ -904,263 +734,6 @@ res.writeHead(200, {
 });
 res.end(token);
 return true;
-}
-
-_renderBadGatewayPage(hostname) {
-const copy = config.proxy.badGatewayPage || {};
-const safeHost = escapeHtml(hostname || 'unknown-host');
-const htmlTitle = escapeHtml(copy.htmlTitle || 'Bad Gateway');
-const badge = escapeHtml(copy.badge || 'Bad Gateway');
-const title = escapeHtml(copy.title || 'Service amont indisponible');
-const subtitle = escapeHtml(copy.subtitle || "Le proxy ne peut pas joindre le backend pour ce domaine. L'ecran suit le meme theme que l'interface admin afin de garder une experience coherente.");
-const message = escapeHtml(copy.message || 'The backend server is temporarily unavailable');
-const domainLabel = escapeHtml(copy.domainLabel || 'Domaine');
-const _proxyLabel = escapeHtml(copy.proxyLabel || 'Proxy');
-const _proxyValue = escapeHtml(copy.proxyValue || 'NebulaProxy');
-const _causeLabel = escapeHtml(copy.causeLabel || 'Cause');
-const _causeValue = escapeHtml(copy.causeValue || 'Backend not reachable');
-const _statusLabel = escapeHtml(copy.statusLabel || 'Statut');
-const _statusValue = escapeHtml(copy.statusValue || '502 Service Unavailable');
-const retryButton = escapeHtml(copy.retryButton || 'Reessayer');
-const backButton = escapeHtml(copy.backButton || 'Retour');
-const footerText = escapeHtml(copy.footerText || "Contactez l'administrateur si le probleme persiste.");
-
-return `<!doctype html><html lang="fr"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${htmlTitle}</title><style>
-  :root {
-    color-scheme: dark;
-    --bg: #0b0c0f;
-    --panel: rgba(22, 23, 34, 0.9);
-    --border: rgba(255, 255, 255, 0.08);
-    --text: #e6e7ef;
-    --muted: rgba(255, 255, 255, 0.55);
-    --accent: #c77dff;
-    --accent-2: #22d3ee;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: "Segoe UI", Tahoma, sans-serif;
-    background: radial-gradient(1200px 500px at 10% 10%, rgba(157, 78, 221, 0.15), transparent),
-                radial-gradient(900px 500px at 90% 20%, rgba(34, 211, 238, 0.12), transparent),
-                var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 32px 16px;
-  }
-  .card {
-    width: min(720px, 100%);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 28px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-  }
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    color: #fbbf24;
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 18px 0 8px;
-    font-weight: 300;
-    font-size: 28px;
-  }
-  p {
-    margin: 0 0 16px;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.6;
-  }
-  .message-box {
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 16px;
-    background: rgba(245, 158, 11, 0.05);
-    margin-top: 18px;
-  }
-  .message-box p {
-    margin: 0;
-    color: var(--text);
-  }
-  .actions {
-    margin-top: 22px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .button {
-    appearance: none;
-    border: 1px solid rgba(157, 78, 221, 0.4);
-    background: linear-gradient(135deg, rgba(157, 78, 221, 0.2), rgba(123, 44, 191, 0.15));
-    color: #c77dff;
-    padding: 10px 16px;
-    border-radius: 12px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: 0.2s ease;
-  }
-  .button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
-  }
-  footer {
-    margin-top: 26px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.35);
-  }
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="badge">${badge}</div>
-  <h1>${title}</h1>
-  <p>${subtitle}</p>
-  <div class="message-box">
-    <p>${message}</p>
-  </div>
-  <div class="actions">
-    <button class="button" onclick="location.reload()">${retryButton}</button>
-    <button class="button" onclick="history.back()">${backButton}</button>
-  </div>
-  <footer>${footerText} &mdash; ${domainLabel}: ${safeHost}</footer>
-</div>
-</body>
-</html>`;
-}
-
-_renderBlockedPage(message, statusCode = 403) {
-const safeMessage = message || 'Access to this resource is forbidden.';
-const statusText = statusCode === 403 ? 'Forbidden' : statusCode === 401 ? 'Unauthorized' : 'Access Denied';
-return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${statusText}</title>
-<style>
-  :root {
-    color-scheme: dark;
-    --bg: #0b0c0f;
-    --panel: rgba(22, 23, 34, 0.9);
-    --border: rgba(255, 255, 255, 0.08);
-    --text: #e6e7ef;
-    --muted: rgba(255, 255, 255, 0.55);
-    --accent: #c77dff;
-    --accent-2: #22d3ee;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: "Segoe UI", Tahoma, sans-serif;
-    background: radial-gradient(1200px 500px at 10% 10%, rgba(157, 78, 221, 0.15), transparent),
-                radial-gradient(900px 500px at 90% 20%, rgba(34, 211, 238, 0.12), transparent),
-                var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 32px 16px;
-  }
-  .card {
-    width: min(720px, 100%);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 28px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-  }
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    color: #fbbf24;
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 18px 0 8px;
-    font-weight: 300;
-    font-size: 28px;
-  }
-  p {
-    margin: 0 0 16px;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.6;
-  }
-  .message-box {
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 16px;
-    background: rgba(245, 158, 11, 0.05);
-    margin-top: 18px;
-  }
-  .message-box p {
-    margin: 0;
-    color: var(--text);
-  }
-  .actions {
-    margin-top: 22px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .button {
-    appearance: none;
-    border: 1px solid rgba(157, 78, 221, 0.4);
-    background: linear-gradient(135deg, rgba(157, 78, 221, 0.2), rgba(123, 44, 191, 0.15));
-    color: #c77dff;
-    padding: 10px 16px;
-    border-radius: 12px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: 0.2s ease;
-  }
-  .button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
-  }
-  footer {
-    margin-top: 26px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.35);
-  }
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="badge">${statusCode} ${statusText}</div>
-  <h1>Access Denied</h1>
-  <p>Your request has been blocked by the URL filtering system. Access to this resource is restricted.</p>
-  <div class="message-box">
-    <p>${safeMessage}</p>
-  </div>
-  <div class="actions">
-    <button class="button" onclick="history.back()">Go back</button>
-  </div>
-  <footer>Contact your administrator for access. Timestamp: ${new Date().toISOString()}</footer>
-</div>
-</body>
-</html>`;
 }
 
 }

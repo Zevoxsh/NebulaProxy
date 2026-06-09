@@ -5,6 +5,7 @@ import http from 'http';
 import https from 'https';
 import tls from 'tls';
 import { logger } from '../../utils/logger.js';
+import { renderNotFoundPage } from './renderers.js';
 
 export class HttpProxy {
 // ==================== HTTP/HTTPS PROXY ====================
@@ -73,12 +74,16 @@ async _startHttpProxy(domain) {
             logger.warn(`[HTTP Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
           }
         }
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          error: 'Not Found',
-          message: `No proxy configured for hostname: ${hostname}`,
-          detail: 'Please ensure the domain is configured in NebulaProxy'
-        }));
+        if ((req.headers.accept || '').includes('text/html')) {
+          res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(renderNotFoundPage(hostname));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Not Found',
+            message: `No proxy configured for hostname: ${hostname}`,
+          }));
+        }
         return;
       }
 
@@ -169,12 +174,16 @@ async _startHttpProxy(domain) {
             logger.warn(`[HTTPS Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
           }
         }
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          error: 'Not Found',
-          message: `No proxy configured for hostname: ${hostname}`,
-          detail: 'Please ensure the domain is configured in NebulaProxy'
-        }));
+        if ((req.headers.accept || '').includes('text/html')) {
+          res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(renderNotFoundPage(hostname));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Not Found',
+            message: `No proxy configured for hostname: ${hostname}`,
+          }));
+        }
         return;
       }
 
