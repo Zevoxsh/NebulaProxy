@@ -187,7 +187,7 @@ export const config = {
       return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
     },
     get requestTimeoutMs() {
-      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '60000'), 10);
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '300000'), 10);
     },
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
@@ -329,7 +329,16 @@ export const config = {
 
   logs: {
     get retentionDays() { return parseInt(getConfig('LOG_RETENTION_DAYS', '30'), 10); },
-    get cleanupIntervalHours() { return parseInt(getConfig('LOG_CLEANUP_INTERVAL_HOURS', '24'), 10); }
+    get cleanupIntervalHours() { return parseInt(getConfig('LOG_CLEANUP_INTERVAL_HOURS', '24'), 10); },
+    // 'db' (default) or 'syslog' — when 'syslog', proxy logs bypass the DB entirely
+    get backend() { return (getConfig('LOG_BACKEND', 'db') || 'db').toLowerCase(); },
+    syslog: {
+      get host()     { return getConfig('LOG_SYSLOG_HOST', '127.0.0.1'); },
+      get port()     { return parseInt(getConfig('LOG_SYSLOG_PORT', '514'), 10); },
+      get protocol() { return (getConfig('LOG_SYSLOG_PROTOCOL', 'udp') || 'udp').toLowerCase(); },
+      get facility() { return parseInt(getConfig('LOG_SYSLOG_FACILITY', '16'), 10); }, // 16 = local0
+      get appName()  { return getConfig('LOG_SYSLOG_APP_NAME', 'nebulaproxy'); }
+    }
   },
 
   // CORS

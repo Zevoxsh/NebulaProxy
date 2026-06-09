@@ -147,8 +147,15 @@ async function runAgent(options) {
   };
 
   const sendJson = (payload) => {
-    if (!currentWs || currentWs.readyState !== WS_OPEN) return;
-    currentWs.send(JSON.stringify(payload));
+    if (!currentWs || currentWs.readyState !== WS_OPEN) {
+      log('WARN', `sendJson SKIPPED readyState=${currentWs?.readyState} WS_OPEN=${WS_OPEN} type=${payload?.type}`);
+      return;
+    }
+    try {
+      currentWs.send(JSON.stringify(payload));
+    } catch (err) {
+      log('WARN', `sendJson ERROR type=${payload?.type} err=${err.message}`);
+    }
   };
 
   const log = (level, message, details = null) => {
@@ -217,10 +224,46 @@ async function runAgent(options) {
 
   const normalizeMessageData = async (data) => {
     if (typeof data === 'string') return data;
-    if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-    if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
+    if (data instanceof ArrayBuffer) return Buffer.from(data);
+    if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+    // Native WebSocket delivers binary frames as Blob — use arrayBuffer() to preserve bytes.
+    if (data && typeof data.arrayBuffer === 'function') return Buffer.from(await data.arrayBuffer());
     if (data && typeof data.text === 'function') return data.text();
     return String(data);
+  };
+
+  const onBinaryMessage = (raw) => {
+    // Binary frame format from relay:
+    // [1 byte type: 0x01=TCP data, 0x02=UDP data, 0x03=close]
+    // [4 bytes connId length BE] [connId utf8] [payload]
+    if (raw.length < 5) return;
+    const msgType = raw[0];
+    const connIdLen = raw.readUInt32BE(1);
+    if (raw.length < 5 + connIdLen) return;
+    const connId = raw.toString('utf8', 5, 5 + connIdLen);
+    const payload = raw.subarray(5 + connIdLen);
+
+    const entry = sockets.get(connId);
+    if (!entry) return;
+
+    if (msgType === 0x03) { // close
+      if (entry.kind === 'udp') {
+        closeSocket(connId);
+        return;
+      }
+      if (!entry.socket.destroyed) entry.socket.end();
+      sockets.delete(connId);
+      return;
+    }
+
+    if (msgType === 0x02 && entry.kind === 'udp') { // UDP data
+      entry.socket.send(payload, entry.targetPort, entry.targetHost);
+      return;
+    }
+
+    if (msgType === 0x01 && entry.kind === 'tcp') { // TCP data
+      if (!entry.socket.destroyed) entry.socket.write(payload);
+    }
   };
 
   const onMessage = (raw) => {
@@ -243,7 +286,9 @@ async function runAgent(options) {
       const protocol = String(message.protocol || 'tcp').toLowerCase();
       const targetHost = String(message.targetHost || '127.0.0.1');
       const targetPort = Number.parseInt(String(message.targetPort || ''), 10);
+      log('INFO', `open received connId=${connId.slice(0,8)} proto=${protocol} target=${targetHost}:${targetPort}`);
       if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535) {
+        log('WARN', `invalid port ${targetPort} for connId=${connId.slice(0,8)}`);
         sendJson({ type: 'close', connId });
         return;
       }
@@ -277,6 +322,7 @@ async function runAgent(options) {
       }
 
       const socket = net.connect({ host: targetHost, port: targetPort }, () => {
+        log('INFO', `tcp connected connId=${connId.slice(0,8)} target=${targetHost}:${targetPort}`);
         sendJson({ type: 'opened', connId });
       });
 
@@ -286,15 +332,18 @@ async function runAgent(options) {
       });
 
       socket.on('data', (chunk) => {
+        log('INFO', `tcp data connId=${connId.slice(0,8)} bytes=${chunk.length}`);
         sendJson({ type: 'data', connId, data: chunk.toString('base64') });
       });
 
-      socket.on('error', () => {
+      socket.on('error', (err) => {
+        log('WARN', `tcp error connId=${connId.slice(0,8)} err=${err.message}`);
         sendJson({ type: 'close', connId });
         closeSocket(connId);
       });
 
       socket.on('close', () => {
+        log('INFO', `tcp close connId=${connId.slice(0,8)}`);
         sendJson({ type: 'close', connId });
         sockets.delete(connId);
       });
@@ -381,7 +430,11 @@ async function runAgent(options) {
         const payload = webSocketMode === 'native'
           ? await normalizeMessageData(eventOrData?.data)
           : await normalizeMessageData(eventOrData);
-        onMessage(payload);
+        if (Buffer.isBuffer(payload)) {
+          onBinaryMessage(payload);
+        } else {
+          onMessage(payload);
+        }
       };
 
       const onClose = (eventOrCode, reasonMaybe) => {

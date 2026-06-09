@@ -1,5 +1,14 @@
 name: nebulaproxy
 
+# ─── Syslog logging — tous les containers envoient vers rsyslog sur l'hôte ───
+x-logging: &default-logging
+  driver: syslog
+  options:
+    syslog-address: "unixgram:///dev/log"
+    syslog-facility: "daemon"
+    tag: "nebulaproxy-{{.Name}}"
+    syslog-format: "rfc3164"
+
 # ─── Isolated bridge network — no container runs on the host network ──────────
 networks:
   nebula-net:
@@ -18,6 +27,7 @@ services:
     image: tecnativa/docker-socket-proxy:0.3.0
     container_name: nebulaproxy-socket-proxy-ro
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -42,6 +52,7 @@ services:
     image: tecnativa/docker-socket-proxy:0.3.0
     container_name: nebulaproxy-socket-proxy-rw
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -65,6 +76,7 @@ services:
       context: ./redis
       dockerfile: Dockerfile
     container_name: nebulaproxy-redis
+    logging: *default-logging
     volumes:
       - redis-data:/data
       - redis-secret:/run/redis-secret  # secret also written here for sibling containers
@@ -92,6 +104,7 @@ services:
       context: ./postgres
       dockerfile: Dockerfile
     container_name: nebulaproxy-postgres
+    logging: *default-logging
     volumes:
       - pg-data:/var/lib/postgresql/data
       - pg-secret:/run/pg-secret  # auto-generated password exposed to backend (read-only)
@@ -127,6 +140,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: nebulaproxy-backend
+    logging: *default-logging
     env_file:
       - path: .env.nebula
         required: false
@@ -162,6 +176,8 @@ services:
       - DOCKER_HOST=tcp://127.0.0.1:2375
       - PUBLIC_IP=${PUBLIC_IP:-}
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
+      - LOG_LEVEL=warn
+      - LOG_RETENTION_DAYS=3
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 15s
@@ -196,6 +212,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: nebulaproxy-frontend
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -231,6 +248,7 @@ services:
       context: ./watchdog
       dockerfile: Dockerfile
     container_name: nebulaproxy-watchdog
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     cap_drop:

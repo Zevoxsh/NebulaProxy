@@ -82,11 +82,10 @@ if (domain.user_id) {
       if (cached !== null) {
         quotaBytes = parseInt(cached, 10);
       } else {
-        const { pool } = await import('../config/database.js');
-        const { rows } = await pool.query(
+        const row = await database.queryOne(
           'SELECT bandwidth_quota_bytes FROM users WHERE id = $1', [domain.user_id]
         );
-        quotaBytes = Number(rows[0]?.bandwidth_quota_bytes ?? 0);
+        quotaBytes = Number(row?.bandwidth_quota_bytes ?? 0);
         await redisService.client.setex(quotaCacheKey, 300, String(quotaBytes));
       }
     }
@@ -200,7 +199,7 @@ try {
   const filterResult = await urlFilterService.checkUrl(domain.id, urlPath, req.method, clientIp);
 
   if (filterResult.blocked) {
-    await database.createRequestLog({
+    logBatchQueue.queueRequestLog({
       domainId: domain.id,
       hostname: domain.hostname,
       method: req.method,
@@ -336,7 +335,7 @@ if (acceptsHtml && config.proxy.injectConsoleScript) {
 }
 
 const protocol = backendProtocol === 'https:' ? https : http;
-const upstreamTimeoutMs = config.proxy.requestTimeoutMs || 4000;
+const upstreamTimeoutMs = config.proxy.requestTimeoutMs > 0 ? config.proxy.requestTimeoutMs : 300000;
 const consolePayload = {
   host: String(domain.hostname || req.headers.host || 'unknown-host'),
   path: String(req.url || '/'),
@@ -546,7 +545,7 @@ proxyReq.on('error', (error) => {
   logger.error(`  Client IP: ${clientIp}`);
   logger.error(`  Host header: ${req.headers.host}`);
 
-  database.createRequestLog({
+  logBatchQueue.queueRequestLog({
     domainId: domain.id,
     hostname: domain.hostname,
     method: req.method,
@@ -562,11 +561,9 @@ proxyReq.on('error', (error) => {
       'content-type': req.headers['content-type'],
       'accept': req.headers['accept']
     }
-  }).catch((err) => {
-    logger.error('[ProxyManager] Failed to write request log:', err);
   });
 
-  database.createProxyLog({
+  logBatchQueue.queueProxyLog({
     domainId: domain.id,
     hostname: domain.hostname,
     method: req.method,
@@ -576,8 +573,6 @@ proxyReq.on('error', (error) => {
     ipAddress: clientIp,
     userAgent: req.headers['user-agent'] || null,
     level: 'error'
-  }).catch((err) => {
-    logger.error('[ProxyManager] Failed to write proxy log:', err);
   });
 
   if (!res.headersSent) {

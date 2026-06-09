@@ -51,8 +51,8 @@ class TunnelRelayService {
         await database.updateTunnelAgentHeartbeat(agentId, { status: 'online' });
         logger.info(`[DEBUG:TUNNEL] agent=${agentId} CONNECTED from ${req.socket?.remoteAddress}`);
 
-        ws.on('message', (raw) => {
-          this.handleAgentMessage(agentId, raw);
+        ws.on('message', (raw, isBinary) => {
+          this.handleAgentMessage(agentId, raw, isBinary);
         });
 
         ws.on('error', (err) => {
@@ -155,7 +155,8 @@ class TunnelRelayService {
         kind: 'tcp',
         agentId: binding.agent_id,
         bindingId: binding.id,
-        clientSocket
+        clientSocket,
+        openTimeout: null
       });
 
       logger.info(`[DEBUG:TUNNEL] conn=${clientAddr} id=${shortId} binding=${binding.id} port=${binding.public_port} -> OPEN (agent=${binding.agent_id} target=${binding.target_host || '127.0.0.1'}:${binding.local_port})`);
@@ -167,6 +168,19 @@ class TunnelRelayService {
         targetHost: binding.target_host || '127.0.0.1',
         targetPort: Number(binding.local_port)
       });
+
+      // Destroy the client socket if the agent does not acknowledge within 10s.
+      // Prevents indefinite hangs when the WebSocket is a zombie connection.
+      const connEntry = this.connections.get(connId);
+      if (connEntry) {
+        connEntry.openTimeout = setTimeout(() => {
+          if (this.connections.has(connId)) {
+            logger.warn(`[DEBUG:TUNNEL] id=${shortId} binding=${binding.id} OPEN_TIMEOUT agent=${binding.agent_id} zombie? -> destroying client`);
+            clientSocket.destroy();
+            this.cleanupConnection(connId);
+          }
+        }, 10000);
+      }
 
       let bytesSentToAgent = 0;
       const bytesRecvFromAgent = 0;
@@ -343,12 +357,12 @@ class TunnelRelayService {
     this.logger.info({ bindingId: binding.id, protocol: 'udp', publicPort: binding.public_port }, '[TunnelRelay] Binding listener started');
   }
 
-  handleAgentMessage(agentId, raw) {
-    // Handle both binary frames and JSON messages for compatibility
-    if (Buffer.isBuffer(raw)) {
+  handleAgentMessage(agentId, raw, isBinary = false) {
+    // ws library delivers ALL messages as Buffer; use isBinary flag from ws event.
+    if (isBinary) {
       return this.handleBinaryMessage(agentId, raw);
     }
-    
+
     let message;
     try {
       message = JSON.parse(String(raw));
@@ -361,6 +375,16 @@ class TunnelRelayService {
 
     const entry = this.connections.get(connId);
     if (!entry || entry.agentId !== agentId) return;
+
+    // Clear open-phase timeout on first message from agent for this connection
+    if (entry.openTimeout) {
+      clearTimeout(entry.openTimeout);
+      entry.openTimeout = null;
+    }
+
+    if (message.type === 'opened') {
+      return;
+    }
 
     if (message.type === 'data') {
       if (typeof message.data !== 'string') return;
@@ -415,7 +439,13 @@ class TunnelRelayService {
     
     const entry = this.connections.get(connId);
     if (!entry || entry.agentId !== agentId) return;
-    
+
+    // Clear open-phase timeout on first binary message
+    if (entry.openTimeout) {
+      clearTimeout(entry.openTimeout);
+      entry.openTimeout = null;
+    }
+
     if (msgType === 0x03) { // close
       if (entry.kind === 'udp') {
         this.cleanupConnection(connId);
@@ -502,6 +532,11 @@ class TunnelRelayService {
   cleanupConnection(connId) {
     const entry = this.connections.get(connId);
     if (!entry) return;
+
+    if (entry.openTimeout) {
+      clearTimeout(entry.openTimeout);
+      entry.openTimeout = null;
+    }
 
     if (entry.kind === 'udp' && entry.udpSessions && entry.sessionKey) {
       entry.udpSessions.delete(entry.sessionKey);
