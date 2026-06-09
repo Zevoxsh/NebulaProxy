@@ -55,13 +55,28 @@ class TunnelRelayService {
           this.handleAgentMessage(agentId, raw);
         });
 
+        ws.on('error', (err) => {
+          logger.error(`[DEBUG:TUNNEL] agent=${agentId} WS ERROR: ${err.message}`);
+          this.closeAgentConnections(agentId);
+        });
+
+        this.sendJson(ws, { type: 'ready', agentId });
+
+        const pingInterval = setInterval(() => {
+          if (ws.readyState === 1) {
+            ws.ping();
+          } else {
+            clearInterval(pingInterval);
+          }
+        }, 30000);
+
         ws.on('close', async (code, reason) => {
+          clearInterval(pingInterval);
           const uptime = ws._connectTime ? Date.now() - ws._connectTime : '?';
           logger.info(`[DEBUG:TUNNEL] agent=${agentId} DISCONNECTED code=${code} reason=${reason?.toString() || '-'} uptime=${uptime}ms`);
           if (this.agentSockets.get(agentId) === ws) {
             this.agentSockets.delete(agentId);
           }
-          // Clean up drain listener
           if (ws._drainCheck && ws._socket) {
             ws._socket.removeListener('drain', ws._drainCheck);
             ws._drainCheck = null;
@@ -69,13 +84,6 @@ class TunnelRelayService {
           this.closeAgentConnections(agentId);
           await database.updateTunnelAgentHeartbeat(agentId, { status: 'offline' }).catch(() => {});
         });
-
-        ws.on('error', (err) => {
-          logger.error(`[DEBUG:TUNNEL] agent=${agentId} WS ERROR: ${err.message}`);
-          this.closeAgentConnections(agentId);
-        });
-
-        this.sendJson(ws, { type: 'ready', agentId });
       } catch (error) {
         this.logger.error({ error }, '[TunnelRelay] Agent connection failed');
         ws.close(1011, 'Internal error');
