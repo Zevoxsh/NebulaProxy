@@ -913,21 +913,22 @@ export async function sslRoutes(fastify, _options) {
 
   // ===== WILDCARD SSL CERTIFICATE ROUTES (admin only) =====
 
-  // GET /ssl/wildcards - List all wildcard certs with coverage count
+  // GET /ssl/wildcards - List all wildcard certs (read-only for all users, management is admin-only)
   fastify.get('/wildcards', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
-        if (request.user.role !== 'admin') {
-          return reply.code(403).send({ error: 'Admin access required' });
-        }
-
+        const isAdmin = request.user.role === 'admin';
         const certs = await database.getAllWildcardCerts();
+
+        // Non-admins see only hostname + cert_type (enough to match, no private data)
         const certsWithCoverage = await Promise.all(
-          certs.map(async (cert) => ({
-            ...cert,
-            coveredDomainsCount: await database.getWildcardCoveredDomainsCount(cert.hostname)
-          }))
+          certs.map(async (cert) => {
+            const base = isAdmin
+              ? { ...cert, coveredDomainsCount: await database.getWildcardCoveredDomainsCount(cert.hostname) }
+              : { id: cert.id, hostname: cert.hostname, cert_type: cert.cert_type, has_cert: cert.has_cert, auto_apply: cert.auto_apply, expires_at: cert.expires_at };
+            return base;
+          })
         );
 
         return reply.send({ wildcards: certsWithCoverage });

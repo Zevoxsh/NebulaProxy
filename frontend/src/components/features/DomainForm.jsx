@@ -88,8 +88,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   // Fetch wildcard certs once on mount
   useEffect(() => {
     wildcardCertAPI.getAll().then(res => {
-      // Only keep wildcards that have an actual cert (not pending ACME)
-      setAvailableWildcards((res.data?.wildcards || []).filter(w => w.has_cert));
+      const all = res.data?.wildcards || [];
+      // has_cert may be true/1/undefined depending on server version — keep all if field missing
+      setAvailableWildcards(all.filter(w => w.has_cert === undefined || w.has_cert === true || w.has_cert === 1));
     }).catch(() => {});
   }, []);
 
@@ -104,9 +105,10 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     let found = null;
     for (let i = 1; i < parts.length - 1 && !found; i++) {
       const candidate = '*.' + parts.slice(i).join('.');
-      found = availableWildcards.find(w => w.hostname === candidate) || null;
+      found = availableWildcards.find(w => w.hostname.trim() === candidate) || null;
     }
     setMatchingWildcard(found);
+    console.debug('[Wildcard] hostname:', hostname, 'match:', found?.hostname ?? 'none', 'available:', availableWildcards.map(w => w.hostname));
     // Auto-select wildcard option when a match is found and no method was manually chosen yet
     if (found && formData.challengeType === 'http-01') {
       setFormData(prev => ({ ...prev, challengeType: 'wildcard' }));
