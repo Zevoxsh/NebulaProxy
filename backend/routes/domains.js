@@ -165,7 +165,7 @@ export async function domainRoutes(fastify, _options) {
           },
           challengeType: {
             type: 'string',
-            enum: ['http-01', 'dns-01']
+            enum: ['http-01', 'dns-01', 'wildcard']
           },
           teamId: {
             type: 'integer',
@@ -188,6 +188,17 @@ export async function domainRoutes(fastify, _options) {
       // Check for wildcard domain (HTTP only)
       const isWildcard = hostname.startsWith('*.');
       let challengeType = request.body.challengeType || 'http-01';
+
+      // Validate wildcard challenge type: a sub-domain using an existing wildcard cert
+      if (proxyType === 'http' && challengeType === 'wildcard' && sslEnabled) {
+        const coveringWildcard = await database.getWildcardCertForHostname(hostname);
+        if (!coveringWildcard) {
+          return reply.code(400).send({
+            error: 'No wildcard certificate found',
+            message: `No valid wildcard certificate covers ${hostname}. Generate or upload one first.`
+          });
+        }
+      }
 
       if (proxyType === 'http') {
         if (isWildcard) {
@@ -352,6 +363,11 @@ export async function domainRoutes(fastify, _options) {
 
 
       fastify.log.info({ username: request.user.username, hostname }, 'Domain created');
+
+      // Wildcard cert covers this domain immediately — mark SSL active right away
+      if (sslEnabled && challengeType === 'wildcard') {
+        await database.updateDomainSSLStatus(domain.id, 'active');
+      }
 
       // Start proxy if domain is active
       if (domain.is_active) {

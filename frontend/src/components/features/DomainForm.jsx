@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info } from 'lucide-react';
+import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info, Star } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { domainAPI } from '../../api/client';
+import { domainAPI, wildcardCertAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
 
 const LB_ALGORITHMS = [
@@ -82,6 +82,40 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   });
   const [error, setError] = useState('');
   const [_loadingBackends, setLoadingBackends] = useState(false);
+  const [availableWildcards, setAvailableWildcards] = useState([]);
+  const [matchingWildcard, setMatchingWildcard] = useState(null);
+
+  // Fetch wildcard certs once on mount
+  useEffect(() => {
+    wildcardCertAPI.getAll().then(res => {
+      // Only keep wildcards that have an actual cert (not pending ACME)
+      setAvailableWildcards((res.data?.wildcards || []).filter(w => w.has_cert));
+    }).catch(() => {});
+  }, []);
+
+  // When hostname changes, check if a wildcard covers it
+  useEffect(() => {
+    const hostname = formData.hostname.trim().toLowerCase();
+    if (!hostname || hostname.startsWith('*.') || availableWildcards.length === 0) {
+      setMatchingWildcard(null);
+      return;
+    }
+    const parts = hostname.split('.');
+    let found = null;
+    for (let i = 1; i < parts.length - 1 && !found; i++) {
+      const candidate = '*.' + parts.slice(i).join('.');
+      found = availableWildcards.find(w => w.hostname === candidate) || null;
+    }
+    setMatchingWildcard(found);
+    // Auto-select wildcard option when a match is found and no method was manually chosen yet
+    if (found && formData.challengeType === 'http-01') {
+      setFormData(prev => ({ ...prev, challengeType: 'wildcard' }));
+    }
+    // Revert to http-01 if wildcard disappears
+    if (!found && formData.challengeType === 'wildcard') {
+      setFormData(prev => ({ ...prev, challengeType: 'http-01' }));
+    }
+  }, [formData.hostname, availableWildcards]);
 
   useEffect(() => {
     if (domain) {
@@ -724,7 +758,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                     Certificate Method
                     <Hint text="How NebulaProxy will obtain your SSL certificate from Let's Encrypt. HTTP-01 is automatic and works for most domains. DNS-01 is required for wildcard domains (*.example.com) and needs manual DNS configuration. Custom lets you upload an existing certificate." />
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className={`grid gap-2 ${matchingWildcard ? 'grid-cols-2' : 'grid-cols-3'}`}>
                     <button
                       type="button"
                       onClick={() => !formData.hostname.startsWith('*.') && setFormData(prev => ({ ...prev, challengeType: 'http-01' }))}
@@ -764,6 +798,23 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                       <span className="text-xs font-medium text-white">Custom</span>
                       <span className="text-xs text-white/50">Upload your own cert</span>
                     </button>
+                    {matchingWildcard && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, challengeType: 'wildcard' }))}
+                        className={`flex flex-col items-start gap-1 p-3 rounded-lg border transition-all col-span-2 sm:col-span-1 ${
+                          formData.challengeType === 'wildcard'
+                            ? 'bg-[#F59E0B]/10 border-[#F59E0B]/40'
+                            : 'bg-white/[0.03] border-white/[0.08] hover:border-[#F59E0B]/40'
+                        }`}
+                      >
+                        <span className="text-xs font-medium text-white flex items-center gap-1.5">
+                          <Star className="w-3 h-3 text-[#F59E0B]" strokeWidth={1.5} />
+                          Wildcard existant
+                        </span>
+                        <span className="text-xs text-[#F59E0B]/70">{matchingWildcard.hostname}</span>
+                      </button>
+                    )}
                   </div>
 
                   {formData.hostname.startsWith('*.') && (
@@ -794,6 +845,17 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                     <div className="mt-2 p-2.5 rounded-lg bg-[#9D4EDD]/10 border border-[#9D4EDD]/20">
                       <p className="text-xs text-white/70 leading-relaxed">
                         Upload your own SSL certificate and private key in PEM format.
+                      </p>
+                    </div>
+                  )}
+
+                  {formData.challengeType === 'wildcard' && matchingWildcard && (
+                    <div className="mt-2 p-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
+                      <p className="text-xs text-white/70 leading-relaxed">
+                        Le certificat wildcard <span className="text-[#F59E0B] font-medium">{matchingWildcard.hostname}</span> couvre ce domaine — aucune action supplémentaire requise.
+                        {matchingWildcard.cert_type === 'self-signed' && (
+                          <span className="block mt-1 text-[#F59E0B]/70">⚠ Ce wildcard est auto-signé (non approuvé par les navigateurs).</span>
+                        )}
                       </p>
                     </div>
                   )}
