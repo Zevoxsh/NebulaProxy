@@ -1251,6 +1251,13 @@ ${trimmedStderr}`);
   }
 
   /**
+   * Check if a live certbot process is waiting for this domainId
+   */
+  hasPendingChallenge(domainId) {
+    return this.dnsChallengePending.has(domainId);
+  }
+
+  /**
    * Cancel pending DNS challenge
    */
   async cancelDNSChallenge(domainId) {

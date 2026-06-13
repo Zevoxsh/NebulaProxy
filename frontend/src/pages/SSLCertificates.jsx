@@ -144,10 +144,20 @@ export default function SSLCertificates() {
   }, [currentPage, totalPages]);
 
   const handleRenew = async (domainId) => {
+    const cert = certificates.find(c => c.id === domainId);
+
+    // Manual certs can't be auto-renewed — open the upload dialog directly
+    if (cert && cert.type === 'manual') {
+      setUploadData({ domainId: String(domainId), fullChain: '', privateKey: '' });
+      setUploadError(null);
+      setShowUploadModal(true);
+      return;
+    }
+
     setRenewingId(domainId);
     try {
       await sslAPI.renew(domainId);
-      await fetchCertificates(); // Refresh after renew
+      await fetchCertificates();
     } catch (error) {
       console.error('Error renewing certificate:', error);
       const message = error.response?.data?.message || 'Failed to renew certificate';
@@ -156,20 +166,10 @@ export default function SSLCertificates() {
       // open the DNS challenge modal so the user can follow DNS instructions.
       const lower = (message || '').toLowerCase();
       if (lower.includes('dns') || lower.includes('dns-01') || lower.includes('dns challenge')) {
-        // Open DNS modal and request challenge details if not already pending
         handleRequestDNS(domainId);
         return;
       }
 
-      // If certificate is manual (user-uploaded), prompt for manual upload instead
-      const cert = certificates.find(c => c.id === domainId);
-      if (cert && cert.type === 'manual') {
-        alert('This domain uses a manual certificate. Please upload a renewed certificate via the Upload dialog.');
-        setShowUploadModal(true);
-        return;
-      }
-
-      // Fallback: show error message
       alert(message);
     } finally {
       setRenewingId(null);
@@ -281,7 +281,16 @@ export default function SSLCertificates() {
       }
     } catch (error) {
       console.error('Error validating DNS challenge:', error);
-      setDnsError(error.response?.data?.message || 'DNS validation failed');
+      const data = error.response?.data;
+      if (data?.reinitiateRequired) {
+        // Certbot process died — close modal and let user re-initiate
+        setShowDNSModal(false);
+        setDnsChallenge(null);
+        setDnsError(null);
+        alert('The certificate session expired (server restarted or timed out). Please click "Request DNS Challenge" again to start over.');
+      } else {
+        setDnsError(data?.message || 'DNS validation failed');
+      }
     } finally {
       setDnsValidating(false);
     }

@@ -724,6 +724,17 @@ export async function sslRoutes(fastify, _options) {
           });
         }
 
+        // Check if the certbot process is still alive in memory
+        if (!acmeManager.hasPendingChallenge(domainId)) {
+          // Process died (server restart, timeout) — clear stale DB state
+          await database.clearDNSChallenge(domainId);
+          return reply.code(400).send({
+            error: 'Challenge session expired',
+            message: 'The certbot session has ended (server restart or timeout). Please initiate a new DNS challenge.',
+            reinitiateRequired: true
+          });
+        }
+
         // Optional: Check DNS propagation before validating
         const { checkDNSFirst } = request.body || {};
 
