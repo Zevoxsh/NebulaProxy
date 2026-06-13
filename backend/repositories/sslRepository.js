@@ -131,7 +131,11 @@ async getWildcardCertForHostname(hostname) {
  */
 async getAllWildcardCerts() {
   return this.queryAll(`
-    SELECT id, hostname, issuer, issued_at, expires_at, cert_type, auto_apply, created_at, updated_at
+    SELECT id, hostname, issuer, issued_at, expires_at, cert_type, auto_apply,
+           dns_challenge_status, dns_challenge_domain, dns_challenge_token,
+           dns_challenge_expires_at,
+           (fullchain IS NOT NULL) AS has_cert,
+           created_at, updated_at
     FROM wildcard_ssl_certs
     ORDER BY created_at DESC
   `);
@@ -185,6 +189,55 @@ async storeWildcardCert({ hostname, fullchain, privateKey, issuer, issuedAt, exp
  */
 async getWildcardCertById(id) {
   return this.queryOne('SELECT * FROM wildcard_ssl_certs WHERE id = ?', [id]);
+}
+
+/**
+ * Get a wildcard cert by hostname (e.g. *.example.com)
+ */
+async getWildcardCertByHostname(hostname) {
+  return this.queryOne('SELECT * FROM wildcard_ssl_certs WHERE hostname = ?', [hostname]);
+}
+
+/**
+ * Store DNS-01 challenge info for a wildcard cert
+ */
+async updateWildcardCertDNSChallenge(id, token, challengeDomain, expiresAt) {
+  await this.execute(`
+    UPDATE wildcard_ssl_certs
+    SET dns_challenge_token      = ?,
+        dns_challenge_domain     = ?,
+        dns_challenge_status     = 'waiting_user',
+        dns_challenge_expires_at = ?,
+        updated_at               = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [token, challengeDomain, expiresAt, id]);
+}
+
+/**
+ * Update the DNS challenge validation status
+ */
+async updateWildcardCertDNSStatus(id, status) {
+  await this.execute(`
+    UPDATE wildcard_ssl_certs
+    SET dns_challenge_status = ?,
+        updated_at           = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [status, id]);
+}
+
+/**
+ * Clear DNS challenge data after completion or cancellation
+ */
+async clearWildcardCertDNSChallenge(id) {
+  await this.execute(`
+    UPDATE wildcard_ssl_certs
+    SET dns_challenge_token      = NULL,
+        dns_challenge_domain     = NULL,
+        dns_challenge_status     = NULL,
+        dns_challenge_expires_at = NULL,
+        updated_at               = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [id]);
 }
 
 /**

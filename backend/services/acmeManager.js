@@ -408,6 +408,274 @@ ${trimmedStderr}`);
     return domain.replace(/^\*\./, '');
   }
 
+  /**
+   * Initiate DNS-01 challenge for a wildcard cert (*.example.com)
+   * Certbot is called with just the wildcard domain; Let's Encrypt issues one TXT challenge.
+   */
+  async initiateWildcardACME(wildcardHostname, wildcardCertId) {
+    const pendingKey = `wildcard:${wildcardCertId}`;
+
+    if (this.running.has(pendingKey)) {
+      throw new Error(`Certificate request already in progress for ${wildcardHostname}`);
+    }
+
+    const email = this.getEmail();
+    if (!email) {
+      throw new Error('ACME_EMAIL is not configured');
+    }
+
+    const safeHostname = sanitizeHostname(wildcardHostname); // handles *.example.com
+    logger.info(`[AcmeManager] Initiating wildcard DNS-01 challenge for ${safeHostname}...`);
+
+    await this._deleteCertificateIfExists(this.getBaseDomain(wildcardHostname));
+
+    this.running.add(pendingKey);
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        'certonly',
+        '--manual',
+        '--preferred-challenges', 'dns',
+        '-d', safeHostname,
+        '--email', email,
+        '--agree-tos'
+      ];
+
+      const certbot = spawn('certbot', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+      let dnsToken = null;
+      let dnsDomain = null;
+      let hasRespondedToRenewal = false;
+      let stdout = '';
+      let stderr = '';
+
+      certbot.stdout.on('data', async (data) => {
+        const output = data.toString();
+        stdout += output;
+        logger.info(`[AcmeManager Wildcard] ${output.trim()}`);
+
+        if (output.includes('Are you OK with your IP being logged') ||
+            output.includes('(Y)es/(N)o')) {
+          try { certbot.stdin.write('Y\n'); } catch (_) {}
+        }
+
+        if (!hasRespondedToRenewal &&
+            (output.includes('What would you like to do') ||
+             output.includes('Select the appropriate number'))) {
+          hasRespondedToRenewal = true;
+          try { certbot.stdin.write('2\n'); } catch (_) {}
+        }
+
+        if (!dnsDomain) {
+          const patterns = [
+            /_acme-challenge\.([^\s.]+(?:\.[^\s.]+)*)/,
+            /under the name\s+_acme-challenge\.([^\s]+)/,
+            /_acme-challenge\.([^\s]+)\s+with/
+          ];
+          for (const pattern of patterns) {
+            const match = output.match(pattern);
+            if (match) {
+              dnsDomain = `_acme-challenge.${match[1].replace(/\.$/, '')}`;
+              logger.info(`[AcmeManager Wildcard] DNS domain: ${dnsDomain}`);
+              break;
+            }
+          }
+        }
+
+        if (!dnsToken) {
+          const patterns = [
+            /with the following value:\s*([A-Za-z0-9_-]+)/,
+            /with value:\s*([A-Za-z0-9_-]+)/,
+            /TXT value:\s*([A-Za-z0-9_-]+)/,
+            /value\s+([A-Za-z0-9_-]{40,})/
+          ];
+          for (const pattern of patterns) {
+            const match = output.match(pattern);
+            if (match) {
+              dnsToken = match[1];
+              logger.info(`[AcmeManager Wildcard] DNS token extracted`);
+              break;
+            }
+          }
+        }
+
+        if (dnsToken && dnsDomain && !this.dnsChallengePending.has(pendingKey)) {
+          const expiresAt = new Date(Date.now() + this.dnsValidationTimeout).toISOString();
+
+          this.dnsChallengePending.set(pendingKey, {
+            process: certbot,
+            token: dnsToken,
+            domain: dnsDomain,
+            originalDomain: wildcardHostname,
+            wildcardCertId,
+            expiresAt
+          });
+
+          await database.updateWildcardCertDNSChallenge(wildcardCertId, dnsToken, dnsDomain, expiresAt);
+          logger.info(`[AcmeManager Wildcard] Challenge ready: ${dnsDomain} = ${dnsToken}`);
+        }
+      });
+
+      certbot.stderr.on('data', (data) => {
+        stderr += data.toString();
+        logger.error(`[AcmeManager Wildcard Error] ${data.toString().trim()}`);
+      });
+
+      certbot.on('error', (error) => {
+        this.running.delete(pendingKey);
+        this.dnsChallengePending.delete(pendingKey);
+        reject(new Error(`Failed to spawn certbot: ${error.message}`));
+      });
+
+      const checkInterval = setInterval(() => {
+        if (dnsToken && dnsDomain) {
+          clearInterval(checkInterval);
+          resolve({ token: dnsToken, domain: dnsDomain });
+        }
+      }, 100);
+
+      setTimeout(async () => {
+        if (!dnsToken || !dnsDomain) {
+          clearInterval(checkInterval);
+          try { certbot.kill('SIGTERM'); } catch (_) {}
+          this.running.delete(pendingKey);
+          this.dnsChallengePending.delete(pendingKey);
+          const msg = stderr.includes('already exists')
+            ? 'A certificate already exists for this domain. Please delete it first.'
+            : stderr
+              ? `Certbot error: ${stderr.substring(0, 200)}`
+              : 'Timeout waiting for DNS challenge from certbot.';
+          reject(new Error(msg));
+        }
+      }, 60000);
+    });
+  }
+
+  /**
+   * Validate wildcard DNS challenge and store resulting cert in wildcard_ssl_certs
+   */
+  async validateWildcardACME(wildcardCertId, wildcardHostname) {
+    const pendingKey = `wildcard:${wildcardCertId}`;
+    const pending = this.dnsChallengePending.get(pendingKey);
+
+    if (!pending) {
+      throw new Error('No pending DNS challenge found for this wildcard certificate');
+    }
+
+    if (new Date() > new Date(pending.expiresAt)) {
+      await this.cancelWildcardACME(wildcardCertId);
+      throw new Error('DNS challenge has expired. Please initiate a new request.');
+    }
+
+    logger.info(`[AcmeManager Wildcard] Validating DNS challenge for ${wildcardHostname}...`);
+    await database.updateWildcardCertDNSStatus(wildcardCertId, 'validating');
+
+    return new Promise((resolve, reject) => {
+      const { process: certbot, originalDomain } = pending;
+      let stderr = '';
+
+      certbot.stdout.on('data', (data) => {
+        logger.info(`[AcmeManager Wildcard Validate] ${data.toString().trim()}`);
+      });
+
+      certbot.stderr.on('data', (data) => {
+        stderr += data.toString();
+        logger.error(`[AcmeManager Wildcard Validate Error] ${data.toString().trim()}`);
+      });
+
+      try {
+        certbot.stdin.write('\n');
+      } catch (error) {
+        this.running.delete(pendingKey);
+        this.dnsChallengePending.delete(pendingKey);
+        database.updateWildcardCertDNSStatus(wildcardCertId, 'failed').catch(() => {});
+        reject(new Error('Failed to communicate with certbot process'));
+        return;
+      }
+
+      certbot.on('close', async (code) => {
+        this.running.delete(pendingKey);
+        this.dnsChallengePending.delete(pendingKey);
+
+        if (code === 0) {
+          logger.info(`[AcmeManager Wildcard] Certificate obtained for ${originalDomain}`);
+
+          try {
+            // Certbot stores wildcard certs under the base domain directory
+            const baseDomain = this.getBaseDomain(originalDomain);
+            const certPath = path.join(this.certDir, baseDomain, 'fullchain.pem');
+            const keyPath  = path.join(this.certDir, baseDomain, 'privkey.pem');
+
+            const fullchain  = fs.readFileSync(certPath, 'utf-8');
+            const privateKey = fs.readFileSync(keyPath, 'utf-8');
+
+            const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+            await database.storeWildcardCert({
+              hostname: originalDomain,
+              fullchain,
+              privateKey,
+              issuer: "Let's Encrypt",
+              issuedAt: new Date().toISOString(),
+              expiresAt,
+              certType: 'acme',
+              autoApply: true
+            });
+
+            await database.clearWildcardCertDNSChallenge(wildcardCertId);
+
+            // Invalidate cache so SNI picks up the new cert immediately
+            certificateManager.invalidateWildcardCacheEntries(originalDomain);
+
+            logger.info(`[AcmeManager Wildcard] Cert stored in wildcard_ssl_certs for ${originalDomain}`);
+            resolve({ expiresAt });
+          } catch (storeError) {
+            logger.error(`[AcmeManager Wildcard] Failed to store cert:`, storeError.message);
+            await database.updateWildcardCertDNSStatus(wildcardCertId, 'failed');
+            reject(storeError);
+          }
+        } else {
+          logger.error(`[AcmeManager Wildcard] Validation failed for ${originalDomain} (code ${code})`);
+          await database.updateWildcardCertDNSStatus(wildcardCertId, 'failed');
+
+          let errorMessage = `DNS validation failed with code ${code}`;
+          if (stderr.includes('DNS problem')) {
+            errorMessage = 'DNS validation failed: DNS record not found or not yet propagated';
+          } else if (stderr.includes('rate limit')) {
+            errorMessage = "DNS validation failed: Let's Encrypt rate limit exceeded";
+          }
+
+          reject(new Error(errorMessage));
+        }
+      });
+
+      setTimeout(() => {
+        if (this.dnsChallengePending.has(pendingKey)) {
+          certbot.kill();
+          this.dnsChallengePending.delete(pendingKey);
+          this.running.delete(pendingKey);
+          database.updateWildcardCertDNSStatus(wildcardCertId, 'failed').catch(() => {});
+          reject(new Error('DNS validation timeout'));
+        }
+      }, 300000);
+    });
+  }
+
+  /**
+   * Cancel a pending wildcard ACME challenge
+   */
+  async cancelWildcardACME(wildcardCertId) {
+    const pendingKey = `wildcard:${wildcardCertId}`;
+    const pending = this.dnsChallengePending.get(pendingKey);
+    if (pending) {
+      try { pending.process.kill(); } catch (_) {}
+      this.running.delete(pendingKey);
+      this.dnsChallengePending.delete(pendingKey);
+    }
+    await database.clearWildcardCertDNSChallenge(wildcardCertId);
+    logger.info(`[AcmeManager Wildcard] Cancelled challenge for cert ID ${wildcardCertId}`);
+  }
+
   // ===== DNS-01 ACME CHALLENGE METHODS =====
 
   /**

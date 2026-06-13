@@ -47,14 +47,9 @@ try {
     }
   }
 
-  // Fallback to Nebula default certificate if no real cert available
+  // Fallback: generate a self-signed cert for the actual hostname to avoid SSL mismatch
   if (!cert || !key) {
-    logger.warn(`[ProxyManager] No certificate in DB for ${servername}, serving Nebula default fallback`);
-    // Use the pre-generated default context — guaranteed to exist and never cause a cipher mismatch
-    if (this.defaultSecureContext) {
-      return callback(null, this.defaultSecureContext);
-    }
-    // Absolute last resort: try a fresh self-signed cert (should never reach here)
+    logger.warn(`[ProxyManager] No certificate in DB for ${servername}, generating self-signed fallback (not secure)`);
     try {
       const selfSigned = this._generateSelfSignedCert(servername);
       cert = selfSigned.cert;
@@ -62,7 +57,10 @@ try {
       expiresAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
     } catch (genErr) {
       logger.error(`[ProxyManager] Self-signed generation failed for ${servername}:`, genErr.message);
-      return callback(null, this.defaultSecureContext);
+      if (this.defaultSecureContext) {
+        return callback(null, this.defaultSecureContext);
+      }
+      return callback(genErr);
     }
   }
 
@@ -83,9 +81,9 @@ try {
   if (this.defaultSecureContext) {
     return callback(null, this.defaultSecureContext);
   }
-  // If even defaultSecureContext is missing (startup issue), try one more time
+  // If even defaultSecureContext is missing (startup issue), generate for actual servername
   try {
-    const emergency = this._generateSelfSignedCert('nebula.default.local');
+    const emergency = this._generateSelfSignedCert(servername || 'nebula.default.local');
     callback(null, tls.createSecureContext({ cert: emergency.cert, key: emergency.private }));
   } catch (fallbackError) {
     logger.error(`[ProxyManager] Emergency fallback cert failed for ${servername}:`, fallbackError.message);
@@ -125,16 +123,19 @@ if (this.acmeManager) {
     }
   } catch (error) {
     logger.warn(`[ProxyManager] Failed to load ACME cert for ${hostname}, will use Nebula default fallback:`, error.message);
-    // Pre-cache the Nebula default context for this hostname so the next TLS request
-    // gets a valid context immediately instead of hitting a cipher-mismatch error.
+    // Pre-cache a self-signed cert for this hostname so the next TLS request
+    // gets a valid context immediately without a CN mismatch.
     // Use a short TTL (5 min) so we retry the real cert soon.
-    if (this.defaultSecureContext) {
+    try {
+      const fallbackSelfSigned = this._generateSelfSignedCert(hostname);
       this.secureContextCache.set(hostname, {
-        context: this.defaultSecureContext,
+        context: tls.createSecureContext({ cert: fallbackSelfSigned.cert, key: fallbackSelfSigned.private }),
         timestamp: Date.now(),
         expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes — retries cert after expiry
         isNebulaFallback: true
       });
+    } catch (_) {
+      // ignore — next request will go through _getSniContext normally
     }
   }
 }

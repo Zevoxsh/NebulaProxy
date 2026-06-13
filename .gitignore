@@ -79,3 +79,6 @@ coverage/
 .nyc_output/
 *.lcov
 .claude/worktrees/
+
+# Documentation site (standalone, not part of the project)
+docs-site/

@@ -26,5 +26,11 @@ export const wildcardCertAPI = {
   getAll: () => api.get('/ssl/wildcards'),
   generate: (hostname) => api.post('/ssl/wildcards/generate', { hostname }),
   upload: (hostname, fullchain, privateKey) => api.post('/ssl/wildcards/upload', { hostname, fullchain, privateKey }),
-  delete: (id) => api.delete(`/ssl/wildcards/${id}`)
+  delete: (id) => api.delete(`/ssl/wildcards/${id}`),
+
+  // Let's Encrypt wildcard via DNS-01
+  requestACME: (hostname) => api.post('/ssl/wildcards/request-acme', { hostname }),
+  validateACME: (id) => api.post(`/ssl/wildcards/${id}/validate-acme`),
+  cancelACME: (id) => api.post(`/ssl/wildcards/${id}/cancel-acme`),
+  checkDNS: (id) => api.get(`/ssl/wildcards/${id}/check-dns`)
 };
