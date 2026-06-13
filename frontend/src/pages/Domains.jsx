@@ -821,28 +821,37 @@ export default function Domains() {
       }
     } catch (error) {
       console.error('Error validating DNS challenge:', error);
-      setDnsError(error.response?.data?.message || 'DNS validation failed');
+      const data = error.response?.data;
+      if (data?.reinitiateRequired) {
+        handleCloseDNSModal();
+        alert('La session a expiré (redémarrage serveur ou timeout). Relancez le challenge DNS.');
+      } else {
+        setDnsError(data?.message || 'DNS validation failed');
+      }
     } finally {
       setDnsValidating(false);
     }
   };
 
-  const handleCloseDNSModal = async () => {
-    // Cancel backend DNS challenge if one is in progress
-    if (selectedDomainForDNS) {
-      try {
-        await sslAPI.cancelDNS(selectedDomainForDNS);
-        console.log('DNS challenge cancelled');
-      } catch (error) {
-        console.error('Failed to cancel DNS challenge:', error);
-      }
-    }
-
+  // Just close the modal — keeps the certbot process alive so Validate still works
+  const handleCloseDNSModal = () => {
     setShowDNSModal(false);
     setDnsChallenge(null);
     setDnsError(null);
     setSelectedDomainForDNS(null);
     setDnsPropagated(false);
+  };
+
+  // Explicitly cancel: kills the certbot process AND closes the modal
+  const handleCancelDNS = async () => {
+    if (selectedDomainForDNS) {
+      try {
+        await sslAPI.cancelDNS(selectedDomainForDNS);
+      } catch (error) {
+        console.error('Failed to cancel DNS challenge:', error);
+      }
+    }
+    handleCloseDNSModal();
   };
 
   const openEditForm = (domain) => {
@@ -1771,7 +1780,7 @@ export default function Domains() {
                 {/* Actions */}
                 <div className="flex gap-3">
                   <button
-                    onClick={handleCloseDNSModal}
+                    onClick={handleCancelDNS}
                     className="bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.08] hover:border-[#9D4EDD]/30 text-white/90 hover:text-[#C77DFF] rounded-lg px-6 py-3.5 font-light text-sm transition-all duration-500 ease-out active:scale-[0.98] flex-1"
                     disabled={dnsValidating || dnsCheckingPropagation}
                   >
