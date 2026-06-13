@@ -1224,20 +1224,30 @@ ${trimmedStderr}`);
    * Check if DNS TXT record has propagated
    */
   async checkDNSPropagation(domain, expectedValue) {
-    const dns = await import('dns').then(m => m.promises);
+    const { Resolver } = await import('dns').then(m => m.promises);
 
-    try {
-      const records = await dns.resolveTxt(domain);
-      const flatRecords = records.flat();
+    // Query multiple public resolvers to avoid local cache issues
+    const resolverServers = [
+      ['8.8.8.8'],         // Google
+      ['1.1.1.1'],         // Cloudflare
+      ['9.9.9.9'],         // Quad9
+    ];
 
-      const found = flatRecords.some(record => record === expectedValue);
-
-      logger.info(`[AcmeManager] DNS check for ${domain}: ${found ? 'FOUND' : 'NOT FOUND'}`);
-      return found;
-    } catch (error) {
-      logger.info(`[AcmeManager] DNS check failed for ${domain}:`, error.message);
-      return false;
+    for (const servers of resolverServers) {
+      try {
+        const resolver = new Resolver();
+        resolver.setServers(servers);
+        const records = await resolver.resolveTxt(domain);
+        const flatRecords = records.flat();
+        const found = flatRecords.some(record => record === expectedValue);
+        logger.info(`[AcmeManager] DNS check via ${servers[0]} for ${domain}: ${found ? 'FOUND' : 'NOT FOUND'}`);
+        if (found) return true;
+      } catch (error) {
+        logger.info(`[AcmeManager] DNS check via ${servers[0]} failed for ${domain}:`, error.message);
+      }
     }
+
+    return false;
   }
 
   /**
