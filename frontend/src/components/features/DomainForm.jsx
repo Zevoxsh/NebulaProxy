@@ -89,9 +89,12 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   useEffect(() => {
     wildcardCertAPI.getAll().then(res => {
       const all = res.data?.wildcards || [];
-      // has_cert may be true/1/undefined depending on server version — keep all if field missing
-      setAvailableWildcards(all.filter(w => w.has_cert === undefined || w.has_cert === true || w.has_cert === 1));
-    }).catch(() => {});
+      console.log('[Wildcard] fetched:', all.length, 'certs', all.map(w => `${w.hostname}(has_cert=${w.has_cert})`));
+      // has_cert may be true/1/undefined depending on server version — exclude only explicit false/0
+      setAvailableWildcards(all.filter(w => w.has_cert !== false && w.has_cert !== 0));
+    }).catch(err => {
+      console.error('[Wildcard] Failed to fetch wildcard certs:', err?.response?.status, err?.response?.data || err?.message);
+    });
   }, []);
 
   // When hostname changes, check if a wildcard covers it

@@ -127,18 +127,30 @@ async getWildcardCertForHostname(hostname) {
 }
 
 /**
- * Return all wildcard SSL certificates
+ * Return all wildcard SSL certificates.
+ * Tries to include DNS challenge columns (migration 051); falls back to core fields if not yet applied.
  */
 async getAllWildcardCerts() {
-  return this.queryAll(`
-    SELECT id, hostname, issuer, issued_at, expires_at, cert_type, auto_apply,
-           dns_challenge_status, dns_challenge_domain, dns_challenge_token,
-           dns_challenge_expires_at,
-           (fullchain IS NOT NULL) AS has_cert,
-           created_at, updated_at
-    FROM wildcard_ssl_certs
-    ORDER BY created_at DESC
-  `);
+  try {
+    return await this.queryAll(`
+      SELECT id, hostname, issuer, issued_at, expires_at, cert_type, auto_apply,
+             dns_challenge_status, dns_challenge_domain, dns_challenge_token,
+             dns_challenge_expires_at,
+             (fullchain IS NOT NULL AND fullchain <> '') AS has_cert,
+             created_at, updated_at
+      FROM wildcard_ssl_certs
+      ORDER BY created_at DESC
+    `);
+  } catch {
+    // Migration 051 not yet applied — return without DNS challenge columns
+    return this.queryAll(`
+      SELECT id, hostname, issuer, issued_at, expires_at, cert_type, auto_apply,
+             (fullchain IS NOT NULL AND fullchain <> '') AS has_cert,
+             created_at, updated_at
+      FROM wildcard_ssl_certs
+      ORDER BY created_at DESC
+    `);
+  }
 }
 
 /**
