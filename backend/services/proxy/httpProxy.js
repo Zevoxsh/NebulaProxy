@@ -126,19 +126,12 @@ async _startHttpProxy(domain) {
  */
   async _startSharedHttpsServer() {
     return new Promise((resolve) => {
-    // Create default self-signed certificate
-    const defaultCert = this._generateSelfSignedCert('default.local');
-    this.defaultSecureContext = tls.createSecureContext({
-      cert: defaultCert.cert,
-      key: defaultCert.private
-    });
-
     const options = {
       SNICallback: (servername, callback) => {
         this._getSniContext(servername, callback);
       },
-      cert: defaultCert.cert,
-      key: defaultCert.private,
+      cert: STATIC_FALLBACK_CERT,
+      key: STATIC_FALLBACK_KEY,
       minVersion: 'TLSv1.2',
       ciphers: [
         'ECDHE-ECDSA-AES128-GCM-SHA256',
@@ -218,7 +211,7 @@ async _startHttpProxy(domain) {
  */
 }
 
-import { SniHandler } from './http/sniHandler.js';
+import { SniHandler, STATIC_FALLBACK_CERT, STATIC_FALLBACK_KEY } from './http/sniHandler.js';
 import { AcmeHandler } from './http/acmeHandler.js';
 import { RequestProxy } from './http/requestProxy.js';
 import { WebSocketHandler } from './http/webSocketHandler.js';
