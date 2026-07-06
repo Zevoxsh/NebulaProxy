@@ -29,6 +29,11 @@ import { resourceMonitor } from './services/resourceMonitor.js';
 import { bandwidthTracker } from './services/bandwidthTracker.js';
 import { applyLogFilter } from './utils/logFilter.js';
 import { clusterCoordinator } from './services/clusterCoordinator.js';
+import { eventLoopMonitor } from './services/eventLoopMonitor.js';
+
+// Start as early as possible — cheap (native histogram, no timers to await)
+// and we want lag captured from boot, including during startup itself.
+eventLoopMonitor.start();
 
 // ── Sub-modules ──────────────────────────────────────────────────────────────
 import { isDynamicAllowedOrigin, isTrustedProxyIp } from './server/networkHelpers.js';

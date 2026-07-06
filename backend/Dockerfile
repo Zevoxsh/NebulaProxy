@@ -1,4 +1,8 @@
-FROM node:20.18-alpine
+# Was node:20.18-alpine — Node 20 is past its April 2026 EOL (no more
+# security patches). 22 is current LTS (maintained until April 2027). No
+# native-binding deps in package.json (bcrypt/sharp/etc), so this should be
+# a drop-in bump — still worth a full test cycle before deploying.
+FROM node:22.23-alpine
 
 WORKDIR /app
 

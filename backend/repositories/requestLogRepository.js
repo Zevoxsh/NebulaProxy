@@ -137,6 +137,9 @@ async getCombinedRequestLogStats(domainId, days = 7) {
         COUNT(CASE WHEN status_code >= 400 AND status_code < 500 THEN 1 END) as client_error_count,
         COUNT(CASE WHEN status_code >= 500 THEN 1 END) as server_error_count,
         ROUND(CAST(AVG(response_time) AS numeric), 2) as avg_response_time,
+        ROUND(CAST(PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY response_time) AS numeric), 2) as p50_response_time,
+        ROUND(CAST(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time) AS numeric), 2) as p95_response_time,
+        ROUND(CAST(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time) AS numeric), 2) as p99_response_time,
         MAX(response_time) as max_response_time,
         MIN(response_time) as min_response_time,
         COALESCE(SUM(response_size), 0) as total_bandwidth

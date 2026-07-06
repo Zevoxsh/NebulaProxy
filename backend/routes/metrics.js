@@ -18,8 +18,12 @@
  *     bearer_token: <METRICS_TOKEN>
  */
 
-import { pool } from '../config/database.js';
+import { pool, getPgPool } from '../config/database.js';
 import { monitoringService } from '../services/monitoringService.js';
+import { eventLoopMonitor } from '../services/eventLoopMonitor.js';
+import { proxyMetrics } from '../services/proxyMetrics.js';
+import { circuitBreaker } from '../services/circuitBreaker.js';
+import { httpKeepAliveAgent, httpsKeepAliveAgent } from '../services/proxy/http/requestProxy.js';
 
 const METRICS_TOKEN    = process.env.METRICS_TOKEN || '';
 // Allow 1 scrape per 10s per IP (Prometheus default interval is 15s).
@@ -111,6 +115,45 @@ export async function metricsRoutes(fastify) {
         );
       }
     } catch { /* skip if monitoring service fails */ }
+
+    // ── 1.5. Event loop lag — per-process (see cluster note below) ───────────
+    // Rises before request latency does for any CPU-bound stall (large sync
+    // JSON, big regex, GC pressure) — the earliest cheap signal a worker is
+    // starting to degrade, well before it's bad enough to fail a healthcheck.
+    // NOTE: with CLUSTER_ENABLED, this reflects only whichever worker
+    // happened to answer this particular scrape (shared port, SCHED_NONE) —
+    // not a cluster-wide aggregate. Watch for it looking suspiciously good
+    // if you know a worker is struggling; you may be scraping its healthy
+    // sibling instead.
+    {
+      const elStats = eventLoopMonitor.getStats();
+      if (elStats) {
+        out.push(
+          gaugeHead('nebula_eventloop_lag_ms', 'Event loop lag in ms (this worker only)'),
+          line('nebula_eventloop_lag_ms', { stat: 'mean' }, elStats.mean),
+          line('nebula_eventloop_lag_ms', { stat: 'p50' },  elStats.p50),
+          line('nebula_eventloop_lag_ms', { stat: 'p95' },  elStats.p95),
+          line('nebula_eventloop_lag_ms', { stat: 'p99' },  elStats.p99),
+          line('nebula_eventloop_lag_ms', { stat: 'max' },  elStats.max)
+        );
+      }
+    }
+
+    // ── 1.6. Postgres pool — pg.Pool already tracks these, just read them ────
+    // A saturating pool (waitingCount rising, idleCount near 0) shows up
+    // today only as unexplained latency creep — nothing pointed at the pool
+    // itself as the cause.
+    try {
+      const pgPool = getPgPool();
+      out.push(
+        gaugeHead('nebula_pg_pool_total',   'Total PostgreSQL pool connections (in use + idle)'),
+        line('nebula_pg_pool_total',   {}, pgPool.totalCount),
+        gaugeHead('nebula_pg_pool_idle',    'Idle PostgreSQL pool connections'),
+        line('nebula_pg_pool_idle',    {}, pgPool.idleCount),
+        gaugeHead('nebula_pg_pool_waiting', 'Queries waiting for a free PostgreSQL connection'),
+        line('nebula_pg_pool_waiting', {}, pgPool.waitingCount)
+      );
+    } catch { /* skip if pool not initialized (e.g. non-postgresql DB_TYPE) */ }
 
     // ── 2. Domain metrics — ONE query instead of N×3 ─────────────────────────
     try {
@@ -227,6 +270,61 @@ export async function metricsRoutes(fastify) {
           out.push(line('nebula_domain_requests_last_hour',
             { hostname: r.hostname }, parseInt(r.requests, 10)));
         }
+      }
+    } catch { /* skip */ }
+
+    // ── 4. Proxy hot-path metrics — real proxied traffic, not health probes ──
+    // (per-process; see the cluster note on the event loop section above)
+    try {
+      const pm = proxyMetrics.snapshot();
+
+      out.push(gaugeHead('nebula_proxy_responses_total', 'Proxied responses by status class (this worker only)', 'counter'));
+      for (const [statusClass, count] of Object.entries(pm.statusClasses)) {
+        out.push(line('nebula_proxy_responses_total', { status_class: statusClass }, count));
+      }
+
+      out.push(
+        gaugeHead('nebula_proxy_retries_total', 'Times a request was retried against a different backend after a connect-level error', 'counter'),
+        line('nebula_proxy_retries_total', {}, pm.retries),
+        gaugeHead('nebula_proxy_upstream_errors_total', 'Requests that ended in a final upstream error (502)', 'counter'),
+        line('nebula_proxy_upstream_errors_total', {}, pm.upstreamErrors),
+        gaugeHead('nebula_proxy_circuit_breaker_rejects_total', 'Requests fast-failed (503) because a backend circuit breaker was open', 'counter'),
+        line('nebula_proxy_circuit_breaker_rejects_total', {}, pm.circuitBreakerRejects)
+      );
+    } catch { /* skip */ }
+
+    // ── 5. Circuit breaker state per backend ─────────────────────────────────
+    try {
+      const statuses = circuitBreaker.getStatus();
+      const keys = Object.keys(statuses);
+      if (keys.length) {
+        out.push(gaugeHead('nebula_circuit_breaker_state',
+          'Circuit breaker state per backend: 0=closed, 1=half_open, 2=open'));
+        const STATE_VAL = { CLOSED: 0, HALF_OPEN: 1, OPEN: 2 };
+        let openCount = 0;
+        for (const [key, s] of Object.entries(statuses)) {
+          out.push(line('nebula_circuit_breaker_state', { backend: key }, STATE_VAL[s.state] ?? 0));
+          if (s.state === 'OPEN') openCount++;
+        }
+        out.push(
+          gaugeHead('nebula_circuit_breakers_open', 'Number of backends with an OPEN circuit breaker right now'),
+          line('nebula_circuit_breakers_open', {}, openCount)
+        );
+      }
+    } catch { /* skip */ }
+
+    // ── 6. Keep-alive connection pool usage (per backend host:port) ──────────
+    try {
+      const sumLen = (obj) => Object.values(obj || {}).reduce((s, arr) => s + (arr?.length || 0), 0);
+      const httpStats  = { active: sumLen(httpKeepAliveAgent.sockets),  free: sumLen(httpKeepAliveAgent.freeSockets),  pending: sumLen(httpKeepAliveAgent.requests) };
+      const httpsStats = { active: sumLen(httpsKeepAliveAgent.sockets), free: sumLen(httpsKeepAliveAgent.freeSockets), pending: sumLen(httpsKeepAliveAgent.requests) };
+
+      out.push(gaugeHead('nebula_proxy_keepalive_sockets', 'Keep-alive agent sockets to backends (this worker only)'));
+      for (const [state, val] of Object.entries(httpStats)) {
+        out.push(line('nebula_proxy_keepalive_sockets', { agent: 'http', state }, val));
+      }
+      for (const [state, val] of Object.entries(httpsStats)) {
+        out.push(line('nebula_proxy_keepalive_sockets', { agent: 'https', state }, val));
       }
     } catch { /* skip */ }
 

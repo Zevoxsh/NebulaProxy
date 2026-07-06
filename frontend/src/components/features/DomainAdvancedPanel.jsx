@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Wrench, Shield, Globe, Zap, GitBranch, Cookie, AlertTriangle,
   RefreshCw, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
-  Code, Gauge, FlipHorizontal, Gamepad2, Activity
+  Code, Gauge, FlipHorizontal, Gamepad2
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
@@ -190,9 +190,6 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
     ttl: domain?.sticky_sessions_ttl || 3600
   });
 
-  // Health check path
-  const [healthCheckPath, setHealthCheckPath] = useState(domain?.health_check_path || '');
-
   // PROXY Protocol (Minecraft + TCP)
   const [proxyProtocol, setProxyProtocol] = useState(domain?.proxy_protocol || false);
 
@@ -216,7 +213,6 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
     setMirror({ enabled: domain.mirror_enabled || false, backendUrl: domain.mirror_backend_url || '' });
     setGeoip({ enabled: domain.geoip_blocking_enabled || false, blockedCountries: domain.geoip_blocked_countries || [], allowedCountries: domain.geoip_allowed_countries || [] });
     setSticky({ enabled: domain.sticky_sessions_enabled || false, ttl: domain.sticky_sessions_ttl || 3600 });
-    setHealthCheckPath(domain.health_check_path || '');
     setProxyProtocol(domain.proxy_protocol || false);
     setGeyserProxyProtocol(domain.geyser_proxy_protocol || false);
     setChallengeMode(domain.ddos_challenge_mode || false);
@@ -423,23 +419,6 @@ export default function DomainAdvancedPanel({ domain, onUpdate }) {
         <Msg skey="sticky" />
         <SaveBtn skey="sticky" onClick={() => save('sticky', domainAPI.setStickySessions, {
           enabled: sticky.enabled, ttl: sticky.ttl
-        })} />
-      </Section>}
-
-      {/* ── Health Check Path ─────────────────────────────────────────────── */}
-      {domain.proxy_type === 'http' && <Section icon={Activity} title="Health Check" description="Chemin utilisé par le health check actif du proxy" color="#34D399">
-        <Field label="Chemin vérifié (HEAD)" hint="Laissez vide pour utiliser la racine '/'. Utile si '/' redirige ou nécessite une authentification.">
-          <input
-            type="text"
-            className={INPUT}
-            placeholder="/status"
-            value={healthCheckPath}
-            onChange={e => setHealthCheckPath(e.target.value)}
-          />
-        </Field>
-        <Msg skey="healthCheckPath" />
-        <SaveBtn skey="healthCheckPath" onClick={() => save('healthCheckPath', domainAPI.setHealthCheckPath, {
-          path: healthCheckPath
         })} />
       </Section>}
 

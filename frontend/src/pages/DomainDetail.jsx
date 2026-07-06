@@ -630,6 +630,11 @@ export default function DomainDetail() {
                   <p className="text-xl font-light text-white tracking-tight">
                     {stats.avg_response_time ? Math.round(stats.avg_response_time) : 0}ms
                   </p>
+                  {(stats.p95_response_time || stats.p99_response_time) && (
+                    <p className="text-[11px] font-light text-white/35 mt-0.5">
+                      p95 {Math.round(stats.p95_response_time || 0)}ms · p99 {Math.round(stats.p99_response_time || 0)}ms
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -867,6 +872,11 @@ export default function DomainDetail() {
                         <p className="text-xl font-light text-white tracking-tight">
                           {stats.avg_response_time ? Math.round(stats.avg_response_time) : 0}ms
                         </p>
+                        {(stats.p95_response_time || stats.p99_response_time) && (
+                          <p className="text-[11px] font-light text-white/35 mt-0.5">
+                            p95 {Math.round(stats.p95_response_time || 0)}ms · p99 {Math.round(stats.p99_response_time || 0)}ms
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

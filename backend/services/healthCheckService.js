@@ -42,24 +42,17 @@ function parseBackend(rawUrl, overridePort, defaultProto = 'http', defaultPort =
   return { host, port, proto };
 }
 
-/** Normalize the per-domain HTTP health check path, defaulting to '/'. */
-function normalizeHealthCheckPath(rawPath) {
-  const trimmed = String(rawPath || '').trim();
-  if (!trimmed) return '/';
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-}
-
 /**
  * Check one HTTP/HTTPS backend.
  * @returns {{ success: boolean, responseTime: number, statusCode: number|null, error: string|null }}
  */
-function checkHttp(host, port, proto, timeoutMs, path = '/') {
+function checkHttp(host, port, proto, timeoutMs) {
   return new Promise((resolve) => {
     const transport = proto === 'https' ? https : http;
     const start     = Date.now();
 
     const req = transport.request(
-      { hostname: host, port, path, method: 'HEAD', timeout: timeoutMs, rejectUnauthorized: false },
+      { hostname: host, port, path: '/', method: 'HEAD', timeout: timeoutMs, rejectUnauthorized: false },
       (res) => {
         res.resume(); // drain
         resolve({
@@ -293,15 +286,14 @@ class HealthCheckService {
         const hasExplicitScheme = /^https?:\/\//i.test(backendUrl);
         const defaultProto = proxyType === 'https' ? 'https' : 'http';
         const { host, port, proto } = parseBackend(backendUrl, backendPort, defaultProto, 80);
-        const checkPath = normalizeHealthCheckPath(domain.health_check_path);
-        result = await checkHttp(host, port, proto, timeoutMs, checkPath);
+        result = await checkHttp(host, port, proto, timeoutMs);
 
         // If check failed with a connection/protocol error (not an HTTP error),
         // retry with the opposite scheme — handles backends that only accept HTTPS
         // even when the proxy type is HTTP (e.g. Proxmox, Plesk, MinIO)
         if (!result.success && !hasExplicitScheme) {
           const altProto = proto === 'https' ? 'http' : 'https';
-          const altResult = await checkHttp(host, port, altProto, timeoutMs, checkPath);
+          const altResult = await checkHttp(host, port, altProto, timeoutMs);
           if (altResult.success) result = altResult;
         }
       }

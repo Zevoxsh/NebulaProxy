@@ -12,7 +12,22 @@ class WebSocketManager {
     this.MAX_CONNECTIONS_PER_IP = 10;
 
     this.server = server;
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({
+      noServer: true,
+      // Tuned per the `ws` library's own guidance to avoid the well-known
+      // per-connection memory blowup of naive `perMessageDeflate: true`.
+      // `threshold` skips compressing small JSON payloads where the zlib
+      // overhead isn't worth it.
+      perMessageDeflate: {
+        zlibDeflateOptions: { chunkSize: 1024, memLevel: 7, level: 3 },
+        zlibInflateOptions: { chunkSize: 10 * 1024 },
+        clientNoContextTakeover: true,
+        serverNoContextTakeover: true,
+        serverMaxWindowBits: 10,
+        concurrencyLimit: 10,
+        threshold: 1024
+      }
+    });
 
     this.setupWebSocketServer();
   }

@@ -22,18 +22,20 @@ import { redisService } from '../../redis.js';
 import { bandwidthTracker } from '../../bandwidthTracker.js';
 import { urlFilterService } from '../../urlFilterService.js';
 import { logBatchQueue } from '../../logBatchQueue.js';
+import { proxyMetrics } from '../../proxyMetrics.js';
 
 // Shared keep-alive agents reused across every proxied request. Previously
 // each request used `agent: false`, opening a brand new TCP (+ TLS handshake
 // for HTTPS backends) connection per request — this reuses sockets per
 // backend host:port instead.
-const httpKeepAliveAgent = new http.Agent({
+// Exported so /metrics can report pool utilization (active/free/pending).
+export const httpKeepAliveAgent = new http.Agent({
   keepAlive: true,
   keepAliveMsecs: 10000,
   maxSockets: config.proxy.maxSocketsPerBackend,
   maxFreeSockets: 64,
 });
-const httpsKeepAliveAgent = new https.Agent({
+export const httpsKeepAliveAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 10000,
   maxSockets: config.proxy.maxSocketsPerBackend,
@@ -322,6 +324,7 @@ if (!circuitBreaker.isAvailable(cbKey)) {
   // returns true for the single allowed HALF_OPEN probe, so reaching here
   // means the backend is confirmed down — no free pass-through.
   logger.warn(`[HTTP Proxy ${domain.id}] Circuit breaker OPEN for ${cbKey} — failing fast (503)`);
+  proxyMetrics.recordCircuitBreakerReject();
   if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
   const accept = String(req.headers.accept || '');
   if (accept.includes('text/html')) {
@@ -438,6 +441,7 @@ const dispatch = (target, attempt) => {
   }
 
   const handleFinalError = (error, responseTime) => {
+    proxyMetrics.recordUpstreamError();
     logger.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`);
     logger.error(`  Target: ${dBackendProtocol}//${dBackendHost}:${dBackendPort}`);
     logger.error(`  Error: ${error.code} - ${error.message}`);
@@ -502,6 +506,8 @@ const dispatch = (target, attempt) => {
     let responseSize = 0;
     const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
     const isHtmlResponse = contentType.includes('text/html');
+
+    proxyMetrics.recordStatus(statusCode);
 
     if (debugEnabled) {
       logger.debug(`[HTTP Proxy ${domain.id}] upstream response ${statusCode} ${req.method || 'GET'} ${req.url || '/'} -> ${dBackendHost}:${dBackendPort} in ${responseTime}ms contentType=${contentType || '-'} client=${clientIp}`);
@@ -731,6 +737,7 @@ const dispatch = (target, attempt) => {
         .then((nextTarget) => {
           if (nextTarget && (nextTarget.hostname !== dBackendHost || nextTarget.port !== dBackendPort)) {
             logger.warn(`[HTTP Proxy ${domain.id}] backend ${dBackendHost}:${dBackendPort} ${error.code} — retrying once on ${nextTarget.hostname}:${nextTarget.port}`);
+            proxyMetrics.recordRetry();
             if (nextTarget.backendId) { const lb = getLb(); if (lb) lb.incrementConnections(nextTarget.backendId); }
             req.unpipe(proxyReq);
             dispatch(nextTarget, 2);
