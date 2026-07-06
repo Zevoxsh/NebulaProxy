@@ -46,6 +46,19 @@ export const httpsKeepAliveAgent = new https.Agent({
 // connection never opened, so no bytes could have been sent upstream.
 const RETRYABLE_CONNECT_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 
+// Headers that must never be persisted verbatim into request_logs (an
+// admin-browsable table) — kept present so it's visible the header was
+// sent, without leaking session tokens/credentials into logs.
+const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'set-cookie', 'proxy-authorization']);
+function sanitizeHeadersForLogging(headers) {
+  if (!headers) return {};
+  const out = {};
+  for (const [key, val] of Object.entries(headers)) {
+    out[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[redacted]' : val;
+  }
+  return out;
+}
+
 export class RequestProxy {
 async _proxyHttpRequest(req, res, domain) {
 const startTime = Date.now();
@@ -448,22 +461,24 @@ const dispatch = (target, attempt) => {
     logger.error(`  Client IP: ${clientIp}`);
     logger.error(`  Host header: ${req.headers.host}`);
 
-    logBatchQueue.queueRequestLog({
-      domainId: domain.id,
-      hostname: domain.hostname,
-      method: req.method,
-      path: req.url.split('?')[0],
-      queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
-      statusCode: 502,
-      responseTime: responseTime,
-      ipAddress: clientIp,
-      userAgent: req.headers['user-agent'] || null,
-      referer: req.headers['referer'] || req.headers['referrer'] || null,
-      errorMessage: error.message,
-      requestHeaders: {
-        'content-type': req.headers['content-type'],
-        'accept': req.headers['accept']
-      }
+    // Fire-and-forget: queued asynchronously so resolving the country never
+    // delays the 502 response written right after this call returns.
+    geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
+      logBatchQueue.queueRequestLog({
+        domainId: domain.id,
+        hostname: domain.hostname,
+        method: req.method,
+        path: req.url.split('?')[0],
+        queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
+        statusCode: 502,
+        responseTime: responseTime,
+        ipAddress: clientIp,
+        country,
+        userAgent: req.headers['user-agent'] || null,
+        referer: req.headers['referer'] || req.headers['referrer'] || null,
+        errorMessage: error.message,
+        requestHeaders: sanitizeHeadersForLogging(req.headers)
+      });
     });
 
     if (config.proxy.legacyProxyLogEnabled) {
@@ -548,30 +563,28 @@ const dispatch = (target, attempt) => {
       }
     });
 
-    // Log the request (batched for performance)
+    // Log the request (batched for performance). Response has already been
+    // sent to the client by the time 'end' fires, so resolving the client's
+    // country here — even on a geoIpService cache miss — adds zero latency
+    // for the request itself.
     proxyRes.on('end', () => {
-      logBatchQueue.queueRequestLog({
-        domainId: domain.id,
-        hostname: domain.hostname,
-        method: req.method,
-        path: req.url.split('?')[0],
-        queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
-        statusCode: statusCode,
-        responseTime: responseTime,
-        responseSize: responseSize,
-        ipAddress: clientIp,
-        userAgent: req.headers['user-agent'] || null,
-        referer: req.headers['referer'] || req.headers['referrer'] || null,
-        requestHeaders: {
-          'content-type': req.headers['content-type'],
-          'accept': req.headers['accept'],
-          'accept-language': req.headers['accept-language']
-        },
-        responseHeaders: {
-          'content-type': proxyRes.headers['content-type'],
-          'content-encoding': proxyRes.headers['content-encoding'],
-          'cache-control': proxyRes.headers['cache-control']
-        }
+      geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
+        logBatchQueue.queueRequestLog({
+          domainId: domain.id,
+          hostname: domain.hostname,
+          method: req.method,
+          path: req.url.split('?')[0],
+          queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
+          statusCode: statusCode,
+          responseTime: responseTime,
+          responseSize: responseSize,
+          ipAddress: clientIp,
+          country,
+          userAgent: req.headers['user-agent'] || null,
+          referer: req.headers['referer'] || req.headers['referrer'] || null,
+          requestHeaders: sanitizeHeadersForLogging(req.headers),
+          responseHeaders: sanitizeHeadersForLogging(proxyRes.headers)
+        });
       });
     });
 

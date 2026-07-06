@@ -19,6 +19,7 @@ async createRequestLog(logData) {
     responseTime,
     responseSize,
     ipAddress,
+    country,
     userAgent,
     referer,
     requestHeaders,
@@ -29,10 +30,10 @@ async createRequestLog(logData) {
   await this.execute(`
     INSERT INTO request_logs (
       domain_id, hostname, method, path, query_string, status_code,
-      response_time, response_size, ip_address, user_agent, referer,
+      response_time, response_size, ip_address, country, user_agent, referer,
       request_headers, response_headers, error_message
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     domainId || null,
     hostname,
@@ -43,6 +44,7 @@ async createRequestLog(logData) {
     responseTime || null,
     responseSize || null,
     ipAddress || null,
+    country || null,
     userAgent || null,
     referer || null,
     requestHeaders ? JSON.stringify(requestHeaders) : null,

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Globe, Server, Activity, Clock, AlertCircle,
   CheckCircle, Filter, Search, RefreshCw, Download, TrendingUp,
   Zap, Database, Users, BarChart3, Settings, FileText, Shield, Power, Trash2,
-  Radio, Wifi
+  Radio, Wifi, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { domainAPI } from '../api/client';
 import { FlagImg } from '../utils/flagCache';
@@ -166,6 +166,7 @@ export default function DomainDetail() {
 
   const [domain, setDomain] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [expandedLogIds, setExpandedLogIds] = useState(() => new Set());
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -980,6 +981,7 @@ export default function DomainDetail() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.08]">
+                  <th className="px-2 py-2 w-8"></th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Time</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Method</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Path</th>
@@ -987,12 +989,13 @@ export default function DomainDetail() {
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Response Time</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Size</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">IP Address</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-white/50 uppercase tracking-[0.15em]">Country</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.08]">
                 {logs.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-4 py-8 text-center">
+                    <td colSpan="9" className="px-4 py-8 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center">
                           <Activity className="w-5 h-5 text-white/30" strokeWidth={1.5} />
@@ -1002,39 +1005,93 @@ export default function DomainDetail() {
                     </td>
                   </tr>
                 ) : (
-                  logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-white/[0.02] transition-colors duration-200">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs text-white/90 font-mono">{formatTime(log.timestamp)}</span>
-                        <p className="text-[10px] text-white/35 font-light">{formatDate(log.timestamp)}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-medium ${getMethodColor(log.method)}`}>
-                          {log.method}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white/90 font-light max-w-md truncate">
-                        {log.path}
-                        {log.query_string && (
-                          <span className="text-white/50">?{log.query_string}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusBgColor(log.status_code)} ${getStatusColor(log.status_code)}`}>
-                          {log.status_code}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
-                        {log.response_time ? `${log.response_time}ms` : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
-                        {formatBytes(log.response_size)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-white/50 font-light whitespace-nowrap">
-                        {log.ip_address || '-'}
-                      </td>
-                    </tr>
-                  ))
+                  logs.map((log) => {
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const toggleExpanded = () => {
+                      setExpandedLogIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(log.id)) next.delete(log.id); else next.add(log.id);
+                        return next;
+                      });
+                    };
+                    return (
+                    <Fragment key={log.id}>
+                      <tr className="hover:bg-white/[0.02] transition-colors duration-200 cursor-pointer" onClick={toggleExpanded}>
+                        <td className="px-2 py-3 text-white/30">
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.5} /> : <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.5} />}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-xs text-white/90 font-mono">{formatTime(log.timestamp)}</span>
+                          <p className="text-[10px] text-white/35 font-light">{formatDate(log.timestamp)}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-medium ${getMethodColor(log.method)}`}>
+                            {log.method}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white/90 font-light max-w-md truncate">
+                          {log.path}
+                          {log.query_string && (
+                            <span className="text-white/50">?{log.query_string}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusBgColor(log.status_code)} ${getStatusColor(log.status_code)}`}>
+                            {log.status_code}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
+                          {log.response_time ? `${log.response_time}ms` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
+                          {formatBytes(log.response_size)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-white/50 font-light whitespace-nowrap">
+                          {log.ip_address || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-white/50 font-light whitespace-nowrap">
+                          {log.country
+                            ? <FlagImg code={log.country} title={log.country} className="w-5 h-3.5 rounded-sm" />
+                            : '-'}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-white/[0.015]">
+                          <td colSpan="9" className="px-6 py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-[10px] font-medium text-white/40 uppercase tracking-[0.15em] mb-2">User-Agent</p>
+                                <p className="text-xs text-white/70 font-mono break-all mb-3">{log.user_agent || '-'}</p>
+                                <p className="text-[10px] font-medium text-white/40 uppercase tracking-[0.15em] mb-2">Referer</p>
+                                <p className="text-xs text-white/70 font-mono break-all mb-3">{log.referer || '-'}</p>
+                                {log.error_message && (
+                                  <>
+                                    <p className="text-[10px] font-medium text-[#F87171]/70 uppercase tracking-[0.15em] mb-2">Error</p>
+                                    <p className="text-xs text-[#F87171]/90 font-mono break-all">{log.error_message}</p>
+                                  </>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-medium text-white/40 uppercase tracking-[0.15em] mb-2">Request Headers</p>
+                                <pre className="text-[11px] text-white/60 font-mono bg-black/20 rounded-lg p-3 overflow-x-auto mb-3 whitespace-pre-wrap break-all">
+                                  {log.request_headers ? JSON.stringify(log.request_headers, null, 2) : '-'}
+                                </pre>
+                                {log.response_headers && (
+                                  <>
+                                    <p className="text-[10px] font-medium text-white/40 uppercase tracking-[0.15em] mb-2">Response Headers</p>
+                                    <pre className="text-[11px] text-white/60 font-mono bg-black/20 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">
+                                      {JSON.stringify(log.response_headers, null, 2)}
+                                    </pre>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
