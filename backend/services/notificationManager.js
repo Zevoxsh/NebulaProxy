@@ -19,8 +19,13 @@ class NotificationManager {
   startAggregation() {
     if (this.aggregationInterval) return;
 
-    this.aggregationInterval = setInterval(async () => {
-      await this.flushAggregatedNotifications();
+    this.aggregationInterval = setInterval(() => {
+      // flushAggregatedNotifications() has no internal try/catch today, so
+      // any rejection here would be an unhandled rejection with nothing
+      // else guarding it.
+      this.flushAggregatedNotifications().catch((err) => {
+        logger.error('[NotificationManager] Aggregation flush failed:', err.message);
+      });
     }, 60000); // Every minute
   }
 

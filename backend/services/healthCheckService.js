@@ -5,12 +5,20 @@
  *
  * - HTTP/HTTPS: HEAD / — any response (even 4xx/5xx) = UP, connection error = DOWN
  * - TCP / Minecraft: net.createConnection — connect success = UP, error = DOWN
- * - UDP: skipped (no protocol to verify)
+ * - UDP: best-effort — UDP is connectionless, so there is no equivalent of a
+ *   TCP handshake to confirm anything is listening. We send a small probe
+ *   and only treat it as DOWN if the OS delivers back an ICMP port-
+ *   unreachable (surfaces as socket 'error', typically ECONNREFUSED) within
+ *   the check timeout. No rejection within that window is treated as UP —
+ *   a service that silently drops unrecognised packets looks identical to
+ *   one that was never reachable at all, so this can't be fully reliable,
+ *   only "not actively refusing". Disable via HEALTHCHECK_SKIP_UDP=true.
  */
 
 import http  from 'http';
 import https from 'https';
 import net   from 'net';
+import dgram from 'dgram';
 import { database } from './database.js';
 import { config   } from '../config/config.js';
 import { logger } from '../utils/logger.js';
@@ -34,17 +42,24 @@ function parseBackend(rawUrl, overridePort, defaultProto = 'http', defaultPort =
   return { host, port, proto };
 }
 
+/** Normalize the per-domain HTTP health check path, defaulting to '/'. */
+function normalizeHealthCheckPath(rawPath) {
+  const trimmed = String(rawPath || '').trim();
+  if (!trimmed) return '/';
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
 /**
  * Check one HTTP/HTTPS backend.
  * @returns {{ success: boolean, responseTime: number, statusCode: number|null, error: string|null }}
  */
-function checkHttp(host, port, proto, timeoutMs) {
+function checkHttp(host, port, proto, timeoutMs, path = '/') {
   return new Promise((resolve) => {
     const transport = proto === 'https' ? https : http;
     const start     = Date.now();
 
     const req = transport.request(
-      { hostname: host, port, path: '/', method: 'HEAD', timeout: timeoutMs, rejectUnauthorized: false },
+      { hostname: host, port, path, method: 'HEAD', timeout: timeoutMs, rejectUnauthorized: false },
       (res) => {
         res.resume(); // drain
         resolve({
@@ -111,6 +126,49 @@ function checkTcp(host, port, timeoutMs) {
       clearTimeout(timer);
       resolve({ success: false, responseTime: Date.now() - start, statusCode: null, error: err.code || err.message });
     });
+  });
+}
+
+/**
+ * Best-effort UDP reachability probe (see module doc comment for caveats).
+ * `socket.connect()` on a dgram socket doesn't touch the network — it just
+ * tells the OS to route ICMP errors for this destination back to us, so we
+ * can tell "definitely refused" apart from "no answer either way".
+ */
+function checkUdp(host, port, timeoutMs) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    let done = false;
+    const socket = dgram.createSocket(net.isIPv6(host) ? 'udp6' : 'udp4');
+
+    const finish = (success, error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { socket.close(); } catch { /* already closed */ }
+      resolve({ success, responseTime: Date.now() - start, statusCode: null, error: error || null });
+    };
+
+    const timer = setTimeout(() => {
+      // No ICMP rejection arrived in time — best we can say is "not
+      // actively refused", treated as UP.
+      finish(true, null);
+    }, timeoutMs);
+
+    socket.once('error', (err) => {
+      finish(false, err.code || err.message);
+    });
+
+    try {
+      socket.connect(port, host, () => {
+        socket.send(Buffer.from('nebula-health-check'), (err) => {
+          if (err) finish(false, err.code || err.message);
+          // else: wait for either 'error' (rejected) or the timeout (assumed up)
+        });
+      });
+    } catch (err) {
+      finish(false, err.code || err.message);
+    }
   });
 }
 
@@ -211,8 +269,9 @@ class HealthCheckService {
   async _checkDomain(domain, timeoutMs) {
     const proxyType = (domain.proxy_type || 'http').toLowerCase();
 
-    // UDP — not checkable without application protocol
-    if (proxyType === 'udp') return;
+    // HEALTHCHECK_SKIP_UDP=true opts back out — off by default now that
+    // UDP has a (best-effort) check implemented, see checkUdp() above.
+    if (proxyType === 'udp' && config.healthChecks.skipUdp) return;
 
     const backendUrl  = domain.backend_url  || domain.target_url || '';
     const backendPort = domain.backend_port || null;
@@ -221,7 +280,11 @@ class HealthCheckService {
 
     let result;
     try {
-      if (proxyType === 'tcp' || proxyType === 'minecraft') {
+      if (proxyType === 'udp') {
+        const { host, port } = parseBackend(backendUrl, backendPort, 'udp', 0);
+        if (!port) throw new Error('No UDP port configured for this domain');
+        result = await checkUdp(host, port, timeoutMs);
+      } else if (proxyType === 'tcp' || proxyType === 'minecraft') {
         const defaultPort = proxyType === 'minecraft' ? 25565 : 443;
         const { host, port } = parseBackend(backendUrl, backendPort, 'tcp', defaultPort);
         result = await checkTcp(host, port, timeoutMs);
@@ -230,14 +293,15 @@ class HealthCheckService {
         const hasExplicitScheme = /^https?:\/\//i.test(backendUrl);
         const defaultProto = proxyType === 'https' ? 'https' : 'http';
         const { host, port, proto } = parseBackend(backendUrl, backendPort, defaultProto, 80);
-        result = await checkHttp(host, port, proto, timeoutMs);
+        const checkPath = normalizeHealthCheckPath(domain.health_check_path);
+        result = await checkHttp(host, port, proto, timeoutMs, checkPath);
 
         // If check failed with a connection/protocol error (not an HTTP error),
         // retry with the opposite scheme — handles backends that only accept HTTPS
         // even when the proxy type is HTTP (e.g. Proxmox, Plesk, MinIO)
         if (!result.success && !hasExplicitScheme) {
           const altProto = proto === 'https' ? 'http' : 'https';
-          const altResult = await checkHttp(host, port, altProto, timeoutMs);
+          const altResult = await checkHttp(host, port, altProto, timeoutMs, checkPath);
           if (altResult.success) result = altResult;
         }
       }

@@ -1959,6 +1959,50 @@ export async function domainRoutes(fastify, _options) {
     }
   });
 
+  // ── Health check path ─────────────────────────────────────────────────────
+  // Which path the active health checker (healthCheckService) hits with
+  // HEAD requests. Defaults to '/' — override for domains where the root
+  // doesn't return a usable response (redirects, auth-gated root, etc).
+  fastify.put('/:domainId/health-check', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { domainId } = request.params;
+        const { path } = request.body || {};
+        const userId = request.user.id;
+        const isAdmin = request.user.role === 'admin';
+
+        const domain = await database.getDomainById(domainId);
+        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
+        if (!await canModifyDomain(domain, userId, isAdmin)) {
+          return reply.code(403).send({ error: 'Forbidden' });
+        }
+
+        let normalizedPath = null;
+        if (path !== undefined && path !== null && String(path).trim() !== '') {
+          const trimmed = String(path).trim();
+          if (trimmed.length > 512) {
+            return reply.code(400).send({ error: 'Bad Request', message: 'path must be at most 512 characters' });
+          }
+          normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        }
+
+        await database.execute(`
+          UPDATE domains SET
+            health_check_path = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [normalizedPath, domainId]);
+
+        const updated = await database.getDomainById(domainId);
+        return reply.send({ success: true, domain: updated });
+      } catch (error) {
+        fastify.log.error({ error }, 'Failed to update health check path');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
   // ── PROXY Protocol ────────────────────────────────────────────────────────
   fastify.put('/:domainId/proxy-protocol', {
     onRequest: [fastify.authenticate],

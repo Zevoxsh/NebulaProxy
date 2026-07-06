@@ -184,10 +184,16 @@ services:
       - CLUSTER_ENABLED=true
       - CLUSTER_WORKERS=2
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
-      interval: 15s
+      # Was `wget /health` alone — with CLUSTER_ENABLED, that can land on
+      # either worker (shared port, SCHED_NONE) and pass even if the other
+      # one is stuck. healthcheck.js additionally verifies every worker's
+      # Redis heartbeat is fresh. Was also interval:15s/retries:5 (~75s to
+      # mark unhealthy) — tightened so autoheal reacts in well under a
+      # minute instead of 90-120s.
+      test: ["CMD", "node", "/app/healthcheck.js"]
+      interval: 8s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 40s
     depends_on:
       redis:
@@ -309,7 +315,9 @@ services:
     restart: unless-stopped
     environment:
       - DOCKER_API_HOST=socket-proxy-rw:2375
-      - AUTOHEAL_INTERVAL=15
+      # Matched to the backend healthcheck's tighter interval/retries so
+      # detection-to-restart stays well under a minute end to end.
+      - AUTOHEAL_INTERVAL=8
     depends_on:
       socket-proxy-rw:
         condition: service_started

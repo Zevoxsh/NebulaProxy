@@ -250,8 +250,32 @@ const startLogCleanup = () => {
 const stopLogCleanup = () => { if (logCleanupTimer) { clearInterval(logCleanupTimer); logCleanupTimer = null; } };
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
+// STABILITY: this sequence awaits ~15 independent services in order. If any
+// one of them hangs (e.g. fastify.close() waiting on an in-flight request
+// that never finishes, a stuck Redis/Postgres close), the whole sequence
+// would silently hang past stop_grace_period (45s) and Docker would send an
+// abrupt SIGKILL — no log line, no chance to flush anything, no exit code
+// under our control. Race it against a hard timeout well under the grace
+// period so a stuck step forces our own logged, deliberate exit instead.
+const SHUTDOWN_TIMEOUT_MS = 30000;
+
 async function gracefulShutdown(signal) {
   fastify.log.info(`${signal} received — shutting down gracefully`);
+
+  const timeout = new Promise((resolve) => {
+    const t = setTimeout(() => resolve('timeout'), SHUTDOWN_TIMEOUT_MS);
+    if (t.unref) t.unref();
+  });
+
+  const result = await Promise.race([shutdownSteps(signal).then(() => 'done'), timeout]);
+
+  if (result === 'timeout') {
+    fastify.log.error(`Graceful shutdown did not finish within ${SHUTDOWN_TIMEOUT_MS}ms — forcing exit`);
+    process.exit(1);
+  }
+}
+
+async function shutdownSteps(signal) {
   try {
     await clusterCoordinator.stop();
     resourceMonitor.stop();

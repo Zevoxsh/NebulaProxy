@@ -30,6 +30,7 @@ export const domainAPI = {
   setMirror: (id, data) => api.put(`/domains/${id}/mirror`, data),
   setGeoip: (id, data) => api.put(`/domains/${id}/geoip`, data),
   setStickySessions: (id, data) => api.put(`/domains/${id}/sticky-sessions`, data),
+  setHealthCheckPath: (id, data) => api.put(`/domains/${id}/health-check`, data),
   setProxyProtocol: (id, data) => api.put(`/domains/${id}/proxy-protocol`, data),
   setGeyserProxyProtocol: (id, data) => api.put(`/domains/${id}/geyser-proxy-protocol`, data),
   setDdosProtection: (id, data) => api.put(`/domains/${id}/ddos-protection`, data),
