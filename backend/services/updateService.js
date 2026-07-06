@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { emailNotificationService as emailService } from './emailNotificationService.js';
 import { redisService } from './redis.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -169,12 +170,17 @@ class UpdateService {
 
     this.logger.info(`[UpdateService] Starting cron (interval: ${intervalMinutes} minutes)`);
 
+    // CLUSTER: must run once cluster-wide, not once per worker — concurrent
+    // `git fetch` + auto-apply would trigger overlapping rebuild/restart
+    // cycles (the watchdog rebuilding/restarting multiple times back to back).
     this.cronInterval = setInterval(async () => {
+      if (!clusterCoordinator.isLeader()) return;
       await this.checkForUpdates();
     }, intervalMs);
 
     // Run initial check after 1 minute
     setTimeout(async () => {
+      if (!clusterCoordinator.isLeader()) return;
       await this.checkForUpdates();
     }, 60000);
   }

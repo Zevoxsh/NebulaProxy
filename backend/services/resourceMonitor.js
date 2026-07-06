@@ -14,6 +14,7 @@ import { monitoringService } from './monitoringService.js';
 import { container } from './container.js';
 import { pool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 const HYSTERESIS = 5;       // % below threshold before resolving
 const CHECK_INTERVAL_MS = 60_000;
@@ -45,6 +46,11 @@ class ResourceMonitor {
   }
 
   async #check() {
+    // CLUSTER: metrics are system/container-wide, identical across workers —
+    // without this, every worker would independently alert (and "resolve")
+    // on the same threshold breach, sending duplicate notifications.
+    if (!clusterCoordinator.isLeader()) return;
+
     const thresholds = await this.#loadThresholds();
     if (!thresholds) return;
 

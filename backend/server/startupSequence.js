@@ -21,6 +21,7 @@ import { logBroadcastService }   from '../services/logBroadcastService.js';
 import { tunnelRelayService }    from '../services/tunnelRelayService.js';
 import { container }             from '../services/container.js';
 import BackupScheduler           from '../services/backupScheduler.js';
+import { clusterCoordinator }    from '../services/clusterCoordinator.js';
 
 /**
  * Full startup sequence. Returns after the Fastify HTTP server is listening.
@@ -92,6 +93,15 @@ export async function startupSequence(fastify, config) {
     step('Redis', 'WARN', 'connection failed');
   }
 
+  // 2.6. Cluster leader election (no-op unless config.cluster.enabled).
+  // Must start before any singleton cron below (ACME renewal, update check,
+  // health polling, resource monitor) so their leader-gated checks see an
+  // up-to-date isLeader() from the first tick.
+  clusterCoordinator.start();
+  if (config.cluster.enabled) {
+    step('Cluster', 'OK', `worker pid=${process.pid}, leader election via Redis`);
+  }
+
   // 3. ACME
   acmeManager.init();
   acmeManager.startRenewalCron();
@@ -115,12 +125,28 @@ export async function startupSequence(fastify, config) {
   step('Log Batch Queue', 'OK', 'started');
 
   // 5. Start active proxies
+  // DOWNTIME: each domain used to bind sequentially (await in a for-loop).
+  // On network_mode: host, this backend is the sole listener for every
+  // proxied domain, so every restart (update, crash-restart, manual) held
+  // ALL domains unreachable for as long as the slowest one took to bind,
+  // times however many domains are configured. Binding them concurrently
+  // instead cuts total downtime down to the single slowest domain's start
+  // time, regardless of how many domains are configured. Each domain binds
+  // an independent port/listener, so there's no shared state to race on.
   const activeDomains = await database.getAllActiveDomains();
+  const startResults = await Promise.allSettled(
+    activeDomains.map((domain) => proxyManager.startProxy(domain))
+  );
   let ok = 0, failed = 0;
-  for (const domain of activeDomains) {
-    try { await proxyManager.startProxy(domain); ok++; }
-    catch (error) { fastify.log.error({ error, domainId: domain.id, hostname: domain.hostname }, 'Failed to start proxy'); failed++; }
-  }
+  startResults.forEach((result, i) => {
+    if (result.status === 'fulfilled') {
+      ok++;
+    } else {
+      failed++;
+      const domain = activeDomains[i];
+      fastify.log.error({ error: result.reason, domainId: domain.id, hostname: domain.hostname }, 'Failed to start proxy');
+    }
+  });
   fastify.log.info(`Started ${ok}/${activeDomains.length} proxies (${failed} errors)`);
   step('Active Proxies', failed === 0 ? 'OK' : 'WARN', `${ok}/${activeDomains.length}`);
 

@@ -1,6 +1,6 @@
 FROM alpine:3.21
 
-RUN apk add --no-cache git docker-cli docker-cli-compose redis
+RUN apk add --no-cache git docker-cli docker-cli-compose redis curl
 
 WORKDIR /watchdog
 

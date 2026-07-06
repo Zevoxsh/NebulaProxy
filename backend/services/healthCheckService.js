@@ -14,6 +14,7 @@ import net   from 'net';
 import { database } from './database.js';
 import { config   } from '../config/config.js';
 import { logger } from '../utils/logger.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 // Minimum interval — 5s is safe for most setups, avoids hammering backends
 // while still allowing fast failover detection.
@@ -147,6 +148,11 @@ class HealthCheckService {
 
   async runOnce() {
     if (!this._running) return;
+    // CLUSTER: gate here (not just at the setInterval call site) so both the
+    // immediate startup check and every interval tick are covered — running
+    // this per-worker would multiply active health-probe traffic against
+    // every backend by the worker count.
+    if (!clusterCoordinator.isLeader()) return;
 
     let domains;
     try {

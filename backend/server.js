@@ -28,6 +28,7 @@ import { healthCheckService } from './services/healthCheckService.js';
 import { resourceMonitor } from './services/resourceMonitor.js';
 import { bandwidthTracker } from './services/bandwidthTracker.js';
 import { applyLogFilter } from './utils/logFilter.js';
+import { clusterCoordinator } from './services/clusterCoordinator.js';
 
 // ── Sub-modules ──────────────────────────────────────────────────────────────
 import { isDynamicAllowedOrigin, isTrustedProxyIp } from './server/networkHelpers.js';
@@ -210,6 +211,9 @@ const SSL_EXPIRY_WARN_DAYS = 14;
 let sslExpiryTimer = null;
 
 const runSslExpiryCheck = async () => {
+  // CLUSTER: cert expiry is cluster-wide data — without this every worker
+  // would independently send the same expiry-warning email.
+  if (!clusterCoordinator.isLeader()) return;
   try {
     const expiring = await database.getExpiringCertificates(SSL_EXPIRY_WARN_DAYS);
     if (!expiring?.length) return;
@@ -232,6 +236,8 @@ let logCleanupTimer = null;
 const startLogCleanup = () => {
   const intervalMs = config.logs.cleanupIntervalHours * 60 * 60 * 1000;
   const run = async () => {
+    // CLUSTER: avoid every worker running the same DELETE scan redundantly.
+    if (!clusterCoordinator.isLeader()) return;
     try {
       const result = await database.cleanOldRequestLogs(config.logs.retentionDays);
       fastify.log.info({ deleted: result.deleted }, 'Old request logs cleaned');
@@ -247,6 +253,7 @@ const stopLogCleanup = () => { if (logCleanupTimer) { clearInterval(logCleanupTi
 async function gracefulShutdown(signal) {
   fastify.log.info(`${signal} received — shutting down gracefully`);
   try {
+    await clusterCoordinator.stop();
     resourceMonitor.stop();
     bandwidthTracker.stop();
 
@@ -285,6 +292,29 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+// ── Crash safety net ──────────────────────────────────────────────────────────
+// STABILITY: there was previously no process-level uncaughtException /
+// unhandledRejection handler anywhere. Since the backend runs as a single
+// process (network_mode: host) proxying every configured domain, ANY
+// unhandled error anywhere (an 'error' event on a stream with no listener,
+// a rejected promise with no .catch()) took down the whole proxy for every
+// domain simultaneously with Node's default behavior. Most known sources of
+// unhandled stream errors in the HTTP proxy path have been fixed directly
+// (see requestProxy.js), but this stays as a last-resort net against
+// whatever wasn't — it's not safe to keep running after an uncaught
+// exception, so we shut down cleanly and let `restart: unless-stopped`
+// bring the container back instead of silently corrupting state.
+process.on('unhandledRejection', (reason) => {
+  fastify.log.error({ err: reason }, '[FATAL-SAFETY-NET] Unhandled promise rejection — missing a .catch() somewhere. Process keeps running; investigate this.');
+});
+
+process.on('uncaughtException', (error, origin) => {
+  fastify.log.error({ err: error, origin }, '[FATAL-SAFETY-NET] Uncaught exception — shutting down for a clean restart (continuing after this is unsafe).');
+  const forceExitTimer = setTimeout(() => process.exit(1), 10000);
+  forceExitTimer.unref();
+  gracefulShutdown('uncaughtException').catch(() => process.exit(1));
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const start = async () => {

@@ -23,6 +23,27 @@ import { bandwidthTracker } from '../../bandwidthTracker.js';
 import { urlFilterService } from '../../urlFilterService.js';
 import { logBatchQueue } from '../../logBatchQueue.js';
 
+// Shared keep-alive agents reused across every proxied request. Previously
+// each request used `agent: false`, opening a brand new TCP (+ TLS handshake
+// for HTTPS backends) connection per request — this reuses sockets per
+// backend host:port instead.
+const httpKeepAliveAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 10000,
+  maxSockets: config.proxy.maxSocketsPerBackend,
+  maxFreeSockets: 64,
+});
+const httpsKeepAliveAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 10000,
+  maxSockets: config.proxy.maxSocketsPerBackend,
+  maxFreeSockets: 64,
+});
+
+// Connect-level errors safe to retry against a different backend: the
+// connection never opened, so no bytes could have been sent upstream.
+const RETRYABLE_CONNECT_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
 export class RequestProxy {
 async _proxyHttpRequest(req, res, domain) {
 const startTime = Date.now();
@@ -128,9 +149,12 @@ if (domain.rate_limit_enabled) {
 
     if (redisService.isConnected && redisService.client) {
       const count = await redisService.client.incr(rlKey);
-      if (count === 1) {
-        await redisService.client.expire(rlKey, rlWin);
-      }
+      // NX: only set the TTL if the key doesn't already have one. Using
+      // `count === 1` as the guard instead has a race — if the process
+      // crashes/times out between INCR and EXPIRE, the key is left without
+      // a TTL and permanently rate-limits that domain/IP. EXPIRE ... NX is
+      // idempotent so it's safe to call unconditionally on every request.
+      await redisService.client.expire(rlKey, rlWin, 'NX');
       if (count > rlMax) {
         const rlWantsHtml = (req.headers.accept || '').includes('text/html');
         if (rlWantsHtml) {
@@ -293,9 +317,23 @@ try {
 // ── 6. CIRCUIT BREAKER CHECK ─────────────────────────────────────────────
 const cbKey = `${domain.id}:${backendHost}:${backendPort}`;
 if (!circuitBreaker.isAvailable(cbKey)) {
-  // Breaker is open. Log it, but allow one attempt to pass through.
-  // This helps with "cold start" where the backend might be slow on first request.
-  logger.warn(`[HTTP Proxy ${domain.id}] Circuit breaker is OPEN for ${cbKey}. Allowing a pass-through attempt.`);
+  // Breaker is OPEN: fail fast instead of letting every request hang until
+  // the (5min, now 30s by default) upstream timeout. isAvailable() already
+  // returns true for the single allowed HALF_OPEN probe, so reaching here
+  // means the backend is confirmed down — no free pass-through.
+  logger.warn(`[HTTP Proxy ${domain.id}] Circuit breaker OPEN for ${cbKey} — failing fast (503)`);
+  if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
+  const accept = String(req.headers.accept || '');
+  if (accept.includes('text/html')) {
+    res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '10' });
+    res.end(domain.custom_503_page
+      ? this._renderCustomErrorPage(domain.custom_503_page, 503)
+      : renderServiceUnavailablePage(domain.hostname));
+  } else {
+    res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '10' });
+    res.end(JSON.stringify({ error: 'Service Unavailable', message: 'Backend temporarily unavailable (circuit breaker open)' }));
+  }
+  return;
 }
 
 // ── 7. PROXY REQUEST SETUP ───────────────────────────────────────────────
@@ -330,35 +368,11 @@ for (const [key, val] of Object.entries(req.headers)) {
   }
 }
 
-const options = {
-  hostname: backendHost,
-  port: backendPort,
-  path: req.url,
-  method: req.method,
-  agent: false, // Use a new agent for each request
-  headers: headers
-};
-
-// If backend is https, configure TLS
-if (backendProtocol === 'https:') {
-  // Use the requested domain for SNI when connecting to HTTPS backend
-  // This is correct for most use cases (backend has cert for domain)
-  if (!this._isIpAddress(req.headers.host?.split(':')[0])) {
-    options.servername = req.headers.host?.split(':')[0] || backendHost;
-  } else {
-    // IP address in request header - fall back to backend host for SNI
-    options.servername = backendHost;
-  }
-  options.rejectUnauthorized = !config.proxy.allowInsecureBackends;
-}
-
 const acceptsHtml = String(req.headers.accept || '').includes('text/html');
 if (acceptsHtml && config.proxy.injectConsoleScript) {
-  options.headers['accept-encoding'] = 'identity';
+  headers['accept-encoding'] = 'identity';
 }
 
-const protocol = backendProtocol === 'https:' ? https : http;
-const upstreamTimeoutMs = config.proxy.requestTimeoutMs > 0 ? config.proxy.requestTimeoutMs : 300000;
 const consolePayload = {
   host: String(domain.hostname || req.headers.host || 'unknown-host'),
   path: String(req.url || '/'),
@@ -367,261 +381,379 @@ const consolePayload = {
 const consoleMessage = `var np=${JSON.stringify(consolePayload)};console.groupCollapsed('%cNebulaProxy %c// live route','color:#C77DFF;font-size:16px;font-weight:800;letter-spacing:0.02em;','color:#8b5cf6;font-size:11px;font-weight:700;letter-spacing:0.08em;');console.log('%cDomain:%c '+np.host,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPath:%c '+np.path,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cTimestamp:%c '+np.timestamp,'color:#a1a1aa;font-weight:700;','color:#fafafa;font-weight:500;');console.log('%cPowered by NebulaProxy','color:#22d3ee;font-size:12px;font-weight:700;');console.groupEnd();`;
 const consoleScript = `<script>(function(){try{${consoleMessage}}catch(e){}})();</script>`;
 
-// Debug logging: show request details for Jellyfin
-if (req.url.includes('/System/') || req.url.includes('/Branding/') || req.url.includes('/MediaBar/') || req.url.includes('/QuickConnect/')) {
-  logger.debug(`[DEBUG:HTTP] Sending to ${backendProtocol}//${backendHost}:${backendPort}${req.url}`);
-  logger.info(`  Method: ${req.method}`);
-  logger.info(`  Headers: ${JSON.stringify({
-    host: options.headers.host,
-    'x-forwarded-for': options.headers['x-forwarded-for'],
-    'x-forwarded-proto': options.headers['x-forwarded-proto'],
-    'x-real-ip': options.headers['x-real-ip']
-  })}`);
-}
+// SECURITY: Enforce request body size limit (DOS prevention)
+const MAX_BODY_SIZE = config.proxy?.maxRequestBodySize || (100 * 1024 * 1024); // 100MB default
+let bytesReceived = 0;
+let bodySizeLimitExceeded = false;
 
-logger.info(`[HTTP Proxy ${domain.id}] upstream request ${req.method || 'GET'} ${req.url || '/'} -> ${backendProtocol}//${backendHost}:${backendPort} host=${req.headers.host || '-'} client=${clientIp}`);
+// A retry against a different backend is only safe when there is another
+// backend to go to (load balancing enabled) and no request body could have
+// been partially consumed by the failed attempt (GET/HEAD only).
+const canRetryBackend = !!domain.load_balancing_enabled && (req.method === 'GET' || req.method === 'HEAD');
 
-const proxyReq = protocol.request(options, (proxyRes) => {
-  const responseTime = Date.now() - startTime;
-  const statusCode = proxyRes.statusCode;
-  let responseSize = 0;
-  const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
-  const isHtmlResponse = contentType.includes('text/html');
+let activeProxyReq = null;
 
-  logger.info(`[HTTP Proxy ${domain.id}] upstream response ${statusCode} ${req.method || 'GET'} ${req.url || '/'} -> ${backendHost}:${backendPort} in ${responseTime}ms contentType=${contentType || '-'} client=${clientIp}`);
+const dispatch = (target, attempt) => {
+  const dBackendHost = target.hostname;
+  const dBackendPort = target.port;
+  const dBackendProtocol = target.protocol || 'http:';
+  const dBackendId = target.backendId || null;
+  const dCbKey = `${domain.id}:${dBackendHost}:${dBackendPort}`;
 
-  // Circuit breaker: success
-  circuitBreaker.onSuccess(cbKey);
+  const options = {
+    hostname: dBackendHost,
+    port: dBackendPort,
+    path: req.url,
+    method: req.method,
+    agent: dBackendProtocol === 'https:' ? httpsKeepAliveAgent : httpKeepAliveAgent,
+    headers
+  };
 
-  // Track response size
-  proxyRes.on('data', (chunk) => {
-    responseSize += chunk.length;
-  });
-
-  // Determine log level
-  let logLevel = 'success';
-  if (statusCode >= 500) logLevel = 'error';
-  else if (statusCode >= 400) logLevel = 'warning';
-  else if (statusCode >= 300) logLevel = 'info';
-
-  // Least-connections: decrement when response is done
-  proxyRes.on('end', () => {
-    if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
-  });
-
-  // Bandwidth tracking (fire-and-forget — never blocks response)
-  proxyRes.on('end', () => {
-    if (domain.user_id) {
-      bandwidthTracker.record(domain.user_id, bytesReceived, responseSize).catch(() => {});
+  if (dBackendProtocol === 'https:') {
+    if (!this._isIpAddress(req.headers.host?.split(':')[0])) {
+      options.servername = req.headers.host?.split(':')[0] || dBackendHost;
+    } else {
+      options.servername = dBackendHost;
     }
-  });
+    options.rejectUnauthorized = !config.proxy.allowInsecureBackends;
+  }
 
-  // Log the request (batched for performance)
-  proxyRes.on('end', () => {
+  const protocol = dBackendProtocol === 'https:' ? https : http;
+  const upstreamTimeoutMs = config.proxy.requestTimeoutMs > 0 ? config.proxy.requestTimeoutMs : 30000;
+  const debugEnabled = logger.isLevelEnabled('debug');
+
+  if (debugEnabled && (req.url.includes('/System/') || req.url.includes('/Branding/') || req.url.includes('/MediaBar/') || req.url.includes('/QuickConnect/'))) {
+    logger.debug(`[DEBUG:HTTP] Sending to ${dBackendProtocol}//${dBackendHost}:${dBackendPort}${req.url}`);
+    logger.debug(`  Method: ${req.method}`);
+    logger.debug(`  Headers: ${JSON.stringify({
+      host: options.headers.host,
+      'x-forwarded-for': options.headers['x-forwarded-for'],
+      'x-forwarded-proto': options.headers['x-forwarded-proto'],
+      'x-real-ip': options.headers['x-real-ip']
+    })}`);
+  }
+
+  if (debugEnabled) {
+    logger.debug(`[HTTP Proxy ${domain.id}] upstream request ${req.method || 'GET'} ${req.url || '/'} -> ${dBackendProtocol}//${dBackendHost}:${dBackendPort} host=${req.headers.host || '-'} client=${clientIp} attempt=${attempt}`);
+  }
+
+  const handleFinalError = (error, responseTime) => {
+    logger.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`);
+    logger.error(`  Target: ${dBackendProtocol}//${dBackendHost}:${dBackendPort}`);
+    logger.error(`  Error: ${error.code} - ${error.message}`);
+    logger.error(`  Client IP: ${clientIp}`);
+    logger.error(`  Host header: ${req.headers.host}`);
+
     logBatchQueue.queueRequestLog({
       domainId: domain.id,
       hostname: domain.hostname,
       method: req.method,
       path: req.url.split('?')[0],
       queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
-      statusCode: statusCode,
+      statusCode: 502,
       responseTime: responseTime,
-      responseSize: responseSize,
       ipAddress: clientIp,
       userAgent: req.headers['user-agent'] || null,
       referer: req.headers['referer'] || req.headers['referrer'] || null,
+      errorMessage: error.message,
       requestHeaders: {
         'content-type': req.headers['content-type'],
-        'accept': req.headers['accept'],
-        'accept-language': req.headers['accept-language']
-      },
-      responseHeaders: {
-        'content-type': proxyRes.headers['content-type'],
-        'content-encoding': proxyRes.headers['content-encoding'],
-        'cache-control': proxyRes.headers['cache-control']
+        'accept': req.headers['accept']
       }
     });
-  });
 
-  // Legacy proxy log (batched)
-  logBatchQueue.queueProxyLog({
-    domainId: domain.id,
-    hostname: domain.hostname,
-    method: req.method,
-    path: req.url,
-    status: statusCode,
-    responseTime: responseTime,
-    ipAddress: clientIp,
-    userAgent: req.headers['user-agent'] || null,
-    level: logLevel
-  });
-
-  // Custom error pages for 404 / 502 / 503 from backend
-  if (statusCode === 404 && domain.custom_404_page) {
-    const html = this._renderCustomErrorPage(domain.custom_404_page, 404);
-    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html);
-    return;
-  }
-  if (statusCode === 502 && domain.custom_502_page) {
-    const html = this._renderCustomErrorPage(domain.custom_502_page, 502);
-    res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html);
-    return;
-  }
-
-  // Build response headers (copy from backend)
-  const responseHeaders = { ...proxyRes.headers };
-
-  const requestedHost = String(req.headers.host || '').trim();
-  const upstreamLocation = responseHeaders.location || responseHeaders.Location;
-  if (upstreamLocation && requestedHost) {
-    try {
-      const parsedLocation = new URL(upstreamLocation, `${backendProtocol}//${backendHost}:${backendPort}`);
-      const upstreamHost = parsedLocation.hostname.toLowerCase();
-      const requestedHostname = requestedHost.split(':')[0].toLowerCase();
-
-      const publicPort = req.socket.encrypted ? 443 : 80;
-      const locPort = parsedLocation.port ? parseInt(parsedLocation.port, 10) : (parsedLocation.protocol === "https:" ? 443 : 80);
-      const hostnameNeedsRewrite = parsedLocation.origin && upstreamHost === String(backendHost).toLowerCase() && requestedHostname && requestedHostname !== upstreamHost;
-      const portNeedsRewrite = parsedLocation.origin && upstreamHost === requestedHostname && locPort === parseInt(String(backendPort), 10) && locPort !== publicPort;
-
-      if (hostnameNeedsRewrite || portNeedsRewrite) {
-        parsedLocation.hostname = requestedHostname;
-        parsedLocation.port = (publicPort === 443 || publicPort === 80) ? "" : String(publicPort);
-        const rewrittenLocation = parsedLocation.toString();
-        responseHeaders.location = rewrittenLocation;
-        delete responseHeaders.Location;
-        logger.info("[HTTP Proxy " + domain.id + "] rewrote Location " + upstreamLocation + " -> " + rewrittenLocation + " requestedHost=" + requestedHost);
-      }
-    } catch (err) {
-      logger.warn(`[HTTP Proxy ${domain.id}] failed to inspect Location header ${String(upstreamLocation)}: ${err.message}`);
+    if (config.proxy.legacyProxyLogEnabled) {
+      logBatchQueue.queueProxyLog({
+        domainId: domain.id,
+        hostname: domain.hostname,
+        method: req.method,
+        path: req.url,
+        status: 502,
+        responseTime: responseTime,
+        ipAddress: clientIp,
+        userAgent: req.headers['user-agent'] || null,
+        level: 'error'
+      });
     }
-  }
 
-  if (isHtmlResponse && config.proxy.injectConsoleScript) {
-    delete responseHeaders['content-length'];
-    delete responseHeaders['content-encoding'];
-    delete responseHeaders['transfer-encoding'];
-    responseHeaders['content-type'] = responseHeaders['content-type'] || 'text/html; charset=utf-8';
-  }
+    if (!res.headersSent) {
+      const accept = String(req.headers.accept || '');
+      const wantsHtml = accept.includes('text/html');
+      if (wantsHtml) {
+        // Use custom 502 page if configured, otherwise fall back to styled default
+        const html = domain.custom_502_page
+          ? this._renderCustomErrorPage(domain.custom_502_page, 502)
+          : renderBadGatewayPage(domain.hostname, { errorCode: error.code, errorMessage: error.message });
+        res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+      } else {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Bad Gateway',
+          message: 'Upstream service unavailable'
+        }));
+      }
+    }
+  };
 
-  // Sticky session: set cookie if enabled and we know the backend id
-  if (domain.sticky_sessions_enabled && backendId) {
-    const ttl = domain.sticky_sessions_ttl || 3600;
-    const existing = responseHeaders['set-cookie'] || [];
-    const cookieArr = Array.isArray(existing) ? existing : [existing];
-    cookieArr.push(`__nebula_srv=${backendId}; Path=/; Max-Age=${ttl}; HttpOnly; SameSite=Lax`);
-    responseHeaders['set-cookie'] = cookieArr;
-  }
+  const proxyReq = protocol.request(options, (proxyRes) => {
+    const responseTime = Date.now() - startTime;
+    const statusCode = proxyRes.statusCode;
+    let responseSize = 0;
+    const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
+    const isHtmlResponse = contentType.includes('text/html');
 
-  res.writeHead(proxyRes.statusCode, responseHeaders);
+    if (debugEnabled) {
+      logger.debug(`[HTTP Proxy ${domain.id}] upstream response ${statusCode} ${req.method || 'GET'} ${req.url || '/'} -> ${dBackendHost}:${dBackendPort} in ${responseTime}ms contentType=${contentType || '-'} client=${clientIp}`);
+    }
 
-  if (isHtmlResponse && config.proxy.injectConsoleScript) {
-    const chunks = [];
+    // Circuit breaker: success
+    circuitBreaker.onSuccess(dCbKey);
+
+    // STABILITY: without an 'error' listener, a mid-stream upstream error
+    // (backend resets the connection after sending headers) is an unhandled
+    // stream 'error' event — Node rethrows it, and with no process-level
+    // handler that crashes the whole server for every domain at once.
+    proxyRes.on('error', (err) => {
+      logger.warn(`[HTTP Proxy ${domain.id}] upstream response stream error: ${err.message}`);
+      if (!res.writableEnded) res.destroy(err);
+    });
+
+    // Track response size
     proxyRes.on('data', (chunk) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      responseSize += chunk.length;
     });
+
+    // Determine log level
+    let logLevel = 'success';
+    if (statusCode >= 500) logLevel = 'error';
+    else if (statusCode >= 400) logLevel = 'warning';
+    else if (statusCode >= 300) logLevel = 'info';
+
+    // Least-connections: decrement when response is done
     proxyRes.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf8');
-      const injected = body.includes('</body>')
-        ? body.replace('</body>', `${consoleScript}</body>`)
-        : `${body}${consoleScript}`;
-      res.end(injected);
+      if (dBackendId) { const lb = getLb(); if (lb) lb.decrementConnections(dBackendId); }
     });
-  } else {
-    proxyRes.pipe(res);
-  }
 
-  // ── 7. TRAFFIC MIRRORING (fire-and-forget) ───────────────────────────
-  if (domain.mirror_enabled && domain.mirror_backend_url) {
-    this._fireMirrorRequest(req, domain.mirror_backend_url).catch(() => {});
-  }
-});
+    // Bandwidth tracking (fire-and-forget — never blocks response)
+    proxyRes.on('end', () => {
+      if (domain.user_id) {
+        bandwidthTracker.record(domain.user_id, bytesReceived, responseSize).catch(() => {});
+      }
+    });
 
-proxyReq.setTimeout(upstreamTimeoutMs, () => {
-  const timeoutError = new Error(`Upstream request timeout after ${upstreamTimeoutMs}ms`);
-  timeoutError.code = 'ETIMEDOUT';
-  proxyReq.destroy(timeoutError);
-});
+    // Log the request (batched for performance)
+    proxyRes.on('end', () => {
+      logBatchQueue.queueRequestLog({
+        domainId: domain.id,
+        hostname: domain.hostname,
+        method: req.method,
+        path: req.url.split('?')[0],
+        queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
+        statusCode: statusCode,
+        responseTime: responseTime,
+        responseSize: responseSize,
+        ipAddress: clientIp,
+        userAgent: req.headers['user-agent'] || null,
+        referer: req.headers['referer'] || req.headers['referrer'] || null,
+        requestHeaders: {
+          'content-type': req.headers['content-type'],
+          'accept': req.headers['accept'],
+          'accept-language': req.headers['accept-language']
+        },
+        responseHeaders: {
+          'content-type': proxyRes.headers['content-type'],
+          'content-encoding': proxyRes.headers['content-encoding'],
+          'cache-control': proxyRes.headers['cache-control']
+        }
+      });
+    });
 
-proxyReq.on('error', (error) => {
-  const responseTime = Date.now() - startTime;
-
-  // Least-connections: decrement on error so the backend isn't penalised indefinitely
-  if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
-
-  // Circuit breaker: failure (but not for ECONNRESET which might be normal close)
-  if (error.code !== 'ECONNRESET') {
-    circuitBreaker.onFailure(cbKey);
-  }
-
-  // Suppress ECONNRESET errors if response was already started (client received data)
-  if (error.code === 'ECONNRESET' && res.headersSent) {
-    logger.debug(`[DEBUG:HTTP] Backend closed connection after sending response (normal): ${domain.hostname} ${req.method} ${req.url}`);
-    return;
-  }
-
-  logger.error(`[ProxyManager] Backend error for ${domain.hostname} (${req.method} ${req.url}):`);
-  logger.error(`  Target: ${backendProtocol}//${backendHost}:${backendPort}`);
-  logger.error(`  Error: ${error.code} - ${error.message}`);
-  logger.error(`  Client IP: ${clientIp}`);
-  logger.error(`  Host header: ${req.headers.host}`);
-
-  logBatchQueue.queueRequestLog({
-    domainId: domain.id,
-    hostname: domain.hostname,
-    method: req.method,
-    path: req.url.split('?')[0],
-    queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
-    statusCode: 502,
-    responseTime: responseTime,
-    ipAddress: clientIp,
-    userAgent: req.headers['user-agent'] || null,
-    referer: req.headers['referer'] || req.headers['referrer'] || null,
-    errorMessage: error.message,
-    requestHeaders: {
-      'content-type': req.headers['content-type'],
-      'accept': req.headers['accept']
+    // Legacy proxy log (batched) — feeds the real-time "live logs" WebSocket
+    // view only. Disable via PROXY_LEGACY_LOG_ENABLED=false to halve DB
+    // write volume on the proxy hot path if that view isn't used.
+    if (config.proxy.legacyProxyLogEnabled) {
+      logBatchQueue.queueProxyLog({
+        domainId: domain.id,
+        hostname: domain.hostname,
+        method: req.method,
+        path: req.url,
+        status: statusCode,
+        responseTime: responseTime,
+        ipAddress: clientIp,
+        userAgent: req.headers['user-agent'] || null,
+        level: logLevel
+      });
     }
-  });
 
-  logBatchQueue.queueProxyLog({
-    domainId: domain.id,
-    hostname: domain.hostname,
-    method: req.method,
-    path: req.url,
-    status: 502,
-    responseTime: responseTime,
-    ipAddress: clientIp,
-    userAgent: req.headers['user-agent'] || null,
-    level: 'error'
-  });
-
-  if (!res.headersSent) {
-    const accept = String(req.headers.accept || '');
-    const wantsHtml = accept.includes('text/html');
-    if (wantsHtml) {
-      // Use custom 502 page if configured, otherwise fall back to styled default
-      const html = domain.custom_502_page
-        ? this._renderCustomErrorPage(domain.custom_502_page, 502)
-        : renderBadGatewayPage(domain.hostname, { errorCode: error.code, errorMessage: error.message });
+    // Custom error pages for 404 / 502 / 503 from backend
+    if (statusCode === 404 && domain.custom_404_page) {
+      const html = this._renderCustomErrorPage(domain.custom_404_page, 404);
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+      return;
+    }
+    if (statusCode === 502 && domain.custom_502_page) {
+      const html = this._renderCustomErrorPage(domain.custom_502_page, 502);
       res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
-    } else {
-      res.writeHead(502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: 'Bad Gateway',
-        message: 'Upstream service unavailable'
-      }));
+      return;
     }
-  }
-});
 
-// SECURITY: Enforce request body size limit (DOS prevention)
-const MAX_BODY_SIZE = config.proxy?.maxRequestBodySize || (100 * 1024 * 1024); // 100MB default
-let bytesReceived = 0;
-let bodySizeLimitExceeded = false;
+    // Build response headers (copy from backend)
+    const responseHeaders = { ...proxyRes.headers };
+
+    const requestedHost = String(req.headers.host || '').trim();
+    const upstreamLocation = responseHeaders.location || responseHeaders.Location;
+    if (upstreamLocation && requestedHost) {
+      try {
+        const parsedLocation = new URL(upstreamLocation, `${dBackendProtocol}//${dBackendHost}:${dBackendPort}`);
+        const upstreamHost = parsedLocation.hostname.toLowerCase();
+        const requestedHostname = requestedHost.split(':')[0].toLowerCase();
+
+        const publicPort = req.socket.encrypted ? 443 : 80;
+        const locPort = parsedLocation.port ? parseInt(parsedLocation.port, 10) : (parsedLocation.protocol === "https:" ? 443 : 80);
+        const hostnameNeedsRewrite = parsedLocation.origin && upstreamHost === String(dBackendHost).toLowerCase() && requestedHostname && requestedHostname !== upstreamHost;
+        const portNeedsRewrite = parsedLocation.origin && upstreamHost === requestedHostname && locPort === parseInt(String(dBackendPort), 10) && locPort !== publicPort;
+
+        if (hostnameNeedsRewrite || portNeedsRewrite) {
+          parsedLocation.hostname = requestedHostname;
+          parsedLocation.port = (publicPort === 443 || publicPort === 80) ? "" : String(publicPort);
+          const rewrittenLocation = parsedLocation.toString();
+          responseHeaders.location = rewrittenLocation;
+          delete responseHeaders.Location;
+          logger.info("[HTTP Proxy " + domain.id + "] rewrote Location " + upstreamLocation + " -> " + rewrittenLocation + " requestedHost=" + requestedHost);
+        }
+      } catch (err) {
+        logger.warn(`[HTTP Proxy ${domain.id}] failed to inspect Location header ${String(upstreamLocation)}: ${err.message}`);
+      }
+    }
+
+    if (isHtmlResponse && config.proxy.injectConsoleScript) {
+      delete responseHeaders['content-length'];
+      delete responseHeaders['content-encoding'];
+      delete responseHeaders['transfer-encoding'];
+      responseHeaders['content-type'] = responseHeaders['content-type'] || 'text/html; charset=utf-8';
+    }
+
+    // Sticky session: set cookie if enabled and we know the backend id
+    if (domain.sticky_sessions_enabled && dBackendId) {
+      const ttl = domain.sticky_sessions_ttl || 3600;
+      const existing = responseHeaders['set-cookie'] || [];
+      const cookieArr = Array.isArray(existing) ? existing : [existing];
+      cookieArr.push(`__nebula_srv=${dBackendId}; Path=/; Max-Age=${ttl}; HttpOnly; SameSite=Lax`);
+      responseHeaders['set-cookie'] = cookieArr;
+    }
+
+    res.writeHead(proxyRes.statusCode, responseHeaders);
+
+    if (isHtmlResponse && config.proxy.injectConsoleScript) {
+      // STREAMING injection: previously buffered the *entire* response body
+      // in memory before writing anything to the client (latency + memory
+      // spike proportional to page size). Now only a small sliding window
+      // (marker length) is held, to catch a "</body>" split across chunk
+      // boundaries — everything else is forwarded as it arrives.
+      const marker = Buffer.from('</body>');
+      const scriptBuf = Buffer.from(consoleScript);
+      let held = Buffer.alloc(0);
+      let injected = false;
+
+      proxyRes.on('data', (chunk) => {
+        let outBuf;
+        if (injected) {
+          outBuf = chunk;
+        } else {
+          const combined = held.length ? Buffer.concat([held, chunk]) : chunk;
+          const idx = combined.indexOf(marker);
+          if (idx !== -1) {
+            outBuf = Buffer.concat([combined.subarray(0, idx), scriptBuf, combined.subarray(idx)]);
+            injected = true;
+            held = Buffer.alloc(0);
+          } else {
+            const keep = Math.min(marker.length - 1, combined.length);
+            const flushEnd = combined.length - keep;
+            outBuf = combined.subarray(0, flushEnd);
+            held = Buffer.from(combined.subarray(flushEnd));
+          }
+        }
+        if (outBuf.length > 0 && res.write(outBuf) === false) {
+          proxyRes.pause();
+        }
+      });
+      res.on('drain', () => { if (proxyRes.isPaused()) proxyRes.resume(); });
+      proxyRes.on('end', () => {
+        if (!injected) {
+          if (held.length) res.write(held);
+          res.write(scriptBuf);
+        }
+        res.end();
+      });
+    } else {
+      proxyRes.pipe(res);
+    }
+
+    // ── TRAFFIC MIRRORING (fire-and-forget) ───────────────────────────
+    if (domain.mirror_enabled && domain.mirror_backend_url) {
+      this._fireMirrorRequest(req, domain.mirror_backend_url).catch(() => {});
+    }
+  });
+
+  activeProxyReq = proxyReq;
+
+  proxyReq.setTimeout(upstreamTimeoutMs, () => {
+    const timeoutError = new Error(`Upstream request timeout after ${upstreamTimeoutMs}ms`);
+    timeoutError.code = 'ETIMEDOUT';
+    proxyReq.destroy(timeoutError);
+  });
+
+  proxyReq.on('error', (error) => {
+    const responseTime = Date.now() - startTime;
+
+    // Least-connections: decrement on error so the backend isn't penalised indefinitely
+    if (dBackendId) { const lb = getLb(); if (lb) lb.decrementConnections(dBackendId); }
+
+    // Circuit breaker: failure (but not for ECONNRESET which might be normal close)
+    if (error.code !== 'ECONNRESET') {
+      circuitBreaker.onFailure(dCbKey);
+    }
+
+    // Suppress ECONNRESET errors if response was already started (client received data)
+    if (error.code === 'ECONNRESET' && res.headersSent) {
+      logger.debug(`[DEBUG:HTTP] Backend closed connection after sending response (normal): ${domain.hostname} ${req.method} ${req.url}`);
+      return;
+    }
+
+    // Single retry against a different backend for connect-level failures,
+    // only for bodyless requests (GET/HEAD) so nothing was already sent
+    // upstream, and only when load balancing offers another candidate.
+    if (attempt === 1 && canRetryBackend && bytesReceived === 0 && !res.headersSent && RETRYABLE_CONNECT_ERROR_CODES.has(error.code)) {
+      this._selectBackendForDomain(domain, clientIp, 'http', { excludeBackendId: dBackendId })
+        .then((nextTarget) => {
+          if (nextTarget && (nextTarget.hostname !== dBackendHost || nextTarget.port !== dBackendPort)) {
+            logger.warn(`[HTTP Proxy ${domain.id}] backend ${dBackendHost}:${dBackendPort} ${error.code} — retrying once on ${nextTarget.hostname}:${nextTarget.port}`);
+            if (nextTarget.backendId) { const lb = getLb(); if (lb) lb.incrementConnections(nextTarget.backendId); }
+            req.unpipe(proxyReq);
+            dispatch(nextTarget, 2);
+          } else {
+            handleFinalError(error, responseTime);
+          }
+        })
+        .catch(() => handleFinalError(error, responseTime));
+      return;
+    }
+
+    handleFinalError(error, responseTime);
+  });
+
+  // GET/HEAD have no body — end() directly on retry rather than re-piping
+  // `req`, which may have already emitted 'end' on the first attempt (pipe()
+  // does not forward an already-past 'end' event to a newly piped destination).
+  if (attempt === 1) {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
+  }
+};
 
 req.on('data', (chunk) => {
   bytesReceived += chunk.length;
@@ -632,7 +764,7 @@ req.on('data', (chunk) => {
 
     // Destroy both connections
     req.destroy();
-    proxyReq.destroy();
+    if (activeProxyReq) activeProxyReq.destroy();
 
     // Send 413 response if headers not sent
     if (!res.headersSent) {
@@ -651,8 +783,21 @@ req.on('data', (chunk) => {
   }
 });
 
-// Pipe request body
-req.pipe(proxyReq);
+// STABILITY: previously neither `req` nor `res` had an 'error' listener.
+// A client aborting mid-upload or disconnecting mid-response-write emits
+// an unhandled stream 'error' — with no process-level safety net either,
+// this took down the entire process (every proxied domain at once) instead
+// of just failing the one affected request.
+req.on('error', (err) => {
+  logger.debug(`[HTTP Proxy ${domain.id}] client request stream error: ${err.message}`);
+  if (activeProxyReq) activeProxyReq.destroy(err);
+});
+res.on('error', (err) => {
+  logger.debug(`[HTTP Proxy ${domain.id}] client response stream error: ${err.message}`);
+  if (activeProxyReq) activeProxyReq.destroy(err);
+});
+
+dispatch({ hostname: backendHost, port: backendPort, protocol: backendProtocol, backendId }, 1);
 }
 
 /**

@@ -168,6 +168,19 @@ export const config = {
     get path() { return getConfig('DB_PATH') || join(__dirname, 'database.db'); }
   },
 
+  // Cluster — multi-process mode so the backend can use more than one CPU
+  // core (previously a single Node process regardless of the CPUs the
+  // container was allocated). Disabled by default: opt-in via env because
+  // it changes process topology (crons must be leader-gated, see
+  // clusterCoordinator.js) and per-worker memory budget.
+  cluster: {
+    get enabled() { return getConfig('CLUSTER_ENABLED', 'false') === 'true'; },
+    get workers() {
+      const n = parseInt(getConfig('CLUSTER_WORKERS', '2'), 10);
+      return Number.isFinite(n) && n > 0 ? n : 2;
+    }
+  },
+
   // Proxy
   proxy: {
     get enabled() { return getConfig('PROXY_ENABLED', 'true') === 'true'; },
@@ -182,15 +195,30 @@ export const config = {
     get checkToken() {
       return (getConfig('PROXY_CHECK_TOKEN') || getConfig('JWT_SECRET') || '').trim();
     },
-    // SECURITY: Max HTTP request body size in bytes (default 100MB)
+    // SECURITY: Max HTTP request body size in bytes (default 5GB — was
+    // 100MB, which cut off Pterodactyl file-manager uploads mid-transfer)
     get maxRequestBodySize() {
-      return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(100 * 1024 * 1024)), 10);
+      return parseInt(getConfig('MAX_REQUEST_BODY_SIZE', String(5 * 1024 * 1024 * 1024)), 10);
     },
     get requestTimeoutMs() {
-      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '300000'), 10);
+      // Was 300000 (5min) — a hung backend (no error, no refusal, just a dead
+      // socket) held every client request open for 5 minutes with no circuit
+      // breaker protection. 30s is enough for slow admin operations while
+      // failing fast on genuinely dead backends.
+      return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
     },
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
+    },
+    // Max sockets kept alive per backend (host:port) in the shared keep-alive agent
+    get maxSocketsPerBackend() {
+      return parseInt(getConfig('PROXY_MAX_SOCKETS_PER_BACKEND', '256'), 10);
+    },
+    // proxy_logs is a legacy/duplicate write of request_logs kept only for the
+    // real-time "live logs" WebSocket view. Disable it if that view isn't used
+    // to cut DB write volume in half on the proxy hot path.
+    get legacyProxyLogEnabled() {
+      return getConfig('PROXY_LEGACY_LOG_ENABLED', 'true') === 'true';
     },
     get badGatewayPage() {
       return {

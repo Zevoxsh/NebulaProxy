@@ -4,6 +4,7 @@ import { emailNotificationService } from './emailNotificationService.js';
 import { database } from './database.js';
 import { config } from '../config/config.js';
 import { logger } from '../utils/logger.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 /**
  * Retry Worker
@@ -63,6 +64,13 @@ class RetryWorker {
     if (this.isRunning) {
       return; // Skip if already processing
     }
+
+    // CLUSTER: queueService.dequeue() reads job IDs without an atomic claim
+    // step, so two workers polling concurrently could both pick up and
+    // reprocess the same job (e.g. a retried email sent twice). Restrict
+    // processing to the leader until the queue itself supports safe
+    // concurrent consumers.
+    if (!clusterCoordinator.isLeader()) return;
 
     this.isRunning = true;
 

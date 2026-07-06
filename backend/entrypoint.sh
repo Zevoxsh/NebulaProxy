@@ -79,7 +79,19 @@ echo "Configuration found. Starting proxy server..."
 echo "================================================"
 
 # ── Set Node.js memory limits ──────────────────────────────────────────────
-export NODE_OPTIONS="--max-old-space-size=2048"
+# With CLUSTER_ENABLED=true, cluster.fork() inherits this NODE_OPTIONS into
+# every worker — a per-process heap sized for a single process (2048M) would
+# let N workers try to use N x 2048M old-space against one shared container
+# memory limit. Split a fixed total budget across the worker count instead.
+TOTAL_HEAP_MB=1536
+WORKER_COUNT="${CLUSTER_WORKERS:-2}"
+if [ "${CLUSTER_ENABLED:-false}" = "true" ] && [ "$WORKER_COUNT" -gt 1 ] 2>/dev/null; then
+  PER_WORKER_MB=$((TOTAL_HEAP_MB / WORKER_COUNT))
+  export NODE_OPTIONS="--max-old-space-size=${PER_WORKER_MB}"
+  echo "Cluster mode: ${WORKER_COUNT} workers, ${PER_WORKER_MB}MB heap each (${TOTAL_HEAP_MB}MB total budget)"
+else
+  export NODE_OPTIONS="--max-old-space-size=${TOTAL_HEAP_MB}"
+fi
 
 # ── Smoke tests (optional) ─────────────────────────────────────────────────
 if [ "${RUN_SMOKE_TESTS:-false}" = "true" ]; then

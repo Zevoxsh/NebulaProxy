@@ -1,6 +1,7 @@
 // @ts-check
 import { pool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 /**
  * Notification Manager
@@ -319,6 +320,8 @@ export const notificationManager = new NotificationManager();
 notificationManager.startAggregation();
 
 // Clean old tracking daily
+// CLUSTER: avoid every worker running the same DELETE scan redundantly.
 setInterval(() => {
+  if (!clusterCoordinator.isLeader()) return;
   notificationManager.cleanOldTracking();
 }, 24 * 60 * 60 * 1000);

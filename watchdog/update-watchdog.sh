@@ -55,16 +55,38 @@ while true; do
   echo "[$(date)] [WAIT] Waiting 10 seconds before rebuild..." | tee -a "$LOG_FILE"
   sleep 10
 
-  echo "[$(date)] [BUILD] Rebuilding backend and frontend..." | tee -a "$LOG_FILE"
+  # Building the image does NOT touch the currently running backend
+  # container — the old one keeps serving every proxied domain for the
+  # whole build. The actual outage window is only the container swap that
+  # `up -d` triggers next (stop old + start new + app boot), typically a
+  # few seconds to ~1 min depending on how many domains it has to bind.
+  echo "[$(date)] [BUILD] Rebuilding backend and frontend (old container keeps serving traffic)..." | tee -a "$LOG_FILE"
   docker compose -p nebulaproxy build backend frontend 2>&1 | tee -a "$LOG_FILE"
 
-  echo "[$(date)] [RESTART] Restarting services..." | tee -a "$LOG_FILE"
+  SWAP_START=$(date +%s)
+  echo "[$(date)] [RESTART] Swapping containers — outage window starts now..." | tee -a "$LOG_FILE"
   docker compose -p nebulaproxy up -d --no-deps backend frontend 2>&1 | tee -a "$LOG_FILE"
 
   NEW_COMMIT=$(git rev-parse HEAD 2>/dev/null)
 
-  echo "[$(date)] [WAIT] Waiting 30 s for backend to start..." | tee -a "$LOG_FILE"
-  sleep 30
+  # Poll the health endpoint instead of blind-sleeping 30s: reports back
+  # (and lets the queue move on) as soon as the backend is actually ready,
+  # instead of always waiting the full fixed delay.
+  echo "[$(date)] [WAIT] Polling backend health..." | tee -a "$LOG_FILE"
+  READY=0
+  for i in $(seq 1 60); do
+    if curl -sf -o /dev/null "http://backend:3000/health" 2>/dev/null; then
+      READY=1
+      break
+    fi
+    sleep 1
+  done
+  SWAP_END=$(date +%s)
+  if [ "$READY" = "1" ]; then
+    echo "[$(date)] [OK] Backend healthy again after $((SWAP_END - SWAP_START))s outage" | tee -a "$LOG_FILE"
+  else
+    echo "[$(date)] [WARNING] Backend still not healthy after 60s — check logs" | tee -a "$LOG_FILE"
+  fi
 
   # Signal success to backend via Redis instead of a flag file
   if [ -n "$NEW_COMMIT" ]; then

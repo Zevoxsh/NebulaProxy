@@ -16,6 +16,7 @@ import { certificateManager } from './certificateManager.js';
 import { sanitizeHostname } from '../utils/security.js';
 import configManager from '../config/config-manager.js';
 import { logger } from '../utils/logger.js';
+import { clusterCoordinator } from './clusterCoordinator.js';
 
 class AcmeManager {
   constructor() {
@@ -349,6 +350,10 @@ ${trimmedStderr}`);
 
     // Run daily at 3 AM
     this.renewalJob = cron.schedule('0 3 * * *', async () => {
+      // CLUSTER: with multiple workers this must run once cluster-wide —
+      // concurrent renewals race on the same cert files on disk and can
+      // trip Let's Encrypt rate limits.
+      if (!clusterCoordinator.isLeader()) return;
       logger.info('[AcmeManager] Running scheduled renewal check...');
       await this.renewExpiringSoon();
     });

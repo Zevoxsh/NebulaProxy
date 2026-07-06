@@ -126,10 +126,9 @@ class RedisService {
 
     try {
       const count = await this.client.incr(`ratelimit:${key}`);
-      if (count === 1) {
-        // First request, set expiration
-        await this.client.expire(`ratelimit:${key}`, ttl);
-      }
+      // NX avoids the race where a crash between INCR and EXPIRE leaves the
+      // key without a TTL (permanent rate-limit lock instead of a rolling one).
+      await this.client.expire(`ratelimit:${key}`, ttl, 'NX');
       return count;
     } catch (error) {
       logger.error('[Redis] Failed to increment rate limit:', error.message);
@@ -189,10 +188,8 @@ class RedisService {
 
       // Check and increment per-minute limit
       const minuteCount = await this.client.incr(minuteKey);
-      if (minuteCount === 1) {
-        // First request in this minute, set expiration to 60 seconds
-        await this.client.expire(minuteKey, 60);
-      }
+      // NX: avoid leaking a never-expiring key if a crash lands between INCR and EXPIRE
+      await this.client.expire(minuteKey, 60, 'NX');
 
       if (minuteCount > limitRpm) {
         const ttl = await this.client.ttl(minuteKey);
@@ -205,10 +202,8 @@ class RedisService {
 
       // Check and increment per-hour limit
       const hourCount = await this.client.incr(hourKey);
-      if (hourCount === 1) {
-        // First request in this hour, set expiration to 3600 seconds
-        await this.client.expire(hourKey, 3600);
-      }
+      // NX: avoid leaking a never-expiring key if a crash lands between INCR and EXPIRE
+      await this.client.expire(hourKey, 3600, 'NX');
 
       if (hourCount > limitRph) {
         const ttl = await this.client.ttl(hourKey);

@@ -7,6 +7,14 @@ import { websocketProxy } from '../../websocketProxy.js';
 
 export class WebSocketHandler {
 _handleWebSocketUpgrade(req, socket, head, isTls) {
+// STABILITY: the raw upgrade socket had no 'error' listener during the
+// async backend lookup below. If the client drops the connection in that
+// window, socket emits an unhandled 'error' — with no process-level
+// safety net either, that crashed the whole server for every domain.
+socket.on('error', (err) => {
+  logger.debug(`[ProxyManager] WebSocket upgrade socket error: ${err.message}`);
+});
+
 const hostname = this._extractHostname(req.headers.host);
 const domain = this._findDomainByHostname(hostname, 'http');
 

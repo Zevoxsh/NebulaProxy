@@ -54,8 +54,11 @@ class LoadBalancer {
       return null;
     }
 
-    // Filter active and healthy backends
-    const availableBackends = backends.filter(b => b.is_active !== false);
+    // Filter active and healthy backends, optionally excluding one that just
+    // failed (used for single-retry-on-connect-error in the HTTP proxy).
+    const availableBackends = backends.filter(b =>
+      b.is_active !== false && (opts.excludeBackendId == null || b.id !== opts.excludeBackendId)
+    );
 
     if (availableBackends.length === 0) {
       return null;

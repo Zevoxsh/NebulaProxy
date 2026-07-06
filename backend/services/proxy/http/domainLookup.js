@@ -8,7 +8,13 @@ _findDomainByHostname(hostname, proxyType = null) {
 const normalizedHostname = this._normalizeHostname(hostname);
 if (!normalizedHostname) return null;
 
-logger.info(`[ProxyManager] lookup hostname=${hostname || ''} normalized=${normalizedHostname} proxyType=${proxyType || 'any'} cacheSize=${this.domainCache.size} proxyCount=${this.proxies.size}`);
+// PERF: this runs on every single proxied request (cache hits included).
+// Gate string construction behind isLevelEnabled so prod (LOG_LEVEL=warn)
+// never pays for the template literals below.
+const debugEnabled = logger.isLevelEnabled('debug');
+if (debugEnabled) {
+  logger.debug(`[ProxyManager] lookup hostname=${hostname || ''} normalized=${normalizedHostname} proxyType=${proxyType || 'any'} cacheSize=${this.domainCache.size} proxyCount=${this.proxies.size}`);
+}
 
 // Cache key includes type when specified so HTTP and Minecraft
 // domains with the same hostname don't collide in cache.
@@ -17,7 +23,9 @@ const cacheKey = proxyType ? `${proxyType}:${normalizedHostname}` : normalizedHo
 // Check cache first
 const cached = this.domainCache.get(cacheKey);
 if (cached && Date.now() - cached.timestamp < this.DOMAIN_CACHE_TTL) {
-  logger.info(`[ProxyManager] lookup cache hit key=${cacheKey} domainId=${cached.domain?.id || 'n/a'} hostname=${cached.domain?.hostname || 'n/a'}`);
+  if (debugEnabled) {
+    logger.debug(`[ProxyManager] lookup cache hit key=${cacheKey} domainId=${cached.domain?.id || 'n/a'} hostname=${cached.domain?.hostname || 'n/a'}`);
+  }
   return cached.domain;
 }
 
@@ -28,10 +36,14 @@ for (const [domainId, entry] of this.proxies) {
     ? entry.type === proxyType
     : (entry.type === 'http' || entry.type === 'minecraft');
   const entryHostname = this._normalizeHostname(entry?.meta?.hostname);
-  logger.info(`[ProxyManager] lookup candidate id=${domainId} type=${entry?.type || 'n/a'} stored=${entryHostname || '-'} requested=${normalizedHostname} typeMatch=${typeMatch ? 'yes' : 'no'}`);
+  if (debugEnabled) {
+    logger.debug(`[ProxyManager] lookup candidate id=${domainId} type=${entry?.type || 'n/a'} stored=${entryHostname || '-'} requested=${normalizedHostname} typeMatch=${typeMatch ? 'yes' : 'no'}`);
+  }
   if (typeMatch && this._matchesHostname(entryHostname, normalizedHostname)) {
     found = entry.meta;
-    logger.info(`[ProxyManager] lookup matched id=${domainId} stored=${entry.meta?.hostname || '-'} requested=${normalizedHostname}`);
+    if (debugEnabled) {
+      logger.debug(`[ProxyManager] lookup matched id=${domainId} stored=${entry.meta?.hostname || '-'} requested=${normalizedHostname}`);
+    }
     break;
   }
 }

@@ -178,6 +178,11 @@ services:
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - LOG_LEVEL=warn
       - LOG_RETENTION_DAYS=3
+      # Cluster mode: run 2 worker processes so the 2 CPUs granted below are
+      # actually used (previously a single Node process regardless of the
+      # cpus limit). See backend/cluster.js and clusterCoordinator.js.
+      - CLUSTER_ENABLED=true
+      - CLUSTER_WORKERS=2
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 15s
@@ -201,7 +206,11 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: 1024M
+          # Bumped from 1024M: 2 worker processes now each run a full Node
+          # heap (see entrypoint.sh's NODE_OPTIONS split). 1024M was already
+          # tight for a single process given --max-old-space-size alone
+          # could reach 2048M; 2048M gives both workers real headroom.
+          memory: 2048M
         reservations:
           cpus: '0.2'
           memory: 256M
@@ -264,6 +273,8 @@ services:
       - REDIS_PORT=6379
       - DOCKER_HOST=tcp://socket-proxy-rw:2375
       - COMPOSE_PROJECT_NAME=nebulaproxy
+    extra_hosts:
+      - "backend:host-gateway"   # resout 'backend' vers l'hote (backend en network_mode host) pour le health-poll post-update
     healthcheck:
       test: ["CMD-SHELL", "find /tmp/watchdog.heartbeat -mmin -2 | grep -q ."]
       interval: 30s
@@ -277,6 +288,37 @@ services:
         condition: service_started
     networks:
       - nebula-net
+
+  # ── Autoheal ───────────────────────────────────────────────────────────────
+  # Restarts any container Docker marks "unhealthy". `restart: unless-stopped`
+  # alone only reacts to a container actually exiting — not to a healthcheck
+  # failing while the process is still alive (stuck event loop, exhausted
+  # pool, etc.), which previously meant a degraded backend could stay
+  # unhealthy — and every proxied domain unreachable — until someone noticed
+  # and restarted it manually.
+  autoheal:
+    build:
+      context: ./autoheal
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-autoheal
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    environment:
+      - DOCKER_API_HOST=socket-proxy-rw:2375
+      - AUTOHEAL_INTERVAL=15
+    depends_on:
+      socket-proxy-rw:
+        condition: service_started
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 32M
 
 volumes:
   redis-data:
