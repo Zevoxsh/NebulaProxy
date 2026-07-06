@@ -194,7 +194,12 @@ services:
       interval: 8s
       timeout: 5s
       retries: 3
-      start_period: 40s
+      # Bumped from 40s: with 2 workers, one can legitimately take longer
+      # than the other to reach its first cluster heartbeat write (DB
+      # migrations, S3 cleanup, etc. aren't perfectly synchronized between
+      # them) — a real autoheal restart was triggered by this exact race,
+      # not an actual problem. More headroom before failures start counting.
+      start_period: 75s
     depends_on:
       redis:
         condition: service_healthy

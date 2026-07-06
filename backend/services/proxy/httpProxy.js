@@ -54,7 +54,12 @@ async _startHttpProxy(domain) {
 
         const hostname = this._extractHostname(req.headers.host);
         const normalizedHostname = this._normalizeHostname(hostname);
-        logger.info(`[HTTP Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
+        // PERF: runs on every single request. Was logger.info() unconditionally
+        // — the template string was built even though LOG_LEVEL=warn drops it,
+        // same class of hot-path cost fixed elsewhere in domainLookup.js.
+        if (logger.isLevelEnabled('debug')) {
+          logger.debug(`[HTTP Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
+        }
         if (this._shouldHandleRedirection(hostname) && this._handlePublicRedirection(req, res)) {
           return;
         }
@@ -68,10 +73,18 @@ async _startHttpProxy(domain) {
       // Find domain in proxies
       const domain = this._findDomainByHostname(hostname, 'http');
       if (!domain) {
+        // NOISE: any bot/scanner hitting the raw IP or a bogus subdomain used
+        // to dump every single registered domain into the logs at `warn`
+        // (always visible) on every single request — a public proxy gets
+        // scanned constantly, so this could flood real logs indefinitely.
+        // The single summary line stays at warn (useful for legit routing
+        // issues); the full per-domain dump is now debug-only.
         logger.warn(`[HTTP Server] Domain not found for hostname: ${hostname} normalized=${normalizedHostname || '-'} registered=${this.proxies.size}`);
-        for (const [id, entry] of this.proxies) {
-          if (entry?.type === 'http') {
-            logger.warn(`[HTTP Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+        if (logger.isLevelEnabled('debug')) {
+          for (const [id, entry] of this.proxies) {
+            if (entry?.type === 'http') {
+              logger.debug(`[HTTP Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+            }
           }
         }
         if ((req.headers.accept || '').includes('text/html')) {
@@ -153,7 +166,9 @@ async _startHttpProxy(domain) {
 
         const hostname = this._extractHostname(req.headers.host);
         const normalizedHostname = this._normalizeHostname(hostname);
-        logger.info(`[HTTPS Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
+        if (logger.isLevelEnabled('debug')) {
+          logger.debug(`[HTTPS Server] request method=${req.method || ''} host=${req.headers.host || ''} hostname=${hostname || '-'} normalized=${normalizedHostname || '-'} url=${req.url || ''}`);
+        }
         if (this._shouldHandleRedirection(hostname) && this._handlePublicRedirection(req, res)) {
           return;
         }
@@ -162,9 +177,11 @@ async _startHttpProxy(domain) {
       const domain = this._findDomainByHostname(hostname, 'http');
       if (!domain) {
         logger.warn(`[HTTPS Server] Domain not found for hostname: ${hostname} normalized=${normalizedHostname || '-'} registered=${this.proxies.size}`);
-        for (const [id, entry] of this.proxies) {
-          if (entry?.type === 'http') {
-            logger.warn(`[HTTPS Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+        if (logger.isLevelEnabled('debug')) {
+          for (const [id, entry] of this.proxies) {
+            if (entry?.type === 'http') {
+              logger.debug(`[HTTPS Server] candidate id=${id} stored=${entry?.meta?.hostname || '-'} active=${entry?.meta?.is_active ? 'yes' : 'no'} ssl=${entry?.meta?.ssl_enabled ? 'on' : 'off'}`);
+            }
           }
         }
         if ((req.headers.accept || '').includes('text/html')) {

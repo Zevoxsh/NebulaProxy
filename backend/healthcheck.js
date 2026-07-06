@@ -45,7 +45,7 @@ function readRedisPassword() {
 }
 
 async function checkClusterWorkers() {
-  if ((process.env.CLUSTER_ENABLED || 'false') !== 'true') return true;
+  if ((process.env.CLUSTER_ENABLED || 'false') !== 'true') return { ok: true, detail: 'cluster disabled' };
 
   const expectedWorkers = parseInt(process.env.CLUSTER_WORKERS || '2', 10);
   const redis = new Redis({
@@ -60,15 +60,21 @@ async function checkClusterWorkers() {
   try {
     await redis.connect();
     const keys = await redis.keys(`${HEARTBEAT_PREFIX}*`);
-    return keys.length >= expectedWorkers;
-  } catch {
+    return { ok: keys.length >= expectedWorkers, detail: `${keys.length}/${expectedWorkers} worker heartbeats: ${keys.join(', ') || 'none'}` };
+  } catch (err) {
     // Redis itself has its own healthcheck/dependency chain — don't fail
     // this container's healthcheck over infra it doesn't own.
-    return true;
+    return { ok: true, detail: `redis unreachable, skipped: ${err.message}` };
   } finally {
     redis.disconnect();
   }
 }
 
-const [httpOk, workersOk] = await Promise.all([checkHttp(), checkClusterWorkers()]);
-process.exit(httpOk && workersOk ? 0 : 1);
+// Docker's `docker inspect` keeps the last few HEALTHCHECK CMD stdout
+// outputs — printing a reason here is the only way to see, after the fact,
+// which of the two checks actually failed (previously exited silently,
+// so a false-positive restart left zero trace of why).
+const [httpOk, workers] = await Promise.all([checkHttp(), checkClusterWorkers()]);
+const ok = httpOk && workers.ok;
+console.log(`${ok ? 'OK' : 'FAIL'} http=${httpOk} workers=${workers.ok} (${workers.detail})`);
+process.exit(ok ? 0 : 1);

@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import pino from 'pino';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import cors from '@fastify/cors';
@@ -51,6 +52,17 @@ await initializeConfig();
 const fastify = Fastify({
   logger: {
     level: config.logging.level,
+    // See utils/logger.js for why: pino only auto-serializes an Error under
+    // `err` by default — the 232+ `fastify.log.error({ error }, ...)` call
+    // sites across this codebase (including gracefulShutdown's own catch
+    // block) were silently logging `"error":{}` instead of the actual
+    // message/stack. This is a SEPARATE pino instance from utils/logger.js
+    // (Fastify builds its own from this options object), so it needs the
+    // same fix independently.
+    serializers: {
+      err: pino.stdSerializers.err,
+      error: pino.stdSerializers.err
+    },
     ...(config.nodeEnv !== 'production' && {
       transport: {
         target: 'pino-pretty',
