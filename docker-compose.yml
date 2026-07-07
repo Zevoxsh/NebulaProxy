@@ -178,11 +178,10 @@ services:
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - LOG_LEVEL=warn
       - LOG_RETENTION_DAYS=3
-      # Cluster mode: run 2 worker processes so the 2 CPUs granted below are
-      # actually used (previously a single Node process regardless of the
-      # cpus limit). See backend/cluster.js and clusterCoordinator.js.
+      # Cluster mode: keep a single worker to reduce CPU pressure. See
+      # backend/cluster.js and clusterCoordinator.js.
       - CLUSTER_ENABLED=true
-      - CLUSTER_WORKERS=2
+      - CLUSTER_WORKERS=1
     healthcheck:
       # Was `wget /health` alone — with CLUSTER_ENABLED, that can land on
       # either worker (shared port, SCHED_NONE) and pass even if the other
