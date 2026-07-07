@@ -63,8 +63,13 @@ export const dbConfig = {
       password,
 
       // Pool settings
-      max: parseInt(process.env.DB_POOL_MAX || '50', 10),
-      min: parseInt(process.env.DB_POOL_MIN || '10', 10), // Increased from 5 to 10 for better startup latency
+      // NOTE: with CLUSTER_ENABLED, every worker opens its own pool, so total
+      // connections can reach CLUSTER_WORKERS * max. Postgres' default
+      // max_connections is 100 — keep this comfortably under that per worker
+      // (was 50, which alone hit the ceiling with just 2 workers and left no
+      // room for anything else, causing connection timeouts under load).
+      max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+      min: parseInt(process.env.DB_POOL_MIN || '5', 10),
       idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
       connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
 

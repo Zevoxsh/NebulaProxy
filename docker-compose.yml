@@ -126,9 +126,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          # Bumped from 512M: too tight for 70+ domains worth of health-check
+          # writes, log batching, and general query activity — Postgres was
+          # stalling under load, causing connection timeouts that cascaded
+          # into DB write failures and eventually took the backend down.
+          memory: 768M
         reservations:
-          memory: 128M
+          memory: 192M
 
   # ── Backend ────────────────────────────────────────────────────────────────
   # SECURITY NOTE: network_mode: host is required because the proxy must bind
@@ -216,11 +220,11 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          # Bumped from 1024M: 2 worker processes now each run a full Node
-          # heap (see entrypoint.sh's NODE_OPTIONS split). 1024M was already
-          # tight for a single process given --max-old-space-size alone
-          # could reach 2048M; 2048M gives both workers real headroom.
-          memory: 2048M
+          # CLUSTER_ENABLED=false below — single worker process, so this only
+          # needs to cover one Node heap. Dialed back from 2048M (sized for
+          # 2 cluster workers, which isn't what actually runs here) to free
+          # up headroom for Postgres on a memory-constrained 4GB host.
+          memory: 1280M
         reservations:
           cpus: '0.2'
           memory: 256M
@@ -298,6 +302,12 @@ services:
         condition: service_started
     networks:
       - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
 
   # ── Autoheal ───────────────────────────────────────────────────────────────
   # Restarts any container Docker marks "unhealthy". `restart: unless-stopped`
