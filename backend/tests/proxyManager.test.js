@@ -26,14 +26,13 @@ describe('ProxyManager hostname matching', () => {
     expect(proxyManager._findDomainByHostname('example.com.', 'http')?.id).toBe(1);
   });
 
-  it('matches single-level wildcard hostnames only for subdomains', () => {
+  it('does not match subdomains of a registered hostname', () => {
     proxyManager.proxies.set(1, {
       type: 'http',
-      meta: { id: 1, hostname: '*.example.com' }
+      meta: { id: 1, hostname: 'example.com' }
     });
 
-    expect(proxyManager._findDomainByHostname('app.example.com', 'http')?.id).toBe(1);
-    expect(proxyManager._findDomainByHostname('deep.app.example.com', 'http')).toBeNull();
-    expect(proxyManager._findDomainByHostname('example.com', 'http')).toBeNull();
+    expect(proxyManager._findDomainByHostname('app.example.com', 'http')).toBeNull();
+    expect(proxyManager._findDomainByHostname('other.com', 'http')).toBeNull();
   });
 });

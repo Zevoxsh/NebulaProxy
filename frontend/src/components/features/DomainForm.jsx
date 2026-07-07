@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info, Star } from 'lucide-react';
+import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { domainAPI, wildcardCertAPI } from '../../api/client';
+import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
 
 const LB_ALGORITHMS = [
@@ -82,45 +82,6 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   });
   const [error, setError] = useState('');
   const [_loadingBackends, setLoadingBackends] = useState(false);
-  const [availableWildcards, setAvailableWildcards] = useState([]);
-  const [matchingWildcard, setMatchingWildcard] = useState(null);
-
-  // Fetch wildcard certs once on mount
-  useEffect(() => {
-    wildcardCertAPI.getAll().then(res => {
-      const all = res.data?.wildcards || [];
-      console.log('[Wildcard] fetched:', all.length, 'certs', all.map(w => `${w.hostname}(has_cert=${w.has_cert})`));
-      // has_cert may be true/1/undefined depending on server version — exclude only explicit false/0
-      setAvailableWildcards(all.filter(w => w.has_cert !== false && w.has_cert !== 0));
-    }).catch(err => {
-      console.error('[Wildcard] Failed to fetch wildcard certs:', err?.response?.status, err?.response?.data || err?.message);
-    });
-  }, []);
-
-  // When hostname changes, check if a wildcard covers it
-  useEffect(() => {
-    const hostname = formData.hostname.trim().toLowerCase();
-    if (!hostname || hostname.startsWith('*.') || availableWildcards.length === 0) {
-      setMatchingWildcard(null);
-      return;
-    }
-    const parts = hostname.split('.');
-    let found = null;
-    for (let i = 1; i < parts.length - 1 && !found; i++) {
-      const candidate = '*.' + parts.slice(i).join('.');
-      found = availableWildcards.find(w => w.hostname.trim() === candidate) || null;
-    }
-    setMatchingWildcard(found);
-    console.debug('[Wildcard] hostname:', hostname, 'match:', found?.hostname ?? 'none', 'available:', availableWildcards.map(w => w.hostname));
-    // Auto-select wildcard option when a match is found and no method was manually chosen yet
-    if (found && formData.challengeType === 'http-01') {
-      setFormData(prev => ({ ...prev, challengeType: 'wildcard' }));
-    }
-    // Revert to http-01 if wildcard disappears
-    if (!found && formData.challengeType === 'wildcard') {
-      setFormData(prev => ({ ...prev, challengeType: 'http-01' }));
-    }
-  }, [formData.hostname, availableWildcards]);
 
   useEffect(() => {
     if (domain) {
@@ -214,17 +175,6 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     }
   };
 
-  // Auto-detect wildcard domains and force DNS-01 (HTTP only)
-  useEffect(() => {
-    if (formData.proxyType !== 'http') return;
-    if (formData.hostname.startsWith('*.') && formData.sslEnabled) {
-      setFormData(prev => ({
-        ...prev,
-        challengeType: 'dns-01'
-      }));
-    }
-  }, [formData.hostname, formData.sslEnabled, formData.proxyType]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -277,10 +227,8 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
 
     // Validate hostname for HTTP only (TCP/UDP can be any identifier)
     if (formData.proxyType === 'http') {
-      const wildcardRegex = /^\*\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-
-      if (!hostnameRegex.test(formData.hostname) && !wildcardRegex.test(formData.hostname)) {
-        setError('Invalid hostname format (e.g., example.com or *.example.com)');
+      if (!hostnameRegex.test(formData.hostname)) {
+        setError('Invalid hostname format (e.g., example.com)');
         return;
       }
     }
@@ -510,15 +458,10 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               name="hostname"
               value={formData.hostname}
               onChange={handleChange}
-              placeholder="example.com or *.example.com"
+              placeholder="example.com"
               disabled={isLoading}
               className="input-futuristic"
             />
-            {formData.proxyType === 'http' && (
-              <p className="text-xs text-white/40 mt-1">
-                Supports wildcard domains (e.g., *.example.com)
-              </p>
-            )}
             {formData.proxyType === 'minecraft' && formData.minecraftEdition === 'java' && (
               <p className="text-xs text-white/40 mt-1">Hostname auquel les joueurs Java se connectent (ex : mc.example.com)</p>
             )}
@@ -761,18 +704,15 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                 <div className="mb-3">
                   <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
                     Certificate Method
-                    <Hint text="How NebulaProxy will obtain your SSL certificate from Let's Encrypt. HTTP-01 is automatic and works for most domains. DNS-01 is required for wildcard domains (*.example.com) and needs manual DNS configuration. Custom lets you upload an existing certificate." />
+                    <Hint text="How NebulaProxy will obtain your SSL certificate from Let's Encrypt. HTTP-01 is automatic and works for most domains. DNS-01 needs manual DNS configuration. Custom lets you upload an existing certificate." />
                   </label>
-                  <div className={`grid gap-2 ${matchingWildcard ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                  <div className="grid gap-2 grid-cols-3">
                     <button
                       type="button"
-                      onClick={() => !formData.hostname.startsWith('*.') && setFormData(prev => ({ ...prev, challengeType: 'http-01' }))}
-                      disabled={formData.hostname.startsWith('*.')}
+                      onClick={() => setFormData(prev => ({ ...prev, challengeType: 'http-01' }))}
                       className={`flex flex-col items-start gap-1 p-3 rounded-lg border transition-all ${
                         formData.challengeType === 'http-01'
                           ? 'bg-[#10B981]/10 border-[#10B981]/30'
-                          : formData.hostname.startsWith('*.')
-                          ? 'bg-white/[0.02] border-white/[0.05] opacity-40 cursor-not-allowed'
                           : 'bg-white/[0.03] border-white/[0.08] hover:border-[#10B981]/30'
                       }`}
                     >
@@ -803,34 +743,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                       <span className="text-xs font-medium text-white">Custom</span>
                       <span className="text-xs text-white/50">Upload your own cert</span>
                     </button>
-                    {matchingWildcard && (
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, challengeType: 'wildcard' }))}
-                        className={`flex flex-col items-start gap-1 p-3 rounded-lg border transition-all col-span-2 sm:col-span-1 ${
-                          formData.challengeType === 'wildcard'
-                            ? 'bg-[#F59E0B]/10 border-[#F59E0B]/40'
-                            : 'bg-white/[0.03] border-white/[0.08] hover:border-[#F59E0B]/40'
-                        }`}
-                      >
-                        <span className="text-xs font-medium text-white flex items-center gap-1.5">
-                          <Star className="w-3 h-3 text-[#F59E0B]" strokeWidth={1.5} />
-                          Wildcard existant
-                        </span>
-                        <span className="text-xs text-[#F59E0B]/70">{matchingWildcard.hostname}</span>
-                      </button>
-                    )}
                   </div>
 
-                  {formData.hostname.startsWith('*.') && (
-                    <div className="mt-2 p-2.5 rounded-lg bg-[#06B6D4]/10 border border-[#06B6D4]/20">
-                      <p className="text-xs text-[#22D3EE] leading-relaxed">
-                        <strong className="text-white">Wildcard domain detected:</strong> DNS-01 challenge required for *.{formData.hostname.replace('*.', '')}
-                      </p>
-                    </div>
-                  )}
-
-                  {formData.challengeType === 'dns-01' && !formData.hostname.startsWith('*.') && (
+                  {formData.challengeType === 'dns-01' && (
                     <div className="mt-2 p-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
                       <p className="text-xs text-white/70 leading-relaxed">
                         DNS-01 requires manual DNS TXT record creation. You&apos;ll receive instructions after domain creation.
@@ -850,17 +765,6 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                     <div className="mt-2 p-2.5 rounded-lg bg-[#9D4EDD]/10 border border-[#9D4EDD]/20">
                       <p className="text-xs text-white/70 leading-relaxed">
                         Upload your own SSL certificate and private key in PEM format.
-                      </p>
-                    </div>
-                  )}
-
-                  {formData.challengeType === 'wildcard' && matchingWildcard && (
-                    <div className="mt-2 p-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
-                      <p className="text-xs text-white/70 leading-relaxed">
-                        Le certificat wildcard <span className="text-[#F59E0B] font-medium">{matchingWildcard.hostname}</span> couvre ce domaine — aucune action supplémentaire requise.
-                        {matchingWildcard.cert_type === 'self-signed' && (
-                          <span className="block mt-1 text-[#F59E0B]/70">⚠ Ce wildcard est auto-signé (non approuvé par les navigateurs).</span>
-                        )}
                       </p>
                     </div>
                   )}

@@ -116,24 +116,6 @@ export async function canModifyDomain(domain, userId) {
 // ── Domain creation input validation ────────────────────────────────────────
 
 /**
- * Validates the body of a domain creation/update request.
- * Returns { error, message } on failure, or null on success.
- */
-export function validateDomainHostname(hostname, proxyType, sslEnabled, challengeType) {
-  const isWildcard = hostname.startsWith('*.');
-  if (proxyType === 'http' && isWildcard) {
-    const wildcardRegex = /^\*\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-    if (!wildcardRegex.test(hostname)) {
-      return { error: 'Invalid wildcard domain', message: 'Wildcard must be in format: *.example.com' };
-    }
-    if (sslEnabled && challengeType !== 'dns-01') {
-      return { error: 'Invalid configuration', message: 'Wildcard domains require DNS-01 ACME challenge.' };
-    }
-  }
-  return null;
-}
-
-/**
  * Validates external port assignment for TCP/UDP proxy types.
  * Returns { error, message } on failure, or null on success.
  */

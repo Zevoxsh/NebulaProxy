@@ -555,7 +555,7 @@ export async function adminUserRoutes(fastify, _options) {
         teamId
       } = request.body;
 
-      let challengeType = request.body.challengeType ?? request.body.acmeChallengeType;
+      const challengeType = request.body.challengeType ?? request.body.acmeChallengeType;
 
       const domain = await database.getDomainById(domainId);
       if (!domain) {
@@ -566,27 +566,11 @@ export async function adminUserRoutes(fastify, _options) {
       }
 
       const nextProxyType = proxyType || domain.proxy_type || 'http';
-      const nextSslEnabled = nextProxyType === 'http'
-        ? (sslEnabled !== undefined && sslEnabled !== null ? sslEnabled : domain.ssl_enabled)
-        : false;
-      const nextHostname = hostname || domain.hostname;
-      const effectiveChallengeType = challengeType || domain.acme_challenge_type;
 
       if (nextProxyType === 'http') {
-        const wildcardRegex = /^\*\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
         const hostnameRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
-        if (nextHostname.startsWith('*.')) {
-          if (!wildcardRegex.test(nextHostname)) {
-            return reply.code(400).send({
-              error: 'Invalid hostname',
-              message: 'Wildcard must be in format: *.example.com'
-            });
-          }
-          if (nextSslEnabled && effectiveChallengeType !== 'dns-01') {
-            challengeType = 'dns-01';
-          }
-        } else if (hostname && !hostnameRegex.test(hostname)) {
+        if (hostname && !hostnameRegex.test(hostname)) {
           return reply.code(400).send({
             error: 'Invalid hostname',
             message: 'Hostname must be a valid DNS name'

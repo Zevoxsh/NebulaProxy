@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Plus, Upload, RefreshCw, Calendar, CheckCircle, AlertTriangle, XCircle, Search, Trash2, Star } from 'lucide-react';
-import { sslAPI, wildcardCertAPI } from '../api/client';
+import { Shield, Upload, RefreshCw, Calendar, CheckCircle, AlertTriangle, XCircle, Search } from 'lucide-react';
+import { sslAPI } from '../api/client';
 import { Combobox } from '../components/ui/combobox';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { Switch } from '@/components/ui/switch';
@@ -34,18 +34,6 @@ export default function SSLCertificates() {
   const [dnsError, setDnsError] = useState(null);
   const [selectedDomainForDNS, setSelectedDomainForDNS] = useState(null);
 
-  // Wildcard Certificate States
-  const [wildcardCerts, setWildcardCerts] = useState([]);
-  const [loadingWildcards, setLoadingWildcards] = useState(true);
-  const [showWildcardGenerateModal, setShowWildcardGenerateModal] = useState(false);
-  const [showWildcardUploadModal, setShowWildcardUploadModal] = useState(false);
-  const [wildcardGenerating, setWildcardGenerating] = useState(false);
-  const [wildcardUploading, setWildcardUploading] = useState(false);
-  const [wildcardGenerateHostname, setWildcardGenerateHostname] = useState('');
-  const [wildcardUploadData, setWildcardUploadData] = useState({ hostname: '', fullchain: '', privateKey: '' });
-  const [wildcardError, setWildcardError] = useState(null);
-  const [deletingWildcardId, setDeletingWildcardId] = useState(null);
-
   // Fetch certificates and stats
   const fetchCertificates = async () => {
     try {
@@ -63,21 +51,8 @@ export default function SSLCertificates() {
     }
   };
 
-  const fetchWildcardCerts = async () => {
-    try {
-      setLoadingWildcards(true);
-      const res = await wildcardCertAPI.getAll();
-      setWildcardCerts(res.data.wildcards || []);
-    } catch (error) {
-      console.error('Error fetching wildcard certs:', error);
-    } finally {
-      setLoadingWildcards(false);
-    }
-  };
-
   useEffect(() => {
     fetchCertificates();
-    fetchWildcardCerts();
   }, []);
 
   const getDaysUntilExpiry = (expiresAt) => {
@@ -296,64 +271,6 @@ export default function SSLCertificates() {
     }
   };
 
-  // ===== WILDCARD CERT HANDLERS =====
-
-  const handleWildcardGenerate = async () => {
-    if (!wildcardGenerateHostname.startsWith('*.')) {
-      setWildcardError('Hostname must start with *. (e.g. *.example.com)');
-      return;
-    }
-    setWildcardGenerating(true);
-    setWildcardError(null);
-    try {
-      await wildcardCertAPI.generate(wildcardGenerateHostname);
-      await fetchWildcardCerts();
-      setShowWildcardGenerateModal(false);
-      setWildcardGenerateHostname('');
-    } catch (error) {
-      setWildcardError(error.response?.data?.error || 'Failed to generate wildcard certificate');
-    } finally {
-      setWildcardGenerating(false);
-    }
-  };
-
-  const handleWildcardUpload = async () => {
-    const { hostname, fullchain, privateKey } = wildcardUploadData;
-    if (!hostname.startsWith('*.')) {
-      setWildcardError('Hostname must start with *. (e.g. *.example.com)');
-      return;
-    }
-    if (!fullchain || !privateKey) {
-      setWildcardError('Full chain and private key are required');
-      return;
-    }
-    setWildcardUploading(true);
-    setWildcardError(null);
-    try {
-      await wildcardCertAPI.upload(hostname, fullchain, privateKey);
-      await fetchWildcardCerts();
-      setShowWildcardUploadModal(false);
-      setWildcardUploadData({ hostname: '', fullchain: '', privateKey: '' });
-    } catch (error) {
-      setWildcardError(error.response?.data?.error || 'Failed to upload wildcard certificate');
-    } finally {
-      setWildcardUploading(false);
-    }
-  };
-
-  const handleWildcardDelete = async (id) => {
-    if (!window.confirm('Delete this wildcard certificate? Domains covered by it will fall back to the Nebula default certificate.')) return;
-    setDeletingWildcardId(id);
-    try {
-      await wildcardCertAPI.delete(id);
-      await fetchWildcardCerts();
-    } catch (error) {
-      console.error('Error deleting wildcard cert:', error);
-    } finally {
-      setDeletingWildcardId(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -374,7 +291,7 @@ export default function SSLCertificates() {
             </div>
             <button
               onClick={() => setShowUploadModal(true)}
-              className="btn-primary flex items-center gap-2 text-xs px-4 py-2.5"
+              className="btn-primary flex items-center gap-2 text-xs px-4 py-2"
             >
               <Upload className="w-4 h-4" strokeWidth={1.5} />
               Upload
@@ -616,113 +533,6 @@ export default function SSLCertificates() {
           </div>
         </div>
 
-        {/* ===== WILDCARD SSL CERTIFICATES SECTION ===== */}
-        <div className="bg-white/[0.02] backdrop-blur-lg border border-white/[0.06] rounded-xl overflow-hidden mt-6 animate-fade-in" style={{ animationDelay: '0.55s' }}>
-          <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-[#C77DFF]/10 border border-[#C77DFF]/20 flex items-center justify-center">
-                <Star className="w-3.5 h-3.5 text-[#C77DFF]" strokeWidth={1.5} />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-white">Wildcard Certificates</p>
-                <p className="text-[10px] text-white/40 font-light">*.example.com — auto-covers all matching subdomains</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => { setWildcardError(null); setWildcardUploadData({ hostname: '', fullchain: '', privateKey: '' }); setShowWildcardUploadModal(true); }}
-                className="btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" strokeWidth={1.5} />
-                Upload
-              </button>
-              <button
-                onClick={() => { setWildcardError(null); setWildcardGenerateHostname(''); setShowWildcardGenerateModal(true); }}
-                className="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
-                Generate
-              </button>
-            </div>
-          </div>
-
-          {loadingWildcards ? (
-            <div className="px-4 py-6 text-center text-xs text-white/40">Loading wildcard certificates…</div>
-          ) : wildcardCerts.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <Star className="w-8 h-8 text-white/10 mx-auto mb-2" strokeWidth={1} />
-              <p className="text-xs text-white/40 font-light">No wildcard certificates yet.</p>
-              <p className="text-[10px] text-white/30 mt-1">Generate a self-signed wildcard or upload one from Let's Encrypt to cover all subdomains automatically.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.04]">
-              {wildcardCerts.map((wc) => {
-                const expiresAt = wc.expires_at ? new Date(wc.expires_at) : null;
-                const daysLeft = expiresAt ? Math.ceil((expiresAt - Date.now()) / 86400000) : null;
-                const isExpired = daysLeft !== null && daysLeft <= 0;
-                const isExpiringSoon = daysLeft !== null && daysLeft > 0 && daysLeft <= 30;
-
-                return (
-                  <div key={wc.id} className="px-4 py-3 flex items-center gap-4 group hover:bg-white/[0.02] transition-colors duration-200">
-                    <div className="w-7 h-7 rounded-lg bg-[#C77DFF]/10 border border-[#C77DFF]/20 flex items-center justify-center flex-shrink-0">
-                      <Star className="w-3.5 h-3.5 text-[#C77DFF]" strokeWidth={1.5} />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-white font-mono truncate">{wc.hostname}</p>
-                      <p className="text-[10px] text-white/40 font-light">
-                        {wc.issuer} · {wc.cert_type === 'self-signed' ? 'Self-signed' : 'Manual'}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right hidden sm:block">
-                        {expiresAt ? (
-                          <>
-                            <p className={`text-xs font-light ${isExpired ? 'text-[#F87171]' : isExpiringSoon ? 'text-[#FBBF24]' : 'text-white/70'}`}>
-                              {expiresAt.toLocaleDateString()}
-                            </p>
-                            <p className="text-[10px] text-white/40">
-                              {isExpired ? `Exp. ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-white/40">—</p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {isExpired ? (
-                          <span className="badge-error">Expired</span>
-                        ) : isExpiringSoon ? (
-                          <span className="badge-warning">Expiring</span>
-                        ) : (
-                          <span className="badge-success">Active</span>
-                        )}
-                      </div>
-
-                      <span className="text-[10px] text-white/40 whitespace-nowrap hidden md:inline">
-                        {wc.coveredDomainsCount} {wc.coveredDomainsCount === 1 ? 'domain' : 'domains'} covered
-                      </span>
-
-                      <button
-                        onClick={() => handleWildcardDelete(wc.id)}
-                        disabled={deletingWildcardId === wc.id}
-                        className="p-1.5 text-white/30 hover:text-[#F87171] hover:bg-[#EF4444]/10 rounded-lg transition-all duration-300 disabled:opacity-50"
-                        title="Delete wildcard certificate"
-                      >
-                        {deletingWildcardId === wc.id
-                          ? <RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
-                          : <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        }
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Upload Modal */}
@@ -828,146 +638,6 @@ export default function SSLCertificates() {
                       <Upload className="w-3.5 h-3.5" strokeWidth={1.5} />
                       Upload
                     </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Wildcard Generate Modal */}
-      {showWildcardGenerateModal && (
-        <div className="fixed inset-0 bg-[#0B0C0F]/80 backdrop-blur-2xl flex items-center justify-center z-50 p-4"
-          onClick={() => { setShowWildcardGenerateModal(false); setWildcardError(null); }}>
-          <div className="card-modal max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2.5 mb-1">
-              <Star className="w-4 h-4 text-[#C77DFF]" strokeWidth={1.5} />
-              <h2 className="text-base font-light text-white">Generate Wildcard Certificate</h2>
-            </div>
-            <p className="text-xs text-white/50 mb-4">Creates a self-signed wildcard cert that auto-covers all matching subdomains.</p>
-
-            {wildcardError && (
-              <div className="bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg p-3 mb-4">
-                <p className="text-xs text-[#F87171]">{wildcardError}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-white/60 uppercase tracking-[0.15em] mb-2">
-                  Wildcard Hostname
-                </label>
-                <input
-                  type="text"
-                  value={wildcardGenerateHostname}
-                  onChange={(e) => setWildcardGenerateHostname(e.target.value)}
-                  className="input-futuristic text-xs font-mono"
-                  placeholder="*.example.com"
-                />
-                <p className="text-[10px] text-white/30 mt-1.5">Must start with <span className="font-mono text-white/50">*.</span> — e.g. *.yourdomain.com</p>
-              </div>
-
-              <div className="bg-[#C77DFF]/10 border border-[#C77DFF]/20 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <Star className="w-3.5 h-3.5 text-[#C77DFF] flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-                  <p className="text-xs text-white/60 font-light leading-relaxed">
-                    The generated certificate is self-signed and will be automatically used as an SSL fallback for any subdomain matching the pattern. Browsers may show a warning — add it to your trusted certificates to avoid this.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2.5 pt-1">
-                <button
-                  onClick={() => { setShowWildcardGenerateModal(false); setWildcardError(null); }}
-                  className="btn-secondary flex-1 text-xs px-4 py-2.5"
-                  disabled={wildcardGenerating}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleWildcardGenerate}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 text-xs px-4 py-2.5"
-                  disabled={wildcardGenerating}
-                >
-                  {wildcardGenerating ? (
-                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />Generating…</>
-                  ) : (
-                    <><Star className="w-3.5 h-3.5" strokeWidth={1.5} />Generate</>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Wildcard Upload Modal */}
-      {showWildcardUploadModal && (
-        <div className="fixed inset-0 bg-[#0B0C0F]/80 backdrop-blur-2xl flex items-center justify-center z-50 p-4"
-          onClick={() => { setShowWildcardUploadModal(false); setWildcardError(null); }}>
-          <div className="card-modal max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2.5 mb-1">
-              <Star className="w-4 h-4 text-[#C77DFF]" strokeWidth={1.5} />
-              <h2 className="text-base font-light text-white">Upload Wildcard Certificate</h2>
-            </div>
-            <p className="text-xs text-white/50 mb-4">Upload a wildcard certificate from Let's Encrypt or another CA.</p>
-
-            {wildcardError && (
-              <div className="bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg p-3 mb-4">
-                <p className="text-xs text-[#F87171]">{wildcardError}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-white/60 uppercase tracking-[0.15em] mb-2">Wildcard Hostname</label>
-                <input
-                  type="text"
-                  value={wildcardUploadData.hostname}
-                  onChange={(e) => setWildcardUploadData({ ...wildcardUploadData, hostname: e.target.value })}
-                  className="input-futuristic text-xs font-mono"
-                  placeholder="*.example.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-white/60 uppercase tracking-[0.15em] mb-2">Full Chain (PEM)</label>
-                <textarea
-                  value={wildcardUploadData.fullchain}
-                  onChange={(e) => setWildcardUploadData({ ...wildcardUploadData, fullchain: e.target.value })}
-                  className="input-futuristic text-xs font-mono h-32 resize-none"
-                  placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-white/60 uppercase tracking-[0.15em] mb-2">Private Key (PEM)</label>
-                <textarea
-                  value={wildcardUploadData.privateKey}
-                  onChange={(e) => setWildcardUploadData({ ...wildcardUploadData, privateKey: e.target.value })}
-                  className="input-futuristic text-xs font-mono h-32 resize-none"
-                  placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
-                />
-              </div>
-
-              <div className="flex gap-2.5 pt-1">
-                <button
-                  onClick={() => { setShowWildcardUploadModal(false); setWildcardError(null); }}
-                  className="btn-secondary flex-1 text-xs px-4 py-2.5"
-                  disabled={wildcardUploading}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleWildcardUpload}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 text-xs px-4 py-2.5"
-                  disabled={wildcardUploading}
-                >
-                  {wildcardUploading ? (
-                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />Uploading…</>
-                  ) : (
-                    <><Upload className="w-3.5 h-3.5" strokeWidth={1.5} />Upload</>
                   )}
                 </button>
               </div>

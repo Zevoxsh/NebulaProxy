@@ -11,7 +11,7 @@ export { domainGroupAPI } from './domainGroupAPI';
 export { analyticsAPI } from './analyticsAPI';
 export { logsAPI } from './logsAPI';
 export { monitoringAPI } from './monitoringAPI';
-export { sslAPI, wildcardCertAPI } from './sslAPI';
+export { sslAPI } from './sslAPI';
 export { settingsAPI } from './settingsAPI';
 export { apiKeysAPI } from './apiKeysAPI';
 export { smtpProxyAPI } from './smtpProxyAPI';

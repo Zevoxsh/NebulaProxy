@@ -168,7 +168,7 @@ export default function Redirections() {
                 setFormData({ shortCode: '', targetUrl: '', description: '', teamId: null });
                 setShowForm(true);
               }}
-              className="btn-primary flex items-center justify-center gap-2 text-xs px-4 py-2.5"
+              className="btn-primary flex items-center justify-center gap-2 text-xs px-4 py-2"
             >
               <Plus className="w-4 h-4" strokeWidth={1.5} />
               New Redirection
@@ -178,7 +178,7 @@ export default function Redirections() {
           {/* Filters */}
           <div className="flex flex-col md:flex-row md:items-center gap-3 mt-4 animate-fade-in" style={{ animationDelay: '0.2s' }}>
             {/* Search */}
-            <div className="relative flex-1 max-w-md">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" strokeWidth={1.5} />
               <input
                 type="text"

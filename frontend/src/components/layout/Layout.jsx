@@ -200,7 +200,7 @@ export default function Layout() {
 
   const SidebarContent = ({ onNavigate }) => (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 p-4 border-b border-admin-border">
+      <div className="flex items-center gap-3 h-20 px-4 border-b border-admin-border">
         <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-admin-primary/10">
           <img src="/nebula.svg" alt={appName} className="w-5 h-5" />
         </div>
@@ -335,7 +335,7 @@ export default function Layout() {
             collapsed ? 'lg:ml-16 lg:w-[calc(100vw-4rem)]' : 'lg:ml-72 lg:w-[calc(100vw-18rem)]'
           )}
         >
-          <header className="sticky top-0 z-30 flex w-full items-center justify-between gap-4 px-6 py-4 border-b border-admin-border bg-admin-surface/95 backdrop-blur">
+          <header className="sticky top-0 z-30 flex w-full items-center justify-between gap-4 h-20 px-6 border-b border-admin-border bg-admin-surface/95 backdrop-blur">
             <div className="hidden md:flex items-center gap-2 text-sm min-w-0">
               {getBreadcrumbs().map((crumb, idx) => (
                 // Root "Client" crumb and the first path segment share the

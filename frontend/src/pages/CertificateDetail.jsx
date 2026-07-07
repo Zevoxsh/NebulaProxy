@@ -268,7 +268,7 @@ export default function CertificateDetail() {
                     <button
                       onClick={handleRenew}
                       disabled={renewing}
-                      className="btn-secondary flex items-center gap-2"
+                      className="btn-secondary flex items-center gap-2 text-xs px-4 py-2"
                     >
                       {renewing ? (
                         <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.5} />
@@ -278,7 +278,7 @@ export default function CertificateDetail() {
                       Renew
                     </button>
                   )}
-                  <button onClick={() => setShowUploadModal(true)} className="btn-primary flex items-center gap-2">
+                  <button onClick={() => setShowUploadModal(true)} className="btn-primary flex items-center gap-2 text-xs px-4 py-2">
                     <Upload className="w-4 h-4" strokeWidth={1.5} />
                     Upload New
                   </button>

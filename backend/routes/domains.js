@@ -176,7 +176,7 @@ export async function domainRoutes(fastify, _options) {
           },
           challengeType: {
             type: 'string',
-            enum: ['http-01', 'dns-01', 'wildcard']
+            enum: ['http-01', 'dns-01']
           },
           teamId: {
             type: 'integer',
@@ -196,51 +196,15 @@ export async function domainRoutes(fastify, _options) {
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
 
-      // Check for wildcard domain (HTTP only)
-      const isWildcard = hostname.startsWith('*.');
-      let challengeType = request.body.challengeType || 'http-01';
-
-      // Validate wildcard challenge type: a sub-domain using an existing wildcard cert
-      if (proxyType === 'http' && challengeType === 'wildcard' && sslEnabled) {
-        const coveringWildcard = await database.getWildcardCertForHostname(hostname);
-        if (!coveringWildcard) {
-          return reply.code(400).send({
-            error: 'No wildcard certificate found',
-            message: `No valid wildcard certificate covers ${hostname}. Generate or upload one first.`
-          });
-        }
-      }
+      const challengeType = request.body.challengeType || 'http-01';
 
       if (proxyType === 'http') {
-        if (isWildcard) {
-          // Validate wildcard format: *.example.com
-          const wildcardRegex = /^\*\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-          if (!wildcardRegex.test(hostname)) {
-            return reply.code(400).send({
-              error: 'Invalid wildcard domain',
-              message: 'Wildcard must be in format: *.example.com'
-            });
-          }
-
-          // Wildcard domains MUST use DNS-01 challenge
-          if (sslEnabled && challengeType !== 'dns-01') {
-            return reply.code(400).send({
-              error: 'Invalid configuration',
-              message: 'Wildcard domains require DNS-01 challenge type'
-            });
-          }
-
-          // Force DNS-01 for wildcard
-          challengeType = 'dns-01';
-        } else {
-          // Regular domain validation
-          const hostnameRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-          if (!hostnameRegex.test(hostname)) {
-            return reply.code(400).send({
-              error: 'Invalid hostname',
-              message: 'Hostname must be a valid DNS name (e.g., example.com or subdomain.example.com)'
-            });
-          }
+        const hostnameRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+        if (!hostnameRegex.test(hostname)) {
+          return reply.code(400).send({
+            error: 'Invalid hostname',
+            message: 'Hostname must be a valid DNS name (e.g., example.com or subdomain.example.com)'
+          });
         }
       }
 
@@ -351,7 +315,6 @@ export async function domainRoutes(fastify, _options) {
         externalPort: resolvedExternalPort,
         sslEnabled: sslEnabled || false,
         acmeChallengeType: challengeType,
-        isWildcard: isWildcard,
         minecraftEdition: proxyType === 'minecraft' ? minecraftEdition : undefined
       });
 
@@ -374,11 +337,6 @@ export async function domainRoutes(fastify, _options) {
 
 
       fastify.log.info({ username: request.user.username, hostname }, 'Domain created');
-
-      // Wildcard cert covers this domain immediately — mark SSL active right away
-      if (sslEnabled && challengeType === 'wildcard') {
-        await database.updateDomainSSLStatus(domain.id, 'active');
-      }
 
       // Start proxy if domain is active
       if (domain.is_active) {

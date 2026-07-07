@@ -362,11 +362,11 @@ export default function UrlBlockingRules() {
             </div>
             {selectedDomain && (
               <div className="flex gap-2">
-                <button onClick={() => setShowTestModal(true)} className="btn-secondary flex items-center gap-2 text-xs px-4">
+                <button onClick={() => setShowTestModal(true)} className="btn-secondary flex items-center gap-2 text-xs px-4 py-2">
                   <Play className="w-4 h-4" strokeWidth={1.5} />
                   Test Pattern
                 </button>
-                <button onClick={openCreateModal} className="btn-primary flex items-center gap-2">
+                <button onClick={openCreateModal} className="btn-primary flex items-center gap-2 text-xs px-4 py-2">
                   <Shield className="w-4 h-4" strokeWidth={1.5} />
                   Add Rule
                 </button>

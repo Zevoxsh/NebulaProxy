@@ -943,7 +943,7 @@ export default function Domains() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCreateGroupModal(true)}
-                className="btn-secondary flex items-center gap-2 text-xs px-4"
+                className="btn-secondary flex items-center gap-2 text-xs px-4 py-2"
               >
                 <Folder className="w-4 h-4" strokeWidth={1.5} />
                 Create Group
@@ -951,7 +951,7 @@ export default function Domains() {
               <button
                 onClick={() => setShowForm(true)}
                 disabled={!isUnlimited && quotaUsed >= quotaMax}
-                className="btn-primary flex items-center gap-2"
+                className="btn-primary flex items-center gap-2 text-xs px-4 py-2"
               >
                 <Plus className="w-4 h-4" strokeWidth={1.5} />
                 Add Domain

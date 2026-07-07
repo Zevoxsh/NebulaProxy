@@ -29,29 +29,10 @@ _normalizeHostname(hostname) {
 _matchesHostname(registeredHostname, requestedHostname) {
   if (!registeredHostname || !requestedHostname) return false;
 
-  // PERF: called once per candidate domain on every cache-miss lookup.
-  // Skip building diagnostic strings unless debug logging is on.
-  const debugEnabled = logger.isLevelEnabled('debug');
-
-  if (registeredHostname === requestedHostname) {
-    if (debugEnabled) logger.debug(`[ProxyManager] hostname exact match registered=${registeredHostname} requested=${requestedHostname}`);
-    return true;
+  const matched = registeredHostname === requestedHostname;
+  if (logger.isLevelEnabled('debug')) {
+    logger.debug(`[ProxyManager] hostname match registered=${registeredHostname} requested=${requestedHostname} match=${matched ? 'yes' : 'no'}`);
   }
-
-  if (!registeredHostname.startsWith('*.')) {
-    if (debugEnabled) logger.debug(`[ProxyManager] hostname no wildcard registered=${registeredHostname} requested=${requestedHostname}`);
-    return false;
-  }
-
-  const wildcardBase = registeredHostname.slice(2);
-  if (!wildcardBase || !requestedHostname.endsWith(`.${wildcardBase}`)) {
-    if (debugEnabled) logger.debug(`[ProxyManager] hostname wildcard base mismatch registered=${registeredHostname} requested=${requestedHostname}`);
-    return false;
-  }
-
-  const subdomainPart = requestedHostname.slice(0, -(wildcardBase.length + 1));
-  const matched = subdomainPart.length > 0 && !subdomainPart.includes('.');
-  if (debugEnabled) logger.debug(`[ProxyManager] hostname wildcard check registered=${registeredHostname} requested=${requestedHostname} subdomain=${subdomainPart || '-'} match=${matched ? 'yes' : 'no'}`);
   return matched;
 }
 

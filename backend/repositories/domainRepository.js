@@ -58,7 +58,7 @@ async createDomain(domainData) {
     userId, hostname, backendUrl, backendPort, description,
     proxyType = 'http', sslEnabled,
     externalPort: requestedExternalPort = null,
-    acmeChallengeType = 'http-01', isWildcard = false,
+    acmeChallengeType = 'http-01',
     minecraftEdition = 'java'
   } = domainData;
 
@@ -72,8 +72,8 @@ async createDomain(domainData) {
 
   const sslStatus = sslEnabled ? 'pending' : 'disabled';
   const result = await this.execute(`
-    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, ssl_enabled, ssl_status, acme_challenge_type, is_wildcard, minecraft_edition)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, ssl_enabled, ssl_status, acme_challenge_type, minecraft_edition)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING id
   `, [
     userId,
@@ -86,7 +86,6 @@ async createDomain(domainData) {
     sslEnabled ? true : false,
     sslStatus,
     acmeChallengeType,
-    isWildcard ? true : false,
     proxyType === 'minecraft' ? minecraftEdition : null
   ]);
   return this.getDomainById(result.rows[0].id);

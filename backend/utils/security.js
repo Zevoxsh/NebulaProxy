@@ -18,26 +18,17 @@ export function sanitizeHostname(hostname) {
     throw new Error('Invalid hostname: must be a non-empty string');
   }
 
-  // Only allow alphanumeric, dots, hyphens, and wildcards
+  // Only allow alphanumeric, dots, and hyphens
   // Prevents command injection like: "example.com && rm -rf /"
-  const hostnameRegex = /^[a-zA-Z0-9*.-]+$/;
+  const hostnameRegex = /^[a-zA-Z0-9.-]+$/;
 
   if (!hostnameRegex.test(hostname)) {
     throw new Error(`Invalid hostname format: ${hostname}`);
   }
 
-  // Additional validation for wildcard domains
-  if (hostname.startsWith('*.')) {
-    const wildcardRegex = /^\*\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-    if (!wildcardRegex.test(hostname)) {
-      throw new Error(`Invalid wildcard domain format: ${hostname}`);
-    }
-  } else {
-    // Regular hostname validation
-    const regularRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-    if (!regularRegex.test(hostname)) {
-      throw new Error(`Invalid hostname format: ${hostname}`);
-    }
+  const regularRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+  if (!regularRegex.test(hostname)) {
+    throw new Error(`Invalid hostname format: ${hostname}`);
   }
 
   return hostname;

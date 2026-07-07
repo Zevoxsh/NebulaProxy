@@ -9,7 +9,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import selfsigned from 'selfsigned';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +21,7 @@ class CertificateManager {
   }
 
   /**
-   * Charger un certificat depuis la BDD (exact match, puis wildcard fallback)
+   * Charger un certificat depuis la BDD (exact match uniquement)
    * @param {string} hostname - Nom de domaine
    * @returns {object|null} - {cert, key, ca} ou null
    */
@@ -35,7 +34,6 @@ class CertificateManager {
         return cached.data;
       }
 
-      // 1. Try exact domain match in domains table
       const cert = await database.getCertificateByHostname(hostname);
       if (cert && cert.fullchain && cert.privateKey) {
         const expiresAt = new Date(cert.expiresAt || this.parseCertificateMetadata(cert.fullchain).expiresAt);
@@ -46,15 +44,6 @@ class CertificateManager {
           return certData;
         }
         logger.info(`[CertManager] WARNING: Certificat expiré pour ${hostname}`);
-      }
-
-      // 2. Try wildcard fallback (*.example.com covers sub.example.com)
-      const wildcardCert = await database.getWildcardCertForHostname(hostname);
-      if (wildcardCert && wildcardCert.fullchain && wildcardCert.privateKey) {
-        const certData = { cert: wildcardCert.fullchain, key: wildcardCert.privateKey, ca: null };
-        this.certificateCache.set(hostname, { data: certData, timestamp: Date.now() });
-        logger.info(`[CertManager] ✓ Wildcard cert (${wildcardCert.wildcardHostname}) couvre ${hostname}`);
-        return certData;
       }
 
       logger.info(`[CertManager] ✗ Aucun certificat disponible pour: ${hostname}`);
@@ -177,95 +166,6 @@ class CertificateManager {
   invalidateCache(hostname) {
     this.certificateCache.delete(hostname);
     logger.info(`[CertManager] Cache invalidé pour: ${hostname}`);
-  }
-
-  /**
-   * Invalider toutes les entrées de cache pour les sous-domaines d'un wildcard
-   * @param {string} wildcardHostname - e.g. *.example.com
-   */
-  invalidateWildcardCacheEntries(wildcardHostname) {
-    const baseDomain = wildcardHostname.replace(/^\*\./, '');
-    for (const [key] of this.certificateCache) {
-      if (key === baseDomain || key.endsWith('.' + baseDomain)) {
-        this.certificateCache.delete(key);
-        logger.info(`[CertManager] Cache wildcard invalidé pour: ${key}`);
-      }
-    }
-  }
-
-  /**
-   * Générer un certificat wildcard auto-signé et le stocker en BDD
-   * @param {string} wildcardHostname - e.g. *.example.com
-   * @returns {object} - {fullchain, privateKey, issuer, issuedAt, expiresAt}
-   */
-  async generateWildcardCert(wildcardHostname) {
-    const baseDomain = wildcardHostname.replace(/^\*\./, '');
-
-    const attrs = [
-      { name: 'commonName', value: wildcardHostname },
-      { name: 'organizationName', value: 'NebulaProxy' }
-    ];
-
-    const pems = await selfsigned.generate(attrs, {
-      days: 825,
-      keySize: 2048,
-      algorithm: 'sha256',
-      extensions: [
-        {
-          name: 'subjectAltName',
-          altNames: [
-            { type: 2, value: wildcardHostname },
-            { type: 2, value: baseDomain }
-          ]
-        },
-        { name: 'basicConstraints', cA: false },
-        { name: 'keyUsage', digitalSignature: true, keyEncipherment: true },
-        { name: 'extKeyUsage', serverAuth: true }
-      ]
-    });
-
-    const { issuer: _issuer, issuedAt, expiresAt } = this.parseCertificateMetadata(pems.cert);
-    const resolvedIssuer = 'NebulaProxy Self-Signed';
-
-    await database.storeWildcardCert({
-      hostname: wildcardHostname,
-      fullchain: pems.cert,
-      privateKey: pems.private,
-      issuer: resolvedIssuer,
-      issuedAt,
-      expiresAt,
-      certType: 'self-signed',
-      autoApply: true
-    });
-
-    this.invalidateWildcardCacheEntries(wildcardHostname);
-    logger.info(`[CertManager] ✓ Wildcard cert auto-signé généré pour ${wildcardHostname}`);
-
-    return { fullchain: pems.cert, privateKey: pems.private, issuer: resolvedIssuer, issuedAt, expiresAt };
-  }
-
-  /**
-   * Stocker un certificat wildcard uploadé manuellement
-   * @param {string} wildcardHostname - e.g. *.example.com
-   * @param {string} fullchain - PEM
-   * @param {string} privateKey - PEM
-   */
-  async storeWildcardCertManually(wildcardHostname, fullchain, privateKey) {
-    const { issuer, issuedAt, expiresAt } = this.parseCertificateMetadata(fullchain);
-
-    await database.storeWildcardCert({
-      hostname: wildcardHostname,
-      fullchain,
-      privateKey,
-      issuer,
-      issuedAt,
-      expiresAt,
-      certType: 'manual',
-      autoApply: true
-    });
-
-    this.invalidateWildcardCacheEntries(wildcardHostname);
-    logger.info(`[CertManager] ✓ Wildcard cert manuel stocké pour ${wildcardHostname}`);
   }
 
   /**

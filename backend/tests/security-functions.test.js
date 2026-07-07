@@ -13,7 +13,12 @@ describe('Security Functions - Unit Tests', () => {
 
       expect(sanitizeHostname('example.com')).toBe('example.com');
       expect(sanitizeHostname('sub.example.com')).toBe('sub.example.com');
-      expect(sanitizeHostname('*.example.com')).toBe('*.example.com');
+    });
+
+    it('should reject wildcard hostnames', async () => {
+      const { sanitizeHostname } = await import('../utils/security.js');
+
+      expect(() => sanitizeHostname('*.example.com')).toThrow(/Invalid hostname/);
     });
 
     it('should reject malicious hostnames', async () => {
