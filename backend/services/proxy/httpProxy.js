@@ -4,7 +4,7 @@
 import http from 'http';
 import https from 'https';
 import { logger } from '../../utils/logger.js';
-import { logBatchQueue } from '../../logBatchQueue.js';
+import { logBatchQueue } from '../logBatchQueue.js';
 import { renderNotFoundPage } from './renderers.js';
 
 export class HttpProxy {
