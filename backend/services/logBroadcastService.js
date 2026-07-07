@@ -128,6 +128,7 @@ class LogBroadcastService {
           statusCode: logData.error ? 500 : 200,
           responseTime: logData.duration || 0,
           ipAddress: logData.client_ip || logData.clientIp,
+          country: logData.country || null,
           errorMessage: logData.error,
           bytesReceived: logData.bytes_received || logData.bytesReceived,
           bytesSent: logData.bytes_sent || logData.bytesSent,

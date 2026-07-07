@@ -4,6 +4,7 @@
  * Database-only batching for request_logs and proxy_logs.
  */
 import { database } from './database.js';
+import { geoIpService } from './geoIpService.js';
 import { logger } from '../utils/logger.js';
 
 class LogBatchQueue {
@@ -25,6 +26,18 @@ class LogBatchQueue {
     this._scheduleFlush();
   }
 
+  async _withCountry(logData) {
+    if (!logData || logData.country || !logData.ipAddress) return logData;
+
+    try {
+      const country = await geoIpService.getCountryCode(logData.ipAddress);
+      if (!country) return logData;
+      return { ...logData, country };
+    } catch (_) {
+      return logData;
+    }
+  }
+
   async stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
@@ -34,29 +47,33 @@ class LogBatchQueue {
   }
 
   queueRequestLog(logData) {
-    if (!this.isRunning) {
-      database.createRequestLog(logData).catch((err) => {
-        logger.error('[LogBatchQueue] Failed to write request log (degraded mode):', err);
-      });
-      return;
-    }
-    this.requestLogs.push(logData);
-    if (this.requestLogs.length >= this.batchSize) {
-      this._flush().catch((err) => logger.error('[LogBatchQueue] Flush error:', err));
-    }
+    void this._withCountry(logData).then((preparedLog) => {
+      if (!this.isRunning) {
+        database.createRequestLog(preparedLog).catch((err) => {
+          logger.error('[LogBatchQueue] Failed to write request log (degraded mode):', err);
+        });
+        return;
+      }
+      this.requestLogs.push(preparedLog);
+      if (this.requestLogs.length >= this.batchSize) {
+        this._flush().catch((err) => logger.error('[LogBatchQueue] Flush error:', err));
+      }
+    });
   }
 
   queueProxyLog(logData) {
-    if (!this.isRunning) {
-      database.createProxyLog(logData).catch((err) => {
-        logger.error('[LogBatchQueue] Failed to write proxy log (degraded mode):', err);
-      });
-      return;
-    }
-    this.proxyLogs.push(logData);
-    if (this.proxyLogs.length >= this.batchSize) {
-      this._flush().catch((err) => logger.error('[LogBatchQueue] Flush error:', err));
-    }
+    void this._withCountry(logData).then((preparedLog) => {
+      if (!this.isRunning) {
+        database.createProxyLog(preparedLog).catch((err) => {
+          logger.error('[LogBatchQueue] Failed to write proxy log (degraded mode):', err);
+        });
+        return;
+      }
+      this.proxyLogs.push(preparedLog);
+      if (this.proxyLogs.length >= this.batchSize) {
+        this._flush().catch((err) => logger.error('[LogBatchQueue] Flush error:', err));
+      }
+    });
   }
 
   _scheduleFlush() {
