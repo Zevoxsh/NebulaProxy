@@ -542,26 +542,25 @@ const dispatch = (target, attempt) => {
 
     // Log the request (batched for performance). Response has already been
     // sent to the client by the time 'end' fires, so resolving the client's
-    // country here — even on a geoIpService cache miss — adds zero latency
-    // for the request itself.
+    // country here can delay persistence if the GeoIP service is slow or
+    // unreachable. The country column is nullable, so persist immediately and
+    // let geo enrichment happen elsewhere.
     proxyRes.on('end', () => {
-      geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
-        logBatchQueue.queueRequestLog({
-          domainId: domain.id,
-          hostname: domain.hostname,
-          method: req.method,
-          path: req.url.split('?')[0],
-          queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
-          statusCode: statusCode,
-          responseTime: responseTime,
-          responseSize: responseSize,
-          ipAddress: clientIp,
-          country,
-          userAgent: req.headers['user-agent'] || null,
-          referer: req.headers['referer'] || req.headers['referrer'] || null,
-          requestHeaders: sanitizeHeadersForLogging(req.headers),
-          responseHeaders: sanitizeHeadersForLogging(proxyRes.headers)
-        });
+      logBatchQueue.queueRequestLog({
+        domainId: domain.id,
+        hostname: domain.hostname,
+        method: req.method,
+        path: req.url.split('?')[0],
+        queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
+        statusCode: statusCode,
+        responseTime: responseTime,
+        responseSize: responseSize,
+        ipAddress: clientIp,
+        country: null,
+        userAgent: req.headers['user-agent'] || null,
+        referer: req.headers['referer'] || req.headers['referrer'] || null,
+        requestHeaders: sanitizeHeadersForLogging(req.headers),
+        responseHeaders: sanitizeHeadersForLogging(proxyRes.headers)
       });
     });
 
@@ -803,21 +802,19 @@ return result;
 _logBlockedRequest(domain, req, clientIp, statusCode, errorMessage, startTime) {
   const urlPath = (req.url || '/').split('?')[0];
   const queryString = req.url && req.url.includes('?') ? req.url.split('?')[1] : null;
-  geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
-    logBatchQueue.queueRequestLog({
-      domainId: domain.id,
-      hostname: domain.hostname,
-      method: req.method,
-      path: urlPath,
-      queryString,
-      statusCode,
-      responseTime: Date.now() - startTime,
-      ipAddress: clientIp,
-      country,
-      userAgent: req.headers['user-agent'] || null,
-      referer: req.headers['referer'] || req.headers['referrer'] || null,
-      errorMessage
-    });
+  logBatchQueue.queueRequestLog({
+    domainId: domain.id,
+    hostname: domain.hostname,
+    method: req.method,
+    path: urlPath,
+    queryString,
+    statusCode,
+    responseTime: Date.now() - startTime,
+    ipAddress: clientIp,
+    country: null,
+    userAgent: req.headers['user-agent'] || null,
+    referer: req.headers['referer'] || req.headers['referrer'] || null,
+    errorMessage
   });
 }
 
