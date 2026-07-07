@@ -199,9 +199,11 @@ if (domain?.ddos_protection_enabled) {
                 'Set-Cookie': `__ddos_bypass=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`
               });
               res.end(JSON.stringify({ ok: true, return: ret }));
+              this._logBlockedRequest(domain, req, clientIp, 200, 'Challenge de sécurité réussi', startTime);
             } else {
               res.writeHead(403, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: 'Challenge failed' }));
+              this._logBlockedRequest(domain, req, clientIp, 403, 'Challenge de sécurité échoué', startTime);
             }
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -221,6 +223,10 @@ if (domain?.ddos_protection_enabled) {
         const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl, domain.ddos_challenge_types);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Blocked-By': 'DDoS-Challenge' });
         res.end(html);
+        // Previously unlogged entirely — a visitor served the challenge (the
+        // common case for a first-time visit) left zero trace anywhere: not
+        // in this domain's Logs tab, not in the live traffic map, nothing.
+        this._logBlockedRequest(domain, req, clientIp, 200, 'Challenge de sécurité affiché', startTime);
         return;
       }
     }
