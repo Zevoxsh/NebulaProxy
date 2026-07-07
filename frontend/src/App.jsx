@@ -25,7 +25,9 @@ const Teams = lazy(() => import('./pages/Teams'));
 const TeamDetail = lazy(() => import('./pages/TeamDetail'));
 const SSLCertificates = lazy(() => import('./pages/SSLCertificates'));
 const CertificateDetail = lazy(() => import('./pages/CertificateDetail'));
-const AccountSettings = lazy(() => import('./pages/AccountSettings'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Security = lazy(() => import('./pages/Security'));
+const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const Traffic = lazy(() => import('./pages/Traffic'));
 const TrafficMap = lazy(() => import('./pages/TrafficMap'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -283,10 +285,10 @@ function App() {
           <Route path="/url-blocking" element={<UrlBlockingRules />} />
           <Route path="/ssl-certificates" element={<SSLCertificates />} />
           <Route path="/certificates/:domainId" element={<CertificateDetail />} />
-          <Route path="/account" element={<AccountSettings />} />
-          <Route path="/account/profile" element={<AccountSettings />} />
-          <Route path="/account/security" element={<AccountSettings />} />
-          <Route path="/account/api-keys" element={<AccountSettings />} />
+          <Route path="/account" element={<Navigate to="/account/profile" replace />} />
+          <Route path="/account/profile" element={<Profile />} />
+          <Route path="/account/security" element={<Security />} />
+          <Route path="/account/api-keys" element={<ApiKeys />} />
         </Route>
 
         {/* Admin Routes - with AdminLayout */}
