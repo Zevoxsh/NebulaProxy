@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ComposableMap, Geographies, Geography, Marker, Line } from 'react-simple-maps';
-import { COUNTRY_COORDINATES } from '../utils/countryCoordinates';
+import { getCountryCoordinates } from '../utils/countryCoordinates';
+import { normalizeCountryCode } from '../utils/countryUtils';
 import worldGeoUrl from '../assets/world-countries-110m.json';
 
 // COUNTRY_COORDINATES stores [lat, lng] — react-simple-maps wants [lng, lat].
@@ -88,9 +89,9 @@ export function WorldTrafficMap({ countries, proxyLocation }) {
   const points = useMemo(() => {
     return (countries || [])
       .map((c) => {
-        const coords = COUNTRY_COORDINATES[c.country];
+        const coords = getCountryCoordinates(c.country);
         if (!coords) return null;
-        return { ...c, position: toLngLat(coords) };
+        return { ...c, country: normalizeCountryCode(c.country), position: toLngLat(coords) };
       })
       .filter(Boolean);
   }, [countries]);
@@ -183,7 +184,7 @@ export function LiveWorldMap({ pulses, volumes, proxyLocation }) {
       {(pulses || []).map((p) => (
         <Marker key={`pm-${p.id}`} coordinates={p.position}>
           <circle r={4} fill={LEVEL_COLOR[p.level] || '#38BDF8'} className="np-pulse-dot" />
-          <title>{p.country}</title>
+          <title>{normalizeCountryCode(p.country) || p.country}</title>
         </Marker>
       ))}
       <ProxyMarker position={proxyPosition} location={proxyLocation} />
