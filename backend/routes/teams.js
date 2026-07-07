@@ -825,7 +825,7 @@ export async function teamRoutes(fastify, _options) {
         domains,
         count: domains.length,
         quota,
-        can_add_domain: domains.length < quota
+        can_add_domain: quota === -1 || domains.length < quota
       });
     } catch (error) {
       fastify.log.error({ error }, 'Failed to fetch team domains');

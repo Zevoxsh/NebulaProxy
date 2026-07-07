@@ -2,6 +2,7 @@
 import { database }             from '../services/database.js';
 import { redisService }         from '../services/redis.js';
 import { trafficStatsService }  from '../services/trafficStatsService.js';
+import { geoIpService }         from '../services/geoIpService.js';
 
 /**
  * Build a time-range start date from the timeRange query parameter.
@@ -377,6 +378,76 @@ export async function analyticsRoutes(fastify, _options) {
         });
       } catch (error) {
         fastify.log.error({ error }, 'Error getting status code distribution');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
+  // ────────────────── GET /proxy-location ──────────────────
+  // Self-detected server location (for the traffic-origin map's destination
+  // point) — geoIpService resolves this server's own public IP via ipwho.is
+  // and caches it for a week (server location practically never changes).
+  fastify.get('/proxy-location', {
+    onRequest: [fastify.authenticate],
+    handler: async (_request, reply) => {
+      try {
+        const location = await geoIpService.getSelfLocation();
+        if (!location) {
+          return reply.code(503).send({ error: 'Unavailable', message: 'Could not determine server location' });
+        }
+        return location;
+      } catch (error) {
+        fastify.log.error({ error }, 'Error getting proxy location');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
+  // ────────────────── GET /top-countries ──────────────────
+  // Uses request_logs.country (migration 054) — resolved via geoIpService on
+  // the proxy hot path, post-response so it adds zero request latency.
+  fastify.get('/top-countries', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const userId   = request.user.id;
+        const { timeRange = '24h', limit = 15 } = request.query;
+        const cacheKey = `analytics:top-countries:${userId}:${timeRange}:${limit}`;
+
+        return await withCache(cacheKey, cacheTTL(timeRange), async () => {
+          const startDate = buildStartDate(timeRange);
+          const domainIds = await database.getDomainIdsByUserId(userId);
+
+          if (domainIds.length === 0) return { countries: [] };
+          const rows = await database.queryAll(`
+            SELECT
+              country,
+              COUNT(*)                              AS requests,
+              COUNT(*) FILTER (WHERE status_code >= 400) AS errors
+            FROM request_logs
+            WHERE domain_id = ANY(?)
+              AND created_at >= ?
+              AND country IS NOT NULL
+            GROUP BY country
+            ORDER BY requests DESC
+            LIMIT ?
+          `, [domainIds, startDate.toISOString(), parseInt(limit, 10)]);
+
+          const totalWithCountry = rows.reduce((s, r) => s + Number(r.requests || 0), 0);
+
+          return {
+            countries: rows.map(r => ({
+              country:  r.country,
+              requests: Number(r.requests || 0),
+              errors:   Number(r.errors   || 0),
+              pct: totalWithCountry > 0
+                ? parseFloat(((Number(r.requests || 0) / totalWithCountry) * 100).toFixed(1))
+                : 0
+            }))
+          };
+        });
+      } catch (error) {
+        fastify.log.error({ error }, 'Error getting top countries');
         return reply.code(500).send({ error: 'Internal Server Error' });
       }
     }

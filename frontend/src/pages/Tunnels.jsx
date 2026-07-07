@@ -1,19 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Cable, ChevronRight, Cloud, Loader2, Plus, RefreshCw, Wifi } from 'lucide-react';
+import { Cable, ChevronRight, Cloud, Loader2, Plus, RefreshCw, Wifi, AlertCircle } from 'lucide-react';
 import { tunnelsAPI } from '../api/client';
-import {
-  AdminAlert,
-  AdminAlertDescription,
-  AdminAlertTitle,
-  AdminButton,
-  AdminCard,
-  AdminCardContent,
-  AdminCardHeader,
-  AdminCardTitle,
-  AdminBadge,
-  AdminStatCard
-} from '@/components/admin';
 
 function TunnelStatus({ tunnel }) {
   const onlineAgents = tunnel.agents?.filter((agent) => agent.status === 'online').length || 0;
@@ -23,7 +11,7 @@ function TunnelStatus({ tunnel }) {
     <div className="flex flex-wrap gap-2 text-[11px] text-white/55">
       <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{tunnel.provider}</span>
       <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{onlineAgents} agent(s) en ligne</span>
-      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{hasBindings} port(s) publie(s)</span>
+      <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">{hasBindings} port(s) publié(s)</span>
     </div>
   );
 }
@@ -34,9 +22,25 @@ function getTunnelHostnamePreview(tunnel) {
   return `tcp.${publicSlug}.${publicDomain}`;
 }
 
-export default function Tunnels({ mode = 'client' }) {
+function StatCard({ icon: Icon, label, value, sub }) {
+  return (
+    <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl p-4 flex items-center gap-4">
+      <div className="w-10 h-10 rounded-lg flex items-center justify-center border flex-shrink-0"
+        style={{ background: '#9D4EDD18', borderColor: '#9D4EDD44' }}>
+        <Icon className="w-5 h-5" style={{ color: '#9D4EDD' }} strokeWidth={1.5} />
+      </div>
+      <div>
+        <p className="text-xs text-white/50 font-light">{label}</p>
+        <p className="text-xl font-light text-white">{value}</p>
+        {sub && <p className="text-xs text-white/40">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+export default function Tunnels() {
   const navigate = useNavigate();
-  const basePath = mode === 'admin' ? '/admin/tunnels' : '/tunnels';
+  const basePath = '/tunnels';
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,88 +89,83 @@ export default function Tunnels({ mode = 'client' }) {
   };
 
   return (
-    <div data-admin-theme className="space-y-6 pb-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <h1 className="mb-2 text-3xl font-semibold text-admin-text md:text-4xl">Tunnels</h1>
-          <p className="text-sm leading-6 text-admin-text-muted md:text-base">
-            {mode === 'admin'
-              ? 'Vue administrateur des tunnels, agents et ports publies.'
-              : 'Gere tes tunnels: installation de l agent, publication des ports et acces partage.'}
-          </p>
-        </div>
-
-        <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto lg:flex-wrap">
-          <AdminButton variant="secondary" onClick={refresh} className="w-full sm:w-auto">
-            {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Actualiser
-          </AdminButton>
-          <AdminButton onClick={createTunnel} className="w-full sm:w-auto">
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau tunnel
-          </AdminButton>
+    <div className="page-shell">
+      <div className="page-header">
+        <div className="page-header-inner">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-light text-white tracking-tight">Tunnels</h1>
+              <p className="text-sm text-white/50 font-light mt-1">Gère tes tunnels : installation de l'agent, publication des ports et accès partagé.</p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={refresh} className="btn-secondary flex items-center gap-2 text-xs px-4 py-2">
+                {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Actualiser
+              </button>
+              <button onClick={createTunnel} className="btn-primary flex items-center gap-2 text-xs px-4 py-2">
+                <Plus className="w-4 h-4" />
+                Nouveau tunnel
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <AdminStatCard title="Tunnels" value={tunnels.length} subtitle="dans la liste" icon={Cloud} />
-        <AdminStatCard title="Agents en ligne" value={onlineCount} subtitle="connectes maintenant" icon={Wifi} />
-        <AdminStatCard title="Ports publies" value={tunnels.reduce((total, tunnel) => total + (tunnel.bindings?.length || 0), 0)} subtitle="regles de redirection" icon={Cable} />
-      </div>
+      <div className="page-body space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StatCard icon={Cloud} label="Tunnels" value={tunnels.length} sub="dans la liste" />
+          <StatCard icon={Wifi} label="Agents en ligne" value={onlineCount} sub="connectés maintenant" />
+          <StatCard icon={Cable} label="Ports publiés" value={tunnels.reduce((total, tunnel) => total + (tunnel.bindings?.length || 0), 0)} sub="règles de redirection" />
+        </div>
 
-      {error && (
-        <AdminAlert variant="destructive">
-          <AdminAlertTitle>Erreur</AdminAlertTitle>
-          <AdminAlertDescription>{error}</AdminAlertDescription>
-        </AdminAlert>
-      )}
+        {error && (
+          <div className="bg-[#EF4444]/10 backdrop-blur-2xl border border-[#EF4444]/20 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-[#F87171] mt-0.5 flex-shrink-0" strokeWidth={1.5} />
+            <p className="text-xs text-[#F87171] font-light">{error}</p>
+          </div>
+        )}
 
-      {loading ? (
-        <AdminCard>
-          <AdminCardContent className="p-10 text-center text-admin-text-muted">
-            <Loader2 className="mx-auto h-5 w-5 animate-spin text-admin-primary" />
+        {loading ? (
+          <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl p-10 text-center text-white/50">
+            <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#9D4EDD]" />
             <p className="mt-3 text-sm">Chargement des tunnels...</p>
-          </AdminCardContent>
-        </AdminCard>
-      ) : tunnels.length === 0 ? (
-        <AdminCard>
-          <AdminCardContent className="p-10">
+          </div>
+        ) : tunnels.length === 0 ? (
+          <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl p-10">
             <div className="mx-auto max-w-xl text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-admin-primary/10 text-admin-primary">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg" style={{ background: '#9D4EDD18', color: '#9D4EDD' }}>
                 <Cloud className="h-7 w-7" />
               </div>
-              <h2 className="mt-4 text-xl font-semibold text-admin-text">Aucun tunnel pour le moment</h2>
-              <p className="mt-2 text-sm leading-6 text-admin-text-muted">
-                Cree un tunnel puis ouvre-le pour configurer les ports, l acces et l installation de l agent.
+              <h2 className="mt-4 text-xl font-light text-white">Aucun tunnel pour le moment</h2>
+              <p className="mt-2 text-sm leading-6 text-white/50">
+                Crée un tunnel puis ouvre-le pour configurer les ports, l'accès et l'installation de l'agent.
               </p>
-              <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-                <AdminButton onClick={createTunnel} className="w-full sm:w-auto">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Creer un tunnel
-                </AdminButton>
+              <div className="mt-6 flex justify-center">
+                <button onClick={createTunnel} className="btn-primary flex items-center gap-2 text-xs px-4 py-2">
+                  <Plus className="w-4 h-4" />
+                  Créer un tunnel
+                </button>
               </div>
             </div>
-          </AdminCardContent>
-        </AdminCard>
-      ) : (
-        <div className="grid gap-4">
-          {tunnels.map((tunnel) => (
-            <button
-              key={tunnel.id}
-              type="button"
-              onClick={() => openTunnel(tunnel.id)}
-              className="group text-left"
-            >
-              <AdminCard className="transition-all duration-200 group-hover:border-admin-primary/30 group-hover:shadow-md">
-                <AdminCardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {tunnels.map((tunnel) => (
+              <button
+                key={tunnel.id}
+                type="button"
+                onClick={() => openTunnel(tunnel.id)}
+                className="group text-left bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] hover:border-[#9D4EDD]/30 rounded-xl transition-all duration-300"
+              >
+                <div className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="truncate text-lg font-semibold text-admin-text">{tunnel.name}</h3>
-                      <AdminBadge variant={getOnlineAgentsCount(tunnel) > 0 ? 'success' : 'secondary'}>
-                        {getOnlineAgentsCount(tunnel) > 0 ? 'Agent connecte' : 'En attente'}
-                      </AdminBadge>
+                      <h3 className="truncate text-lg font-light text-white">{tunnel.name}</h3>
+                      <span className={getOnlineAgentsCount(tunnel) > 0 ? 'badge-success' : 'badge-purple'}>
+                        {getOnlineAgentsCount(tunnel) > 0 ? 'Agent connecté' : 'En attente'}
+                      </span>
                     </div>
-                    <p className="max-w-3xl text-sm leading-6 text-admin-text-muted">
+                    <p className="max-w-3xl text-sm leading-6 text-white/50">
                       {tunnel.description || 'Aucune description.'}
                     </p>
                     <TunnelStatus tunnel={tunnel} />
@@ -174,19 +173,19 @@ export default function Tunnels({ mode = 'client' }) {
 
                   <div className="flex w-full items-center justify-between gap-4 md:w-auto">
                     <div className="hidden text-right md:block">
-                      <div className="text-xs uppercase tracking-[0.18em] text-admin-text-muted">Adresse publique</div>
-                      <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-admin-text">{getTunnelHostnamePreview(tunnel)}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-white/40">Adresse publique</div>
+                      <div className="mt-1 max-w-[280px] truncate text-sm font-medium text-white">{getTunnelHostnamePreview(tunnel)}</div>
                     </div>
-                    <div className="rounded-lg border border-admin-border bg-admin-surface2 p-3 text-admin-text-muted transition-all group-hover:bg-admin-surface">
+                    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3 text-white/50 transition-all group-hover:bg-white/[0.06] group-hover:text-white">
                       <ChevronRight className="h-5 w-5" />
                     </div>
                   </div>
-                </AdminCardContent>
-              </AdminCard>
-            </button>
-          ))}
-        </div>
-      )}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

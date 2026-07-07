@@ -1,52 +1,57 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuthStore } from './store/authStore';
 import { authAPI } from './api/client';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import PasswordReset from './pages/PasswordReset';
-import Dashboard from './pages/Dashboard';
-import Domains from './pages/Domains';
-import DomainDetail from './pages/DomainDetail';
-import Tunnels from './pages/Tunnels';
-import TunnelCreate from './pages/TunnelCreate';
-import TunnelDetail from './pages/TunnelDetail';
-import Redirections from './pages/Redirections';
-import Teams from './pages/Teams';
-import TeamDetail from './pages/TeamDetail';
-import SSLCertificates from './pages/SSLCertificates';
-import CertificateDetail from './pages/CertificateDetail';
-import AccountSettings from './pages/AccountSettings';
-import NotificationSettings from './pages/NotificationSettings';
-import Analytics from './pages/Analytics';
-import RealtimeTraffic from './pages/RealtimeTraffic';
-import CurrentTraffic from './pages/CurrentTraffic';
 import Layout from './components/layout/Layout';
 import { AdminLayout } from './components/layout/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminDomains from './pages/admin/AdminDomains';
-import AdminTeams from './pages/admin/AdminTeams';
-import AdminRedirections from './pages/admin/AdminRedirections';
-import AdminStats from './pages/admin/AdminStats';
-import AdminConfig from './pages/admin/AdminConfig';
-import AdminTunnels from './pages/admin/AdminTunnels';
-import AdminServices from './pages/admin/AdminServices';
-import AdminMonitoring from './pages/admin/AdminMonitoring';
-import AdminSmtp from './pages/admin/AdminSmtp';
-import AdminSmtpProxy from './pages/admin/AdminSmtpProxy';
-import AdminZabbix from './pages/admin/AdminZabbix';
-import AdminOidc from './pages/admin/AdminOidc';
-import AdminUpdates from './pages/admin/AdminUpdates';
-import UrlBlockingRules from './pages/admin/UrlBlockingRules';
-import AdminAudit from './pages/admin/AdminAudit';
-import AdminBackups from './pages/admin/AdminBackups';
-import AdminDdos from './pages/admin/AdminDdos';
-import AdminTraffic from './pages/admin/AdminTraffic';
-import AdminPinReset from './pages/admin/AdminPinReset';
-import StatusPage from './pages/StatusPage';
 import { Toaster } from './components/ui/toaster';
 import { useBrandingStore } from './store/brandingStore';
+
+// Route-level code splitting — each page becomes its own chunk, fetched only
+// when actually navigated to. Previously all ~40 pages (including every
+// admin-only page) were eagerly imported here, so visiting a single client
+// page like /domains/:id/logs pulled in every admin page's module graph too.
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const PasswordReset = lazy(() => import('./pages/PasswordReset'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Domains = lazy(() => import('./pages/Domains'));
+const DomainDetail = lazy(() => import('./pages/DomainDetail'));
+const Tunnels = lazy(() => import('./pages/Tunnels'));
+const TunnelCreate = lazy(() => import('./pages/TunnelCreate'));
+const TunnelDetail = lazy(() => import('./pages/TunnelDetail'));
+const Redirections = lazy(() => import('./pages/Redirections'));
+const Teams = lazy(() => import('./pages/Teams'));
+const TeamDetail = lazy(() => import('./pages/TeamDetail'));
+const SSLCertificates = lazy(() => import('./pages/SSLCertificates'));
+const CertificateDetail = lazy(() => import('./pages/CertificateDetail'));
+const AccountSettings = lazy(() => import('./pages/AccountSettings'));
+const NotificationSettings = lazy(() => import('./pages/NotificationSettings'));
+const Traffic = lazy(() => import('./pages/Traffic'));
+const TrafficMap = lazy(() => import('./pages/TrafficMap'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminDomains = lazy(() => import('./pages/admin/AdminDomains'));
+const AdminTeams = lazy(() => import('./pages/admin/AdminTeams'));
+const AdminRedirections = lazy(() => import('./pages/admin/AdminRedirections'));
+const AdminStats = lazy(() => import('./pages/admin/AdminStats'));
+const AdminConfig = lazy(() => import('./pages/admin/AdminConfig'));
+const AdminTunnelsList = lazy(() => import('./pages/admin/AdminTunnelsList'));
+const AdminTunnelCreate = lazy(() => import('./pages/admin/AdminTunnelCreate'));
+const AdminTunnelDetail = lazy(() => import('./pages/admin/AdminTunnelDetail'));
+const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
+const AdminMonitoring = lazy(() => import('./pages/admin/AdminMonitoring'));
+const AdminSmtp = lazy(() => import('./pages/admin/AdminSmtp'));
+const AdminSmtpProxy = lazy(() => import('./pages/admin/AdminSmtpProxy'));
+const AdminUpdates = lazy(() => import('./pages/admin/AdminUpdates'));
+const UrlBlockingRules = lazy(() => import('./pages/UrlBlockingRules'));
+const AdminUrlBlockingRules = lazy(() => import('./pages/admin/UrlBlockingRules'));
+const AdminAudit = lazy(() => import('./pages/admin/AdminAudit'));
+const AdminBackups = lazy(() => import('./pages/admin/AdminBackups'));
+const AdminDdos = lazy(() => import('./pages/admin/AdminDdos'));
+const AdminTraffic = lazy(() => import('./pages/admin/AdminTraffic'));
+const AdminPinReset = lazy(() => import('./pages/admin/AdminPinReset'));
+const StatusPage = lazy(() => import('./pages/StatusPage'));
 
 const ROUTE_METADATA = [
   { patterns: ['/status'], title: 'Status', description: 'Service availability status.' },
@@ -54,15 +59,18 @@ const ROUTE_METADATA = [
   { patterns: ['/register'], title: 'Create Account', description: 'Create a local account.' },
   { patterns: ['/reset-password'], title: 'Reset Password', description: 'Request a reset link and set a new password.' },
   { patterns: ['/dashboard'], title: 'Dashboard', description: 'System overview and key metrics.' },
-  { patterns: ['/analytics'], title: 'Analytics', description: 'Métriques de trafic et performances.' },
-  { patterns: ['/live-traffic'], title: 'Live Traffic', description: 'Trafic en temps réel par domaine.' },
-  { patterns: ['/current-traffic'], title: 'Requêtes actuelles', description: 'Flux en direct des 60 dernières secondes.' },
+  { patterns: ['/traffic'], title: 'Traffic', description: 'Trafic en temps réel par domaine.' },
+  { patterns: ['/traffic/connections'], title: 'Connexions actives', description: 'Flux en direct des 60 dernières secondes.' },
+  { patterns: ['/traffic/reports'], title: 'Rapports', description: 'Métriques de trafic et performances.' },
+  { patterns: ['/map'], title: 'Carte du trafic', description: 'Origine géographique du trafic en direct.' },
   { patterns: ['/domains'], title: 'Domains', description: 'Manage your domains and routing.' },
   { patterns: ['/domains/groups/:groupId'], title: 'Domain Group', description: 'Manage domains in a specific group.' },
   { patterns: ['/domains/:id'], title: 'Domain Details', description: 'View and manage a domain configuration.' },
   { patterns: ['/domains/:id/logs'], title: 'Domain Logs', description: 'Inspect domain traffic and logs.' },
   { patterns: ['/domains/:id/load-balancing'], title: 'Load Balancing', description: 'Configure load balancing for a domain.' },
-  { patterns: ['/domains/:id/advanced'], title: 'Domain Advanced', description: 'Maintenance, GeoIP, rate limiting and more.' },
+  { patterns: ['/domains/:id/advanced'], title: 'Domain Advanced', description: 'Rate limiting and PROXY Protocol.' },
+  { patterns: ['/domains/:id/maintenance'], title: 'Domain Maintenance', description: 'Maintenance mode for this domain.' },
+  { patterns: ['/domains/:id/challenge'], title: 'Domain Challenge', description: 'Visitor challenge and puzzle type selection.' },
   { patterns: ['/redirections'], title: 'Redirections', description: 'Manage short links and HTTP redirections.' },
   { patterns: ['/teams'], title: 'Teams', description: 'Manage teams, members, and ownership.' },
   { patterns: ['/teams/:teamId/*'], title: 'Team Details', description: 'Manage team domains, members, and settings.' },
@@ -224,6 +232,11 @@ function App() {
     <BrowserRouter>
       <RouteMetadata />
       <Toaster />
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0B0C0F] via-[#12131A] to-[#0B0C0F]">
+          <div className="text-slate-400">Loading...</div>
+        </div>
+      }>
       <Routes>
         <Route
           path="/login"
@@ -245,26 +258,33 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/live-traffic" element={<RealtimeTraffic />} />
-          <Route path="/current-traffic" element={<CurrentTraffic />} />
+          <Route path="/traffic" element={<Traffic />} />
+          <Route path="/traffic/connections" element={<Traffic />} />
+          <Route path="/traffic/reports" element={<Traffic />} />
+          <Route path="/map" element={<TrafficMap />} />
+          {/* Old scattered traffic/analytics pages regrouped under /traffic — kept as redirects so bookmarks/links don't break */}
+          <Route path="/analytics" element={<Navigate to="/traffic/reports" replace />} />
+          <Route path="/live-traffic" element={<Navigate to="/traffic" replace />} />
+          <Route path="/current-traffic" element={<Navigate to="/traffic/connections" replace />} />
           <Route path="/domains" element={<Domains />} />
           <Route path="/domains/groups/:groupId" element={<Domains />} />
           <Route path="/domains/:id" element={<DomainDetail />} />
           <Route path="/domains/:id/logs" element={<DomainDetail />} />
           <Route path="/domains/:id/load-balancing" element={<DomainDetail />} />
           <Route path="/domains/:id/advanced" element={<DomainDetail />} />
+          <Route path="/domains/:id/maintenance" element={<DomainDetail />} />
+          <Route path="/domains/:id/challenge" element={<DomainDetail />} />
           <Route path="/domains/:id/traffic" element={<DomainDetail />} />
-          <Route path="/tunnels" element={<Tunnels mode="client" />} />
-          <Route path="/tunnels/new" element={<TunnelCreate mode="client" />} />
-          <Route path="/tunnels/:id" element={<TunnelDetail mode="client" section="overview" />} />
-          <Route path="/tunnels/:id/ports" element={<TunnelDetail mode="client" section="ports" />} />
-          <Route path="/tunnels/:id/access" element={<TunnelDetail mode="client" />} />
-          <Route path="/tunnels/:id/install" element={<TunnelDetail mode="client" />} />
+          <Route path="/tunnels" element={<Tunnels />} />
+          <Route path="/tunnels/new" element={<TunnelCreate />} />
+          <Route path="/tunnels/:id" element={<TunnelDetail />} />
+          <Route path="/tunnels/:id/ports" element={<TunnelDetail />} />
+          <Route path="/tunnels/:id/access" element={<TunnelDetail />} />
+          <Route path="/tunnels/:id/install" element={<TunnelDetail />} />
           <Route path="/redirections" element={<Redirections />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId/*" element={<TeamDetail />} />
-          <Route path="/url-blocking" element={<UrlBlockingRules clientMode />} />
+          <Route path="/url-blocking" element={<UrlBlockingRules />} />
           <Route path="/ssl-certificates" element={<SSLCertificates />} />
           <Route path="/certificates/:domainId" element={<CertificateDetail />} />
           <Route path="/account" element={<AccountSettings />} />
@@ -287,23 +307,21 @@ function App() {
           <Route path="/admin/domains" element={<AdminDomains />} />
           <Route path="/admin/teams" element={<AdminTeams />} />
           <Route path="/admin/redirections" element={<AdminRedirections />} />
-          <Route path="/admin/tunnels" element={<AdminTunnels />} />
-          <Route path="/admin/tunnels/new" element={<TunnelCreate mode="admin" />} />
-          <Route path="/admin/tunnels/:id" element={<TunnelDetail mode="admin" section="overview" />} />
-          <Route path="/admin/tunnels/:id/ports" element={<TunnelDetail mode="admin" section="ports" />} />
-          <Route path="/admin/tunnels/:id/access" element={<TunnelDetail mode="admin" />} />
-          <Route path="/admin/tunnels/:id/install" element={<TunnelDetail mode="admin" />} />
+          <Route path="/admin/tunnels" element={<AdminTunnelsList />} />
+          <Route path="/admin/tunnels/new" element={<AdminTunnelCreate />} />
+          <Route path="/admin/tunnels/:id" element={<AdminTunnelDetail />} />
+          <Route path="/admin/tunnels/:id/ports" element={<AdminTunnelDetail />} />
+          <Route path="/admin/tunnels/:id/access" element={<AdminTunnelDetail />} />
+          <Route path="/admin/tunnels/:id/install" element={<AdminTunnelDetail />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/config" element={<AdminConfig />} />
           <Route path="/admin/services" element={<AdminServices />} />
           <Route path="/admin/monitoring" element={<AdminMonitoring />} />
           <Route path="/admin/smtp" element={<AdminSmtp />} />
           <Route path="/admin/smtp-proxy" element={<AdminSmtpProxy />} />
-          <Route path="/admin/zabbix" element={<AdminZabbix />} />
-          <Route path="/admin/oidc" element={<AdminOidc />} />
           <Route path="/admin/backups" element={<AdminBackups />} />
           <Route path="/admin/updates" element={<AdminUpdates />} />
-          <Route path="/admin/url-blocking" element={<UrlBlockingRules />} />
+          <Route path="/admin/url-blocking" element={<AdminUrlBlockingRules />} />
           <Route path="/admin/ddos" element={<AdminDdos />} />
           <Route path="/admin/audit" element={<AdminAudit />} />
           <Route path="/admin/traffic" element={<AdminTraffic />} />
@@ -318,6 +336,7 @@ function App() {
           element={<Navigate to="/" replace />}
         />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

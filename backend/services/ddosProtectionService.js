@@ -99,7 +99,7 @@ const _SYMS = ['★', '●', '▲', '◆', '✦', '◉', '♦'];
 // ── Challenge generator ───────────────────────────────────────────────────────
 // Returns { type, question, token, display, options, gameSecret }
 
-function generateChallenge(ip) {
+function generateChallenge(ip, domainTypes) {
   const ALL_TYPES = [
     'math_add', 'math_sub', 'math_mul',
     'seq_arith', 'seq_geo',
@@ -110,9 +110,15 @@ function generateChallenge(ip) {
     'morpion', 'simon', 'whack', 'sort_nums',
     'find_emoji', 'rps', 'speed_click', 'slider',
   ];
-  const TYPES = (_enabledTypes && _enabledTypes.length > 0)
+  let TYPES = (_enabledTypes && _enabledTypes.length > 0)
     ? ALL_TYPES.filter(t => _enabledTypes.includes(t))
     : ALL_TYPES;
+  // A domain's own selection further restricts the globally-enabled set —
+  // it never re-adds a type the admin has turned off system-wide.
+  if (Array.isArray(domainTypes) && domainTypes.length > 0) {
+    const restricted = TYPES.filter(t => domainTypes.includes(t));
+    if (restricted.length > 0) TYPES = restricted;
+  }
   const type = TYPES[randInt(0, TYPES.length - 1)];
   let question, answer, display = '', options = null, gameSecret = null;
 
@@ -355,8 +361,8 @@ class ChallengeService {
 
   // ── Challenge page ────────────────────────────────────────────────────────
 
-  generateChallengePage(ip, returnUrl) {
-    const { type, question, token, display, options, gameSecret } = generateChallenge(ip);
+  generateChallengePage(ip, returnUrl, domainTypes) {
+    const { type, question, token, display, options, gameSecret } = generateChallenge(ip, domainTypes);
 
     const GAME_TYPES = ['morpion','simon','whack','sort_nums','find_emoji','rps','speed_click','slider'];
     const isGame    = GAME_TYPES.includes(type);

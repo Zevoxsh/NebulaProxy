@@ -25,9 +25,7 @@ import {
   Bell,
   Database,
   Radio,
-  Cable,
-  Activity,
-  ShieldCheck
+  Cable
 } from 'lucide-react';
 import {
   Sheet,
@@ -226,8 +224,6 @@ export function AdminLayout() {
         { path: '/admin/services', icon: Server, label: 'Services' },
         { path: '/admin/smtp', icon: Mail, label: 'SMTP Setup' },
         { path: '/admin/smtp-proxy', icon: Mail, label: 'SMTP Proxy' },
-        { path: '/admin/zabbix', icon: Activity, label: 'Zabbix' },
-        { path: '/admin/oidc', icon: ShieldCheck, label: 'SSO / OIDC' },
         { path: '/admin/backups', icon: Database, label: 'Backups' }
       ]
     },

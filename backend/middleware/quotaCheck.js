@@ -36,8 +36,12 @@ export async function checkDomainQuota(request, reply) {
     }
 
     const domainCount = await database.countDomainsByUserId(userId);
+    const isUnlimited = Number(user.max_domains) === -1;
 
-    if (domainCount >= user.max_domains) {
+    // max_domains = -1 means unlimited (documented in migration 015 and in
+    // the admin API's schema `minimum: -1`) — without this check, ANY count
+    // is ">= -1", so unlimited accounts could never create a single domain.
+    if (!isUnlimited && domainCount >= user.max_domains) {
       return reply.code(403).send({
         error: 'Quota exceeded',
         message: `You have reached your maximum allowed domains (${user.max_domains}). Please contact an administrator to increase your quota.`,
@@ -51,7 +55,7 @@ export async function checkDomainQuota(request, reply) {
     request.quota = {
       used: domainCount,
       max: user.max_domains,
-      remaining: user.max_domains - domainCount
+      remaining: isUnlimited ? -1 : user.max_domains - domainCount
     };
 
     return;

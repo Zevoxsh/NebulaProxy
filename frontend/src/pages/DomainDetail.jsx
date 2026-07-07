@@ -4,12 +4,16 @@ import {
   ArrowLeft, Globe, Server, Activity, Clock, AlertCircle,
   CheckCircle, Filter, Search, RefreshCw, Download, TrendingUp,
   Zap, Database, Users, BarChart3, Settings, FileText, Shield, Power, Trash2,
-  Radio, Wifi, ChevronDown, ChevronRight
+  Radio, Wifi, ChevronDown, ChevronRight, Wrench
 } from 'lucide-react';
 import { domainAPI } from '../api/client';
 import { FlagImg } from '../utils/flagCache';
+import { useViewModeStore } from '../store/viewModeStore';
 import LoadBalancingPanel from '../components/features/LoadBalancingPanel';
 import DomainAdvancedPanel from '../components/features/DomainAdvancedPanel';
+import DomainMaintenancePanel from '../components/features/DomainMaintenancePanel';
+import DomainChallengePanel from '../components/features/DomainChallengePanel';
+import DomainHealthPanel from '../components/features/DomainHealthPanel';
 import { Combobox } from '../components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 
@@ -34,6 +38,17 @@ const PROTO_STYLE = {
   udp:       'bg-purple-500/10 text-purple-400  border border-purple-500/20',
   minecraft: 'bg-green-500/10  text-green-400   border border-green-500/20',
 };
+
+// Which domain-detail tabs show in each global Configuration/Visualisation
+// mode (see store/viewModeStore.js) — editing vs. observing a domain.
+const TABS_BY_MODE = {
+  config: ['overview', 'load-balancing', 'advanced', 'maintenance', 'challenge'],
+  visualization: ['logs', 'traffic'],
+};
+const DEFAULT_TAB_BY_MODE = { config: 'overview', visualization: 'logs' };
+// Maintenance mode and the visitor Challenge only make sense for HTTP
+// domains — hidden entirely for TCP/UDP/Minecraft.
+const HTTP_ONLY_TABS = ['maintenance', 'challenge'];
 
 function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh, onClear }) {
   const [filterIp, setFilterIp] = useState('');
@@ -163,6 +178,7 @@ export default function DomainDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { mode } = useViewModeStore();
 
   const [domain, setDomain] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -191,8 +207,12 @@ export default function DomainDetail() {
     if (path.endsWith('/logs')) return 'logs';
     if (path.endsWith('/load-balancing')) return 'load-balancing';
     if (path.endsWith('/advanced')) return 'advanced';
+    if (path.endsWith('/maintenance')) return 'maintenance';
+    if (path.endsWith('/challenge')) return 'challenge';
     if (path.endsWith('/traffic')) return 'traffic';
-    return 'overview';
+    // Bare `/domains/:id` — default depends on which mode you're in
+    // (Configuration lands on the settings form, Visualisation on logs).
+    return DEFAULT_TAB_BY_MODE[mode] || 'overview';
   };
 
   const [activeTab, setActiveTab] = useState(getTabFromPath());
@@ -274,12 +294,34 @@ export default function DomainDetail() {
     setActiveTab(getTabFromPath());
   }, [location.pathname]);
 
+  // If the global mode flips while you're on a tab that mode doesn't show
+  // (e.g. viewing "Advanced" then switching to Visualisation), jump to that
+  // mode's default tab instead of leaving a hidden tab active.
+  useEffect(() => {
+    if (!TABS_BY_MODE[mode]?.includes(activeTab)) {
+      navigateToTab(DEFAULT_TAB_BY_MODE[mode] || 'overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // Same idea for HTTP-only tabs — if the domain turns out not to be HTTP
+  // (or you deep-link straight to /maintenance or /challenge), bounce off.
+  useEffect(() => {
+    if (!domain) return;
+    if (domain.proxy_type !== 'http' && HTTP_ONLY_TABS.includes(activeTab)) {
+      navigateToTab(DEFAULT_TAB_BY_MODE[mode] || 'overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain?.proxy_type, activeTab]);
+
   const navigateToTab = (tab) => {
     const pathMap = {
       'overview':       `/domains/${id}`,
       'logs':           `/domains/${id}/logs`,
       'load-balancing': `/domains/${id}/load-balancing`,
       'advanced':       `/domains/${id}/advanced`,
+      'maintenance':    `/domains/${id}/maintenance`,
+      'challenge':      `/domains/${id}/challenge`,
       'traffic':        `/domains/${id}/traffic`,
     };
     navigate(pathMap[tab] || `/domains/${id}`, { replace: true });
@@ -405,11 +447,15 @@ export default function DomainDetail() {
   };
 
   const formatBytes = (bytes) => {
-    if (!bytes) return '0 B';
+    // Postgres SUM()/COUNT() aggregates come back as strings (e.g. "0") to
+    // avoid BIGINT precision loss — a non-empty string is truthy in JS, so
+    // `if (!bytes)` never caught this and fell through to NaN/undefined.
+    const n = Number(bytes);
+    if (!n || !Number.isFinite(n)) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    const i = Math.floor(Math.log(n) / Math.log(k));
+    return Math.round((n / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
   const formatDate = (timestamp) => {
@@ -553,15 +599,20 @@ export default function DomainDetail() {
               )}
             </div>
 
-            {/* Tabs */}
+            {/* Tabs — filtered to the current Configuration/Visualisation mode */}
             <div className="flex gap-2 mt-6 border-b border-white/[0.08]">
               {[
                 { id: 'overview',       label: 'Overview',      icon: Settings },
                 { id: 'logs',           label: 'Logs',          icon: FileText },
                 { id: 'load-balancing', label: 'Load Balancing', icon: Server },
                 { id: 'advanced',       label: 'Avancé',        icon: Zap },
+                { id: 'maintenance',    label: 'Maintenance',   icon: Wrench },
+                { id: 'challenge',      label: 'Challenge',     icon: Zap },
                 { id: 'traffic',        label: 'Trafic live',   icon: Radio },
-              ].map((tab) => {
+              ].filter((tab) =>
+                TABS_BY_MODE[mode]?.includes(tab.id) &&
+                (domain?.proxy_type === 'http' || !HTTP_ONLY_TABS.includes(tab.id))
+              ).map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button
@@ -587,6 +638,9 @@ export default function DomainDetail() {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <>
+              {/* Real reachability — why is it down, not just is_active */}
+              <DomainHealthPanel domainId={id} />
+
               {/* Stats Cards */}
               {stats && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1116,6 +1170,16 @@ export default function DomainDetail() {
           {/* Advanced Tab */}
           {activeTab === 'advanced' && (
             <DomainAdvancedPanel domain={domain} onUpdate={loadDomainData} />
+          )}
+
+          {/* Maintenance Tab */}
+          {activeTab === 'maintenance' && (
+            <DomainMaintenancePanel domain={domain} onUpdate={loadDomainData} />
+          )}
+
+          {/* Challenge Tab */}
+          {activeTab === 'challenge' && (
+            <DomainChallengePanel domain={domain} onUpdate={loadDomainData} />
           )}
 
           {/* Traffic Tab */}

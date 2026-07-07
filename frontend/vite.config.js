@@ -16,20 +16,17 @@ export default defineConfig({
         manualChunks: {
           // Core React runtime — rarely changes, maximises cache hit
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          // Heavy chart library split out so dashboard pages don’t bloat other routes
-          'charts': ['recharts'],
-          // Form validation stack
-          'forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
+          // Form validation stack (recharts, @hookform/resolvers, zod, and
+          // several unused @radix-ui/* packages removed — dead deps, no
+          // component in src/ imported them)
+          'forms': ['react-hook-form'],
           // Radix UI primitives (combined to avoid too many small chunks)
           'ui-primitives': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
             '@radix-ui/react-tabs',
             '@radix-ui/react-toast',
             '@radix-ui/react-tooltip',
-            '@radix-ui/react-accordion',
-            '@radix-ui/react-alert-dialog',
             '@radix-ui/react-popover',
             '@radix-ui/react-scroll-area'
           ]

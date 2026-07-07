@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Activity, Globe, Zap, Database, TrendingUp, AlertCircle,
-  RefreshCw, Monitor, Shield, Clock, ChevronDown
+  RefreshCw, Monitor, Shield, Clock, ChevronDown, MapPin
 } from 'lucide-react';
 import { analyticsAPI, logsAPI } from '../api/client';
+import { FlagImg } from '../utils/flagCache';
+import WorldTrafficMap from './WorldTrafficMap';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatBytes(bytes) {
@@ -103,18 +105,29 @@ export default function Analytics() {
   const [topPaths, setTopPaths] = useState([]);
   const [statusCodes, setStatusCodes] = useState({ distribution: [], groups: {} });
   const [topAgents, setTopAgents] = useState([]);
+  const [topCountries, setTopCountries] = useState([]);
+  const [proxyLocation, setProxyLocation] = useState(null);
+
+  // Server location barely ever changes — fetch once, not on every
+  // timeRange change like the rest of this page's data.
+  useEffect(() => {
+    analyticsAPI.getProxyLocation()
+      .then((res) => setProxyLocation(res.data))
+      .catch(() => setProxyLocation(null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [statsR, domainsR, ipsR, pathsR, statusR, agentsR] = await Promise.all([
+      const [statsR, domainsR, ipsR, pathsR, statusR, agentsR, countriesR] = await Promise.all([
         analyticsAPI.getStats(timeRange),
         analyticsAPI.getTopDomains(timeRange, 10),
         analyticsAPI.getTopIps(timeRange, 15),
         analyticsAPI.getTopPaths(timeRange, 15),
         analyticsAPI.getStatusCodes(timeRange),
-        analyticsAPI.getTopUserAgents(timeRange, 10)
+        analyticsAPI.getTopUserAgents(timeRange, 10),
+        analyticsAPI.getTopCountries(timeRange, 15)
       ]);
       setStats(statsR.data);
       setTopDomains(domainsR.data.domains || []);
@@ -122,6 +135,7 @@ export default function Analytics() {
       setTopPaths(pathsR.data.paths || []);
       setStatusCodes(statusR.data || { distribution: [], groups: {} });
       setTopAgents(agentsR.data.agents || []);
+      setTopCountries(countriesR.data.countries || []);
     } catch (err) {
       setError(err.response?.data?.message || 'Impossible de charger les analytics');
     } finally {
@@ -153,6 +167,7 @@ export default function Analytics() {
   const maxIpReq = useMemo(() => Math.max(...topIps.map(d => d.requests), 1), [topIps]);
   const maxPathReq = useMemo(() => Math.max(...topPaths.map(d => d.requests), 1), [topPaths]);
   const maxAgent = useMemo(() => Math.max(...topAgents.map(d => d.requests), 1), [topAgents]);
+  const maxCountry = useMemo(() => Math.max(...topCountries.map(d => d.requests), 1), [topCountries]);
   const totalStatus = useMemo(() => Object.values(statusCodes.groups || {}).reduce((s, v) => s + v, 0), [statusCodes]);
 
   return (
@@ -341,6 +356,46 @@ export default function Analytics() {
             }
           </Panel>
         </div>
+
+        {/* World traffic map */}
+        <Panel title="Carte du trafic" icon={MapPin} color="#38BDF8">
+          {loading
+            ? <div className="h-64 bg-white/[0.02] rounded animate-pulse" />
+            : topCountries.length === 0
+              ? <p className="text-xs text-white/40 text-center py-12">Aucune donnée géographique — les IP privées/locales ne sont pas géolocalisées</p>
+              : <WorldTrafficMap countries={topCountries} proxyLocation={proxyLocation} />
+          }
+        </Panel>
+
+        {/* Top countries */}
+        <Panel title="Pays les plus actifs" icon={MapPin} color="#38BDF8">
+          {loading
+            ? <div className="space-y-3">{[...Array(6)].map((_, i) => <div key={i} className="h-8 bg-white/[0.02] rounded animate-pulse" />)}</div>
+            : topCountries.length === 0
+              ? <p className="text-xs text-white/40 text-center py-4">Aucune donnée géographique — les IP privées/locales ne sont pas géolocalisées</p>
+              : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                  {topCountries.map((c, i) => (
+                    <div key={i} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FlagImg code={c.country} title={c.country} className="w-5 h-3.5 rounded-sm flex-shrink-0" />
+                          <span className="text-white/80 font-mono">{c.country}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0 text-white/50">
+                          <span>{c.requests.toLocaleString()} ({c.pct}%)</span>
+                          {c.errors > 0 && <span className="text-[#F87171]">{c.errors} err</span>}
+                        </div>
+                      </div>
+                      <div className="w-full h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#38BDF8] rounded-full transition-all duration-500" style={{ width: `${(c.requests / maxCountry) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+          }
+        </Panel>
 
         {/* User Agents */}
         <Panel title="User Agents" icon={Clock} color="#FBBF24">

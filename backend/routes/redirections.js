@@ -146,11 +146,12 @@ export async function redirectionRoutes(fastify, _options) {
         });
       }
 
-      // Check quota
+      // Check quota — max_redirections = -1 means unlimited, same convention
+      // as max_domains (see middleware/quotaCheck.js).
       const user = await database.getUserById(userId);
       const currentCount = await database.countRedirectionsByUserId(userId);
 
-      if (currentCount >= user.max_redirections) {
+      if (Number(user.max_redirections) !== -1 && currentCount >= user.max_redirections) {
         return reply.code(403).send({
           error: 'Quota Exceeded',
           message: `You have reached your redirection limit (${user.max_redirections})`

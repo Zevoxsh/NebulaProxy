@@ -8,6 +8,8 @@ export const analyticsAPI = {
   getTopPaths: (timeRange = '24h', limit = 20) => api.get('/analytics/top-paths', { params: { timeRange, limit } }),
   getStatusCodes: (timeRange = '24h') => api.get('/analytics/status-codes', { params: { timeRange } }),
   getTopUserAgents: (timeRange = '24h', limit = 15) => api.get('/analytics/top-user-agents', { params: { timeRange, limit } }),
+  getTopCountries: (timeRange = '24h', limit = 15) => api.get('/analytics/top-countries', { params: { timeRange, limit } }),
+  getProxyLocation: () => api.get('/analytics/proxy-location'),
   // Redis-backed endpoints
   getRealtimeHistory: () => api.get('/analytics/realtime-history'),
   getTraffic24h: () => api.get('/analytics/traffic-24h')

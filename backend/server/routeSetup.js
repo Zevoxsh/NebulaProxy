@@ -37,7 +37,6 @@ export async function registerRoutes(fastify) {
   await fastify.register(logsRoutes,                    { prefix: '/api/logs' });
   await fastify.register(monitoringRoutes,              { prefix: '/api/monitoring' });
   await fastify.register(statusRoutes,                  { prefix: '/api/status' });
-  await fastify.register((await import('../routes/zabbix.js')).zabbixRoutes,  { prefix: '/api/zabbix' });
   await fastify.register((await import('../routes/metrics.js')).metricsRoutes, { prefix: '' });
   await fastify.register(sslRoutes,                     { prefix: '/api/ssl' });
   await fastify.register(settingsRoutes,                { prefix: '/api/settings' });

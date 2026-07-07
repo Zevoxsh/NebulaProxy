@@ -81,38 +81,13 @@ const queryString = req.url.includes('?') ? req.url.split('?')[1] : null;
 
 // ── 1. MAINTENANCE MODE ──────────────────────────────────────────────────
 if (domain.maintenance_mode) {
-  const html = domain.custom_maintenance_page
-    ? this._renderCustomErrorPage(domain.custom_maintenance_page, 503)
-    : renderMaintenancePage(domain);
+  const html = domain.custom_maintenance_page || renderMaintenancePage(domain);
   res.writeHead(503, {
     'Content-Type': 'text/html; charset=utf-8',
     'Retry-After': '3600'
   });
   res.end(html);
   return;
-}
-
-// ── 2. GEOIP BLOCKING ────────────────────────────────────────────────────
-if (domain.geoip_blocking_enabled) {
-  try {
-    const geoResult = await geoIpService.checkAccess(domain, clientIp);
-    if (geoResult.blocked) {
-      const wantsHtml = (req.headers.accept || '').includes('text/html');
-      if (wantsHtml) {
-        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(renderBlockedPage(
-          `Access from ${geoResult.countryCode} is not permitted.`, 403
-        ));
-      } else {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Forbidden', message: geoResult.reason }));
-      }
-      return;
-    }
-  } catch (geoErr) {
-    logger.error(`[HTTP Proxy ${domain.id}] GeoIP check failed:`, geoErr.message);
-    // Fail open — continue serving
-  }
 }
 
 // ── 2.5. BANDWIDTH QUOTA CHECK ──────────────────────────────────────────────
@@ -138,6 +113,7 @@ if (domain.user_id) {
     if (quotaBytes > 0) {
       const { exceeded } = await bandwidthTracker.checkQuota(domain.user_id, quotaBytes);
       if (exceeded) {
+        this._logBlockedRequest(domain, req, clientIp, 429, 'Bandwidth quota exceeded', startTime);
         const wantsHtml = (req.headers.accept || '').includes('text/html');
         if (wantsHtml) {
           res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '3600' });
@@ -171,6 +147,7 @@ if (domain.rate_limit_enabled) {
       // idempotent so it's safe to call unconditionally on every request.
       await redisService.client.expire(rlKey, rlWin, 'NX');
       if (count > rlMax) {
+        this._logBlockedRequest(domain, req, clientIp, 429, `Rate limit exceeded (${rlMax}/${rlWin}s)`, startTime);
         const rlWantsHtml = (req.headers.accept || '').includes('text/html');
         if (rlWantsHtml) {
           res.writeHead(429, {
@@ -241,7 +218,7 @@ if (domain?.ddos_protection_enabled) {
 
       if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken, domain.hostname)) {
         // Serve challenge page inline (no redirect)
-        const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl);
+        const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl, domain.ddos_challenge_types);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Blocked-By': 'DDoS-Challenge' });
         res.end(html);
         return;
@@ -288,9 +265,11 @@ try {
 // ── 5. BACKEND SELECTION (with sticky session) ───────────────────────────
 let backendHost, backendPort, backendProtocol, backendId;
 try {
-  // Read sticky session cookie if needed
+  // Read the sticky-session cookie when that load-balancing algorithm is
+  // selected — independent of any per-domain "sticky sessions" toggle
+  // (removed; this is plumbing for the 'sticky-session' LB strategy only).
   let stickyValue = null;
-  if (domain.sticky_sessions_enabled) {
+  if (domain.load_balancing_algorithm === 'sticky-session') {
     const cookies = this._parseCookies(req.headers.cookie || '');
     stickyValue = cookies['__nebula_srv'] || null;
   }
@@ -313,18 +292,14 @@ try {
   { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'http', `${backendHost}:${backendPort}`); }
 } catch (err) {
   logger.error(`[HTTP Proxy ${domain.id}] Backend selection failed:`, err.message);
-  if (domain.custom_503_page) {
+  this._logBlockedRequest(domain, req, clientIp, 503, `No backend available: ${err.message}`, startTime);
+  const accept = String(req.headers.accept || '');
+  if (accept.includes('text/html')) {
     res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(this._renderCustomErrorPage(domain.custom_503_page, 503));
+    res.end(renderServiceUnavailablePage(domain.hostname));
   } else {
-    const accept = String(req.headers.accept || '');
-    if (accept.includes('text/html')) {
-      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(renderServiceUnavailablePage(domain.hostname));
-    } else {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Service Unavailable', message: 'No available backend' }));
-    }
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Service Unavailable', message: 'No available backend' }));
   }
   return;
 }
@@ -337,14 +312,13 @@ if (!circuitBreaker.isAvailable(cbKey)) {
   // returns true for the single allowed HALF_OPEN probe, so reaching here
   // means the backend is confirmed down — no free pass-through.
   logger.warn(`[HTTP Proxy ${domain.id}] Circuit breaker OPEN for ${cbKey} — failing fast (503)`);
+  this._logBlockedRequest(domain, req, clientIp, 503, `Circuit breaker open for ${backendHost}:${backendPort} — backend repeatedly failing`, startTime);
   proxyMetrics.recordCircuitBreakerReject();
   if (backendId) { const lb = getLb(); if (lb) lb.decrementConnections(backendId); }
   const accept = String(req.headers.accept || '');
   if (accept.includes('text/html')) {
     res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '10' });
-    res.end(domain.custom_503_page
-      ? this._renderCustomErrorPage(domain.custom_503_page, 503)
-      : renderServiceUnavailablePage(domain.hostname));
+    res.end(renderServiceUnavailablePage(domain.hostname));
   } else {
     res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '10' });
     res.end(JSON.stringify({ error: 'Service Unavailable', message: 'Backend temporarily unavailable (circuit breaker open)' }));
@@ -499,10 +473,7 @@ const dispatch = (target, attempt) => {
       const accept = String(req.headers.accept || '');
       const wantsHtml = accept.includes('text/html');
       if (wantsHtml) {
-        // Use custom 502 page if configured, otherwise fall back to styled default
-        const html = domain.custom_502_page
-          ? this._renderCustomErrorPage(domain.custom_502_page, 502)
-          : renderBadGatewayPage(domain.hostname, { errorCode: error.code, errorMessage: error.message });
+        const html = renderBadGatewayPage(domain.hostname, { errorCode: error.code, errorMessage: error.message });
         res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
       } else {
@@ -605,20 +576,6 @@ const dispatch = (target, attempt) => {
       });
     }
 
-    // Custom error pages for 404 / 502 / 503 from backend
-    if (statusCode === 404 && domain.custom_404_page) {
-      const html = this._renderCustomErrorPage(domain.custom_404_page, 404);
-      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
-      return;
-    }
-    if (statusCode === 502 && domain.custom_502_page) {
-      const html = this._renderCustomErrorPage(domain.custom_502_page, 502);
-      res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
-      return;
-    }
-
     // Build response headers (copy from backend)
     const responseHeaders = { ...proxyRes.headers };
 
@@ -655,12 +612,12 @@ const dispatch = (target, attempt) => {
       responseHeaders['content-type'] = responseHeaders['content-type'] || 'text/html; charset=utf-8';
     }
 
-    // Sticky session: set cookie if enabled and we know the backend id
-    if (domain.sticky_sessions_enabled && dBackendId) {
-      const ttl = domain.sticky_sessions_ttl || 3600;
+    // Sticky session: set cookie when the 'sticky-session' LB algorithm is
+    // selected and we know the backend id (fixed TTL — no per-domain config).
+    if (domain.load_balancing_algorithm === 'sticky-session' && dBackendId) {
       const existing = responseHeaders['set-cookie'] || [];
       const cookieArr = Array.isArray(existing) ? existing : [existing];
-      cookieArr.push(`__nebula_srv=${dBackendId}; Path=/; Max-Age=${ttl}; HttpOnly; SameSite=Lax`);
+      cookieArr.push(`__nebula_srv=${dBackendId}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax`);
       responseHeaders['set-cookie'] = cookieArr;
     }
 
@@ -710,11 +667,6 @@ const dispatch = (target, attempt) => {
     } else {
       proxyRes.pipe(res);
     }
-
-    // ── TRAFFIC MIRRORING (fire-and-forget) ───────────────────────────
-    if (domain.mirror_enabled && domain.mirror_backend_url) {
-      this._fireMirrorRequest(req, domain.mirror_backend_url).catch(() => {});
-    }
   });
 
   activeProxyReq = proxyReq;
@@ -733,7 +685,7 @@ const dispatch = (target, attempt) => {
 
     // Circuit breaker: failure (but not for ECONNRESET which might be normal close)
     if (error.code !== 'ECONNRESET') {
-      circuitBreaker.onFailure(dCbKey);
+      circuitBreaker.onFailure(dCbKey, error);
     }
 
     // Suppress ECONNRESET errors if response was already started (client received data)
@@ -837,53 +789,30 @@ for (const pair of cookieHeader.split(';')) {
 return result;
 }
 
-/**
- * Wrap custom HTML error page content in a standard HTTP response.
- * The `html` is admin-defined content — render it as-is.
- */
-_renderCustomErrorPage(html, _code) {
-return html;
-}
-
-/**
- * Fire-and-forget mirror request to shadowUrl.
- * Sends the same method + path as `req` but discards the response.
- */
-async _fireMirrorRequest(req, mirrorUrl) {
-try {
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(mirrorUrl);
-  } catch {
-    parsedUrl = new URL(`http://${mirrorUrl}`);
-  }
-
-  // Append the original path+query
-  const targetPath = req.url || '/';
-  const options = {
-    hostname: parsedUrl.hostname,
-    port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-    path: targetPath,
-    method: req.method,
-    headers: {
-      ...req.headers,
-      host: parsedUrl.host,
-      'X-Mirrored-From': req.headers.host || '',
-      'X-Mirror': '1'
-    },
-    timeout: 5000 // 5s max for mirror requests
-  };
-
-  const proto = parsedUrl.protocol === 'https:' ? https : http;
-  const mirrorReq = proto.request(options, (res) => {
-    // Drain and discard mirror response
-    res.resume();
+// Logs requests rejected before ever reaching a backend (rate limit,
+// bandwidth quota, circuit breaker open, no backend available) — these used
+// to be silent (console-only), leaving the domain owner with zero visibility
+// into why their domain was inaccessible. Fire-and-forget, same as the
+// normal request-completion logging path.
+_logBlockedRequest(domain, req, clientIp, statusCode, errorMessage, startTime) {
+  const urlPath = (req.url || '/').split('?')[0];
+  const queryString = req.url && req.url.includes('?') ? req.url.split('?')[1] : null;
+  geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
+    logBatchQueue.queueRequestLog({
+      domainId: domain.id,
+      hostname: domain.hostname,
+      method: req.method,
+      path: urlPath,
+      queryString,
+      statusCode,
+      responseTime: Date.now() - startTime,
+      ipAddress: clientIp,
+      country,
+      userAgent: req.headers['user-agent'] || null,
+      referer: req.headers['referer'] || req.headers['referrer'] || null,
+      errorMessage
+    });
   });
-  mirrorReq.on('error', () => {}); // Swallow mirror errors silently
-  mirrorReq.end();
-} catch (_) {
-  // Mirror errors must never affect the real response
-}
 }
 
 _handleProxyCheck(req, res) {

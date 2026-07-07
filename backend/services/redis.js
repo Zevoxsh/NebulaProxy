@@ -156,14 +156,30 @@ class RedisService {
   }
 
   /**
-   * Close Redis connection
+   * Close Redis connection.
+   *
+   * `quit()` waits for every already-queued command to finish before
+   * disconnecting — if anything left a command in flight at shutdown time
+   * (a slow server, a stalled reply), it can hang indefinitely and the whole
+   * graceful-shutdown sequence rides the 30s force-exit timeout instead of
+   * exiting on its own. Race it against a short timeout and fall back to a
+   * hard `disconnect()` so this one step can never stall the rest.
    */
   async close() {
     if (this.client) {
-      await this.client.quit();
+      const client = this.client;
       this.client = null;
       this.isConnected = false;
-      logger.info('[Redis] Connection closed gracefully');
+      try {
+        await Promise.race([
+          client.quit(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('quit timeout')), 3000))
+        ]);
+        logger.info('[Redis] Connection closed gracefully');
+      } catch (err) {
+        logger.warn(`[Redis] Graceful quit failed/timed out (${err.message}) — forcing disconnect`);
+        client.disconnect();
+      }
     }
   }
 

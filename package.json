@@ -20,7 +20,6 @@
     "test:coverage": "cd backend && npm run test:coverage",
     "test:smoke": "node backend/tests/api-smoke-test.js",
     "build:frontend": "cd frontend && npm run build",
-    "init:db": "cd backend && node init-db.js",
     "config:show": "cd backend && node scripts/config-manager.js show",
     "config:edit": "cd backend && node scripts/config-manager.js edit",
     "config:set": "cd backend && node scripts/config-manager.js set",

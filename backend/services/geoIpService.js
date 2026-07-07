@@ -109,6 +109,57 @@ class GeoIpService {
   }
 
   /**
+   * Locate this server itself, for the traffic-origin map's destination
+   * point. Calling ipwho.is with no IP suffix resolves the caller's own
+   * public IP — same trusted API already used per-request, just aimed at
+   * ourselves. Cached long-term (server location practically never changes).
+   */
+  async getSelfLocation() {
+    const cacheKey = this.CACHE_PREFIX + 'self';
+
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch (_) {}
+    }
+
+    const location = await new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'ipwho.is',
+        path:     '/',
+        method:   'GET',
+        headers:  { 'Accept': 'application/json' },
+        timeout:  this.TIMEOUT,
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (data.success === true && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+              resolve({ lat: data.latitude, lng: data.longitude, country: data.country_code || null });
+            } else {
+              resolve(null);
+            }
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+      req.on('error',   () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.end();
+    });
+
+    if (location && this.redis) {
+      try { await this.redis.setex(cacheKey, this.CACHE_TTL * 7, JSON.stringify(location)); } catch (_) {}
+    }
+
+    return location;
+  }
+
+  /**
    * Force a fresh lookup for an IP (bypasses Redis cache).
    */
   async invalidate(ip) {
@@ -117,43 +168,6 @@ class GeoIpService {
     }
   }
 
-  /**
-   * Check whether a request from `ip` should be blocked for `domain`.
-   */
-  async checkAccess(domain, ip) {
-    if (!domain.geoip_blocking_enabled) {
-      return { blocked: false, countryCode: null, reason: null };
-    }
-
-    const countryCode = await this.getCountryCode(ip);
-
-    if (!countryCode) {
-      return { blocked: false, countryCode: null, reason: null };
-    }
-
-    const allowList = domain.geoip_allowed_countries;
-    const blockList = domain.geoip_blocked_countries;
-
-    if (allowList && allowList.length > 0) {
-      const allowed = allowList.includes(countryCode);
-      return {
-        blocked: !allowed,
-        countryCode,
-        reason: !allowed ? `Country ${countryCode} not in allowed list` : null
-      };
-    }
-
-    if (blockList && blockList.length > 0) {
-      const blocked = blockList.includes(countryCode);
-      return {
-        blocked,
-        countryCode,
-        reason: blocked ? `Country ${countryCode} is blocked` : null
-      };
-    }
-
-    return { blocked: false, countryCode, reason: null };
-  }
 }
 
 export const geoIpService = new GeoIpService();

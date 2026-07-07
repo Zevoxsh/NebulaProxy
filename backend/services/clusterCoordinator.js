@@ -27,7 +27,11 @@ import { config } from '../config/config.js';
 import { logger } from '../utils/logger.js';
 
 const LOCK_KEY = 'nebula:cluster:leader';
-const LOCK_TTL_SEC = 20;
+// TTL gives ~37s of margin over the 8s renewal interval — wide enough to
+// absorb a Redis command-latency spike (e.g. a slow BGSAVE fork on a
+// contended disk) without both workers flipping leadership simultaneously,
+// which is what happened in production with the previous 20s/12s margin.
+const LOCK_TTL_SEC = 45;
 const RENEW_MS = 8000;
 
 // Per-worker liveness heartbeat. Exists because the container healthcheck

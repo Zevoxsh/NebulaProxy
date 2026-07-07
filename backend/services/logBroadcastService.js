@@ -50,6 +50,7 @@ class LogBroadcastService {
           statusCode: logData.status_code || logData.statusCode,
           responseTime: logData.response_time || logData.responseTime,
           ipAddress: logData.ip_address || logData.ipAddress,
+          country: logData.country || null,
           userAgent: logData.user_agent || logData.userAgent,
           errorMessage: logData.error_message || logData.errorMessage,
           level: this.determineLevel(logData.status_code || logData.statusCode),

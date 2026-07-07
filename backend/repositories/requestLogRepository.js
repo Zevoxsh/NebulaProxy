@@ -70,6 +70,7 @@ async createRequestLog(logData) {
       responseTime,
       ip_address: ipAddress,
       ipAddress,
+      country,
       user_agent: userAgent,
       userAgent,
       error_message: errorMessage,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useViewModeStore } from '../../store/viewModeStore';
 import { authAPI, userAPI } from '../../api/client';
 import { getAvatarUrl } from '../../utils/gravatar';
 import { cn } from '@/lib/utils';
@@ -16,10 +17,9 @@ import {
   ChevronRight,
   ArrowLeftRight,
   User,
-  BarChart3,
   Activity,
-  Zap,
-  Cable
+  Cable,
+  MapPin
 } from 'lucide-react';
 import {
   Dialog,
@@ -61,6 +61,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const { user, logout, updateUser } = useAuthStore();
   const appName = useBrandingStore((s) => s.appName);
+  const { mode, setMode } = useViewModeStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     const saved = localStorage.getItem('client-sidebar-collapsed');
@@ -119,36 +120,52 @@ export default function Layout() {
     }
   };
 
-  const navigationSections = useMemo(() => ([
-    {
+  const navigationSections = useMemo(() => {
+    const overviewSection = {
       title: 'Overview',
       items: [
-        { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-        { path: '/live-traffic', icon: Activity, label: 'Live Traffic' },
-        { path: '/current-traffic', icon: Zap, label: 'Requêtes actuelles' }
+        { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' }
       ]
-    },
-    {
-      title: 'Management',
-      items: [
-        { path: '/domains', icon: Globe, label: 'Domains' },
-        { path: '/tunnels', icon: Cable, label: 'Tunnels' },
-        { path: '/redirections', icon: LinkIcon, label: 'Redirections' },
-        { path: '/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
-        { path: '/teams', icon: Users, label: 'Teams' },
-        { path: '/ssl-certificates', icon: Shield, label: 'SSL Certificates' }
-      ]
-    },
-    ...(user?.role === 'admin'
-      ? [{
-          title: 'Administration',
+    };
+
+    // Configuration vs Visualisation: independent of Admin/Client — just
+    // filters which second section shows. Domains stays in both since it's
+    // the gateway into a domain either way (edit its config, or read its
+    // logs — DomainDetail itself filters which tabs you see per mode).
+    const modeSection = mode === 'visualization'
+      ? {
+          title: 'Visualisation',
           items: [
-            { path: '/admin/dashboard', icon: Shield, label: 'Admin Area' }
+            { path: '/domains', icon: Globe, label: 'Domains' },
+            { path: '/traffic', icon: Activity, label: 'Traffic' },
+            { path: '/map', icon: MapPin, label: 'Map' }
           ]
-        }]
-      : [])
-  ].filter((section) => Array.isArray(section.items) && section.items.length > 0)), [user?.role]);
+        }
+      : {
+          title: 'Configuration',
+          items: [
+            { path: '/domains', icon: Globe, label: 'Domains' },
+            { path: '/tunnels', icon: Cable, label: 'Tunnels' },
+            { path: '/redirections', icon: LinkIcon, label: 'Redirections' },
+            { path: '/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
+            { path: '/teams', icon: Users, label: 'Teams' },
+            { path: '/ssl-certificates', icon: Shield, label: 'SSL Certificates' }
+          ]
+        };
+
+    return [
+      overviewSection,
+      modeSection,
+      ...(user?.role === 'admin'
+        ? [{
+            title: 'Administration',
+            items: [
+              { path: '/admin/dashboard', icon: Shield, label: 'Admin Area' }
+            ]
+          }]
+        : [])
+    ].filter((section) => Array.isArray(section.items) && section.items.length > 0);
+  }, [user?.role, mode]);
 
   const handleLogout = async () => {
     try {
@@ -194,6 +211,37 @@ export default function Layout() {
           </div>
         )}
       </div>
+
+      {!collapsed && (
+        <div className="px-3 pt-3">
+          <div className="flex rounded-lg bg-admin-bg border border-admin-border p-1">
+            <button
+              type="button"
+              onClick={() => setMode('config')}
+              className={cn(
+                'flex-1 text-xs font-medium py-1.5 rounded-md transition-all',
+                mode === 'config'
+                  ? 'bg-admin-primary/20 text-admin-primary'
+                  : 'text-admin-text-muted hover:text-admin-text'
+              )}
+            >
+              Configuration
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('visualization')}
+              className={cn(
+                'flex-1 text-xs font-medium py-1.5 rounded-md transition-all',
+                mode === 'visualization'
+                  ? 'bg-admin-primary/20 text-admin-primary'
+                  : 'text-admin-text-muted hover:text-admin-text'
+              )}
+            >
+              Visualisation
+            </button>
+          </div>
+        </div>
+      )}
 
       <ScrollArea className="flex-1 py-4">
         <nav className="space-y-6 px-3">
@@ -290,7 +338,10 @@ export default function Layout() {
           <header className="sticky top-0 z-30 flex w-full items-center justify-between gap-4 px-6 py-4 border-b border-admin-border bg-admin-surface/95 backdrop-blur">
             <div className="hidden md:flex items-center gap-2 text-sm min-w-0">
               {getBreadcrumbs().map((crumb, idx) => (
-                <div key={crumb.path} className="flex items-center gap-2 min-w-0">
+                // Root "Client" crumb and the first path segment share the
+                // same `/dashboard` path on the bare dashboard route — index
+                // makes the key unique regardless.
+                <div key={`${idx}-${crumb.path}`} className="flex items-center gap-2 min-w-0">
                   {idx > 0 && <ChevronRight className="w-3 h-3 text-admin-text-subtle" />}
                   {crumb.isLast ? (
                     <span className="text-admin-text font-medium truncate">{crumb.label}</span>

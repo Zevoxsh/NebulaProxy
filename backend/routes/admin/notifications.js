@@ -1,27 +1,14 @@
 // @ts-check
 import { pool } from '../../config/database.js';
 import nodemailer from 'nodemailer';
-import { zabbixService } from '../../services/zabbixService.js';
 
 /**
  * Admin Notifications Routes
  * GET  /api/admin/notifications/config         - Get notification config
  * PUT  /api/admin/notifications/config         - Update notification config
  * POST /api/admin/notifications/test/email     - Test email
- * POST /api/admin/notifications/test/zabbix    - Test Zabbix connection
  */
 export async function notificationRoutes(fastify, _options) {
-  const DEFAULT_ZABBIX = {
-    enabled: false,
-    server_host: '',
-    server_port: 10051,
-    host_name: 'NebulaProxy',
-    send_domain_alerts: true,
-    send_ssl_alerts: true,
-    send_resource_alerts: true,
-    send_lifecycle_events: true
-  };
-
   // Get notification configuration
   fastify.get('/config', {
     preHandler: [fastify.authenticate, fastify.requireAdmin]
@@ -49,8 +36,7 @@ export async function notificationRoutes(fastify, _options) {
           high_memory_threshold: 85,
           disk_space_threshold: 90,
           failed_backup_enabled: true
-        },
-        zabbix: { ...DEFAULT_ZABBIX }
+        }
       };
 
       const config = result.rows.length > 0
@@ -65,10 +51,6 @@ export async function notificationRoutes(fastify, _options) {
         alerts: {
           ...defaultConfig.alerts,
           ...(config.alerts || {})
-        },
-        zabbix: {
-          ...DEFAULT_ZABBIX,
-          ...(config.zabbix || {})
         }
       };
 
@@ -106,10 +88,6 @@ export async function notificationRoutes(fastify, _options) {
           high_memory_threshold: 85,
           disk_space_threshold: 90,
           failed_backup_enabled: true
-        },
-        zabbix: {
-          ...DEFAULT_ZABBIX,
-          ...(config.zabbix || {})
         }
       };
 
@@ -234,46 +212,6 @@ export async function notificationRoutes(fastify, _options) {
 
       reply.status(500).send({
         message: 'Failed to send test email',
-        error: error.message
-      });
-    }
-  });
-
-  // Test Zabbix connection
-  fastify.post('/test/zabbix', {
-    preHandler: [fastify.authenticate, fastify.requireAdmin]
-  }, async (request, reply) => {
-    try {
-      const result = await pool.query(
-        'SELECT value FROM system_config WHERE key = $1',
-        ['notification_config']
-      );
-
-      const config = result.rows.length > 0
-        ? JSON.parse(result.rows[0].value)
-        : {};
-
-      const zabbixConfig = { ...DEFAULT_ZABBIX, ...(config.zabbix || {}) };
-
-      if (!zabbixConfig.server_host) {
-        return reply.status(400).send({ message: 'Zabbix server host not configured' });
-      }
-
-      const response = await zabbixService.testConnection(
-        zabbixConfig.server_host,
-        zabbixConfig.server_port,
-        zabbixConfig.host_name
-      );
-
-      reply.send({
-        success: true,
-        message: 'Connection to Zabbix server successful',
-        response
-      });
-    } catch (error) {
-      request.log.error(error);
-      reply.status(500).send({
-        message: 'Failed to connect to Zabbix server',
         error: error.message
       });
     }

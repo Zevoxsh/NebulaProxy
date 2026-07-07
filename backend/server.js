@@ -16,7 +16,6 @@ import { config, initializeConfig } from './config/config.js';
 import { database } from './services/database.js';
 import { redisService } from './services/redis.js';
 import { container } from './services/container.js';
-import { ddosProtectionService } from './services/ddosProtectionService.js';
 import { closePool } from './config/database.js';
 import { proxyManager } from './services/proxyManager.js';
 import { acmeManager } from './services/acmeManager.js';
@@ -28,6 +27,7 @@ import updateService from './services/updateService.js';
 import { healthCheckService } from './services/healthCheckService.js';
 import { resourceMonitor } from './services/resourceMonitor.js';
 import { bandwidthTracker } from './services/bandwidthTracker.js';
+import { multiProxySyncService } from './services/multiProxySyncService.js';
 import { applyLogFilter } from './utils/logFilter.js';
 import { clusterCoordinator } from './services/clusterCoordinator.js';
 import { eventLoopMonitor } from './services/eventLoopMonitor.js';
@@ -304,7 +304,6 @@ async function shutdownSteps(signal) {
         .catch((err) => fastify.log.warn({ err }, 'Failed to send shutdown notification'));
     }
 
-    ddosProtectionService.destroy();
     healthCheckService.stop();
     if (config.queue.enabled) { await retryWorker.stop(); await queueService.cleanup?.(); }
     await proxyManager.stopAll();
@@ -312,6 +311,13 @@ async function shutdownSteps(signal) {
     await smtpProxyService.stop();
     acmeManager.stopRenewalCron();
     updateService.stopCron();
+
+    // MUST run before closePool(): this holds a dedicated Postgres client
+    // checked out of the pool for LISTEN/NOTIFY (never released back to the
+    // pool while listening, by design). Without this, pool.end() waits
+    // forever for that client to be released — it never was, so every
+    // graceful shutdown silently hung for the full 30s force-exit timeout.
+    await multiProxySyncService.stopListening().catch((err) => fastify.log.warn({ err }, 'Failed to stop multi-proxy sync listener'));
 
     if (fastify.tunnelRelayService)  await fastify.tunnelRelayService.stop();
     if (fastify.websocketManager)    fastify.websocketManager.close();

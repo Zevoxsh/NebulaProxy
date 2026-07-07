@@ -14,6 +14,7 @@ export const domainAPI = {
   getLogs: (id, params) => api.get(`/domains/${id}/logs`, { params }),
   getLogStats: (id, params) => api.get(`/domains/${id}/logs/stats`, { params }),
   getLogErrors: (id, params) => api.get(`/domains/${id}/logs/errors`, { params }),
+  getHealth: (id) => api.get(`/domains/${id}/health`),
 
   // Load Balancing / Backends
   getBackends: (id) => api.get(`/domains/${id}/backends`),
@@ -25,14 +26,11 @@ export const domainAPI = {
 
   // V3 Feature endpoints
   setMaintenance: (id, data) => api.put(`/domains/${id}/maintenance`, data),
-  setErrorPages: (id, data) => api.put(`/domains/${id}/error-pages`, data),
   setRateLimit: (id, data) => api.put(`/domains/${id}/rate-limit`, data),
-  setMirror: (id, data) => api.put(`/domains/${id}/mirror`, data),
-  setGeoip: (id, data) => api.put(`/domains/${id}/geoip`, data),
-  setStickySessions: (id, data) => api.put(`/domains/${id}/sticky-sessions`, data),
   setProxyProtocol: (id, data) => api.put(`/domains/${id}/proxy-protocol`, data),
   setGeyserProxyProtocol: (id, data) => api.put(`/domains/${id}/geyser-proxy-protocol`, data),
   setDdosProtection: (id, data) => api.put(`/domains/${id}/ddos-protection`, data),
+  getChallengeTypesCatalog: () => api.get('/domains/challenge-types'),
 
   // Circuit breaker (admin)
   getCircuitBreakerStatus: () => api.get('/domains/circuit-breaker/status'),

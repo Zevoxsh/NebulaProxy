@@ -284,7 +284,10 @@ async isTeamMember(teamId, userId) {
   return Number(result?.count || 0) > 0;
 }
 
-// Calculate team's total domain quota (sum of all members' max_domains)
+// Calculate team's total domain quota (sum of all members' max_domains).
+// -1 means unlimited (same convention as users.max_domains) — returned
+// as-is (not summed in) so a single unlimited member makes the whole team
+// unlimited instead of silently corrupting the SUM with a negative value.
 async getTeamDomainQuota(teamId) {
   // If team has a custom max_domains set, use that
   const team = await this.getTeamById(teamId);
@@ -292,14 +295,14 @@ async getTeamDomainQuota(teamId) {
     return Number(team.max_domains);
   }
 
-  // Otherwise, sum all team members' max_domains
-  const result = await this.queryOne(`
-    SELECT SUM(u.max_domains) as total_quota
+  const rows = await this.queryAll(`
+    SELECT u.max_domains
     FROM team_members tm
     JOIN users u ON tm.user_id = u.id
     WHERE tm.team_id = ?
   `, [teamId]);
-  return Number(result?.total_quota || 0);
+  if (rows.some((r) => Number(r.max_domains) === -1)) return -1;
+  return rows.reduce((sum, r) => sum + Number(r.max_domains || 0), 0);
 }
 
 // Count domains owned by a team
@@ -314,6 +317,7 @@ async getTeamDomainCount(teamId) {
 // Check if team can add more domains
 async canTeamAddDomain(teamId) {
   const quota = await this.getTeamDomainQuota(teamId);
+  if (quota === -1) return true;
   const current = await this.getTeamDomainCount(teamId);
   return current < quota;
 }

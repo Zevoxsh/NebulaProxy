@@ -12,6 +12,7 @@ import { allocateAvailablePort, isPortAvailable, validateExternalPort, MIN_EXTER
 import net from 'net';
 import validator from 'validator';
 import { logger } from '../utils/logger.js';
+import { ddosProtectionService } from '../services/ddosProtectionService.js';
 import {
   ROUTE_CHECK_PATH,
   getBackendUrlPortError, parsePortNumber,
@@ -20,6 +21,16 @@ import {
 } from '../services/domainService.js';
 
 export async function domainRoutes(fastify, _options) {
+  // Static catalogue of all challenge puzzle types (id/label/desc/category) —
+  // any authenticated user can read this to build the per-domain challenge
+  // type picker; only admins can change which of these are globally enabled
+  // (see routes/admin/ddos.js). Not domain-scoped, just a lookup table.
+  fastify.get('/challenge-types', {
+    onRequest: [fastify.authenticate]
+  }, async (_request, reply) => {
+    return reply.send({ types: ddosProtectionService.constructor.ALL_CHALLENGE_TYPES });
+  });
+
   // Admin: check if an external port is available (TCP/UDP only)
   fastify.get('/ports/check', {
     preHandler: fastify.authorize(['admin'])
@@ -1217,6 +1228,60 @@ export async function domainRoutes(fastify, _options) {
     }
   });
 
+  // Real reachability status for this domain — unlike `is_active` (a manual
+  // on/off toggle), this reflects actual health-check results, the backend
+  // circuit breaker state, and the *reason* the last check failed, so the
+  // owner isn't left guessing why their domain is down.
+  fastify.get('/:id/health', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const userId = request.user.id;
+      const isAdmin = request.user.role === 'admin';
+
+      const domain = await database.getDomainById(domainId);
+      if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      if (!await canAccessDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to view health for this domain' });
+      }
+
+      const [status, latestCheck, recentChecks] = await Promise.all([
+        database.getDomainHealthStatus(domainId),
+        database.getLatestHealthCheck(domainId),
+        database.getHealthChecksByDomain(domainId, 20)
+      ]);
+
+      const { circuitBreaker } = await import('../services/circuitBreaker.js');
+      const breakers = circuitBreaker.getStatusForDomain(domainId);
+
+      reply.send({
+        success: true,
+        health: {
+          currentStatus: status?.current_status || 'unknown',
+          lastCheckedAt: status?.last_checked_at || null,
+          lastStatusChangeAt: status?.last_status_change_at || null,
+          consecutiveFailures: status?.consecutive_failures || 0,
+          consecutiveSuccesses: status?.consecutive_successes || 0,
+          lastError: latestCheck?.error_message || null,
+          lastStatusCode: latestCheck?.status_code ?? null,
+          lastResponseTime: latestCheck?.response_time ?? null,
+          recentChecks: recentChecks.map(c => ({
+            status: c.status,
+            statusCode: c.status_code,
+            responseTime: c.response_time,
+            errorMessage: c.error_message,
+            checkedAt: c.checked_at
+          })),
+          circuitBreakers: breakers
+        }
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to get domain health');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to get domain health' });
+    }
+  });
+
   fastify.get('/:id/check-routing', {
     preHandler: fastify.authenticate
   }, async (request, reply) => {
@@ -1720,245 +1785,6 @@ export async function domainRoutes(fastify, _options) {
     }
   });
 
-  // ── Custom Error Pages ─────────────────────────────────────────────────────
-  fastify.put('/:domainId/error-pages', {
-    onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
-      try {
-        const { domainId } = request.params;
-        const { custom404, custom502, custom503 } = request.body || {};
-        const userId = request.user.id;
-        const isAdmin = request.user.role === 'admin';
-
-        const domain = await database.getDomainById(domainId);
-        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
-        if (!await canModifyDomain(domain, userId, isAdmin)) {
-          return reply.code(403).send({ error: 'Forbidden' });
-        }
-
-        await database.execute(`
-          UPDATE domains SET
-            custom_404_page = COALESCE(?, custom_404_page),
-            custom_502_page = COALESCE(?, custom_502_page),
-            custom_503_page = COALESCE(?, custom_503_page),
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [
-          custom404 !== undefined ? custom404 : null,
-          custom502 !== undefined ? custom502 : null,
-          custom503 !== undefined ? custom503 : null,
-          domainId
-        ]);
-
-        const updated = await database.getDomainById(domainId);
-
-        if (domain.is_active) {
-          await proxyManager.reloadProxy(domainId);
-        }
-
-        return reply.send({ success: true, domain: updated });
-      } catch (error) {
-        fastify.log.error({ error }, 'Failed to update error pages');
-        return reply.code(500).send({ error: 'Internal Server Error' });
-      }
-    }
-  });
-
-  // ── Per-Domain Rate Limiting ───────────────────────────────────────────────
-  fastify.put('/:domainId/rate-limit', {
-    onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
-      try {
-        const { domainId } = request.params;
-        const { enabled, max, window } = request.body || {};
-        const userId = request.user.id;
-        const isAdmin = request.user.role === 'admin';
-
-        const domain = await database.getDomainById(domainId);
-        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
-        if (!await canModifyDomain(domain, userId, isAdmin)) {
-          return reply.code(403).send({ error: 'Forbidden' });
-        }
-
-        // Validate
-        if (max !== undefined && (max < 1 || max > 100000)) {
-          return reply.code(400).send({ error: 'Bad Request', message: 'max must be between 1 and 100000' });
-        }
-        if (window !== undefined && (window < 1 || window > 86400)) {
-          return reply.code(400).send({ error: 'Bad Request', message: 'window must be between 1 and 86400 seconds' });
-        }
-
-        await database.execute(`
-          UPDATE domains SET
-            rate_limit_enabled = COALESCE(?, rate_limit_enabled),
-            rate_limit_max = COALESCE(?, rate_limit_max),
-            rate_limit_window = COALESCE(?, rate_limit_window),
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [
-          enabled !== undefined ? enabled : null,
-          max !== undefined ? max : null,
-          window !== undefined ? window : null,
-          domainId
-        ]);
-
-        const updated = await database.getDomainById(domainId);
-
-        if (domain.is_active) {
-          await proxyManager.reloadProxy(domainId);
-        }
-
-        return reply.send({ success: true, domain: updated });
-      } catch (error) {
-        fastify.log.error({ error }, 'Failed to update rate limit settings');
-        return reply.code(500).send({ error: 'Internal Server Error' });
-      }
-    }
-  });
-
-  // ── Traffic Mirroring ─────────────────────────────────────────────────────
-  fastify.put('/:domainId/mirror', {
-    onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
-      try {
-        const { domainId } = request.params;
-        const { enabled, backendUrl } = request.body || {};
-        const userId = request.user.id;
-        const isAdmin = request.user.role === 'admin';
-
-        const domain = await database.getDomainById(domainId);
-        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
-        if (!await canModifyDomain(domain, userId, isAdmin)) {
-          return reply.code(403).send({ error: 'Forbidden' });
-        }
-
-        // Validate mirror URL if provided
-        if (backendUrl) {
-          try { new URL(backendUrl); } catch {
-            return reply.code(400).send({ error: 'Bad Request', message: 'Invalid mirror backend URL' });
-          }
-        }
-
-        await database.execute(`
-          UPDATE domains SET
-            mirror_enabled = COALESCE(?, mirror_enabled),
-            mirror_backend_url = COALESCE(?, mirror_backend_url),
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [
-          enabled !== undefined ? enabled : null,
-          backendUrl !== undefined ? backendUrl : null,
-          domainId
-        ]);
-
-        const updated = await database.getDomainById(domainId);
-
-        if (domain.is_active) {
-          await proxyManager.reloadProxy(domainId);
-        }
-
-        return reply.send({ success: true, domain: updated });
-      } catch (error) {
-        fastify.log.error({ error }, 'Failed to update mirror settings');
-        return reply.code(500).send({ error: 'Internal Server Error' });
-      }
-    }
-  });
-
-  // ── GeoIP Blocking ────────────────────────────────────────────────────────
-  fastify.put('/:domainId/geoip', {
-    onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
-      try {
-        const { domainId } = request.params;
-        const { enabled, blockedCountries, allowedCountries } = request.body || {};
-        const userId = request.user.id;
-        const isAdmin = request.user.role === 'admin';
-
-        const domain = await database.getDomainById(domainId);
-        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
-        if (!await canModifyDomain(domain, userId, isAdmin)) {
-          return reply.code(403).send({ error: 'Forbidden' });
-        }
-
-        // Normalise country codes to uppercase
-        const normBlocked  = blockedCountries  ? blockedCountries.map(c => c.toUpperCase()) : null;
-        const normAllowed  = allowedCountries  ? allowedCountries.map(c => c.toUpperCase()) : null;
-
-        await database.execute(`
-          UPDATE domains SET
-            geoip_blocking_enabled = COALESCE(?, geoip_blocking_enabled),
-            geoip_blocked_countries = COALESCE(?, geoip_blocked_countries),
-            geoip_allowed_countries = COALESCE(?, geoip_allowed_countries),
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [
-          enabled !== undefined ? enabled : null,
-          normBlocked,
-          normAllowed,
-          domainId
-        ]);
-
-        const updated = await database.getDomainById(domainId);
-
-        if (domain.is_active) {
-          await proxyManager.reloadProxy(domainId);
-        }
-
-        return reply.send({ success: true, domain: updated });
-      } catch (error) {
-        fastify.log.error({ error }, 'Failed to update GeoIP settings');
-        return reply.code(500).send({ error: 'Internal Server Error' });
-      }
-    }
-  });
-
-  // ── Sticky Sessions ───────────────────────────────────────────────────────
-  fastify.put('/:domainId/sticky-sessions', {
-    onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
-      try {
-        const { domainId } = request.params;
-        const { enabled, ttl } = request.body || {};
-        const userId = request.user.id;
-        const isAdmin = request.user.role === 'admin';
-
-        const domain = await database.getDomainById(domainId);
-        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
-        if (!await canModifyDomain(domain, userId, isAdmin)) {
-          return reply.code(403).send({ error: 'Forbidden' });
-        }
-
-        if (ttl !== undefined && (ttl < 60 || ttl > 86400 * 30)) {
-          return reply.code(400).send({ error: 'Bad Request', message: 'ttl must be between 60 and 2592000 seconds' });
-        }
-
-        await database.execute(`
-          UPDATE domains SET
-            sticky_sessions_enabled = COALESCE(?, sticky_sessions_enabled),
-            sticky_sessions_ttl = COALESCE(?, sticky_sessions_ttl),
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [
-          enabled !== undefined ? enabled : null,
-          ttl !== undefined ? ttl : null,
-          domainId
-        ]);
-
-        const updated = await database.getDomainById(domainId);
-
-        if (domain.is_active) {
-          await proxyManager.reloadProxy(domainId);
-        }
-
-        return reply.send({ success: true, domain: updated });
-      } catch (error) {
-        fastify.log.error({ error }, 'Failed to update sticky session settings');
-        return reply.code(500).send({ error: 'Internal Server Error' });
-      }
-    }
-  });
-
   // ── PROXY Protocol ────────────────────────────────────────────────────────
   fastify.put('/:domainId/proxy-protocol', {
     onRequest: [fastify.authenticate],
@@ -2043,7 +1869,7 @@ export async function domainRoutes(fastify, _options) {
       const isAdmin = request.user.role === 'admin';
       const {
         enabled, reqPerSecond, connectionsPerMinute, banDurationSec,
-        maxConnectionsPerIp, challengeMode, banOn4xxRate
+        maxConnectionsPerIp, challengeMode, banOn4xxRate, challengeTypes
       } = request.body;
 
       const domain = await database.getDomainById(domainId);
@@ -2062,6 +1888,17 @@ export async function domainRoutes(fastify, _options) {
       const nextBanDurationSec = banDurationSec ?? domain.ddos_ban_duration_sec ?? 3600;
       const nextMaxConnectionsPerIp = maxConnectionsPerIp ?? domain.ddos_max_connections_per_ip ?? 50;
 
+      let nextChallengeTypes = domain.ddos_challenge_types ?? null;
+      if (challengeTypes !== undefined) {
+        if (Array.isArray(challengeTypes)) {
+          const validIds = ddosProtectionService.constructor.ALL_CHALLENGE_TYPES.map(t => t.id);
+          const filtered = challengeTypes.filter(id => validIds.includes(id));
+          nextChallengeTypes = filtered.length > 0 ? filtered : null;
+        } else {
+          nextChallengeTypes = null;
+        }
+      }
+
       await database.execute(
         `UPDATE domains SET
           ddos_protection_enabled     = $1,
@@ -2071,8 +1908,9 @@ export async function domainRoutes(fastify, _options) {
           ddos_max_connections_per_ip = $5,
           ddos_challenge_mode         = $6,
           ddos_ban_on_4xx_rate        = $7,
+          ddos_challenge_types        = $8,
           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $8`,
+         WHERE id = $9`,
         [
           nextEnabled,
           nextReqPerSecond,
@@ -2081,6 +1919,7 @@ export async function domainRoutes(fastify, _options) {
           nextMaxConnectionsPerIp,
           challengeMode            ?? domain.ddos_challenge_mode           ?? false,
           banOn4xxRate             ?? domain.ddos_ban_on_4xx_rate          ?? false,
+          nextChallengeTypes,
           domainId
         ]
       );

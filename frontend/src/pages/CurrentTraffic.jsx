@@ -24,11 +24,11 @@ const timeAgo = (ts) => {
 };
 
 const recencyClass = (ts) => {
-  if (!ts) return 'text-admin-text-muted';
+  if (!ts) return 'text-white/40';
   const sec = (Date.now() - ts) / 1000;
   if (sec < 5)  return 'text-green-400';
   if (sec < 15) return 'text-yellow-400';
-  return 'text-admin-text-muted';
+  return 'text-white/40';
 };
 
 const PROTO_COLORS = {
@@ -56,7 +56,7 @@ export default function CurrentTraffic() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [now, setNow]                 = useState(Date.now());
+  const [, setNow]                    = useState(Date.now());
 
   // Filters
   const [filterDomain, setFilterDomain] = useState('');
@@ -136,11 +136,11 @@ export default function CurrentTraffic() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-admin-text flex items-center gap-2">
+          <h1 className="text-2xl font-light text-white tracking-tight flex items-center gap-2">
             <Zap className="w-6 h-6 text-[#9D4EDD]" strokeWidth={1.5} />
             Requêtes actuelles
           </h1>
-          <p className="text-admin-text-muted text-sm mt-1">
+          <p className="text-white/50 text-sm mt-1">
             Toutes les connexions enregistrées — rafraîchissement 1s
           </p>
         </div>
@@ -150,7 +150,7 @@ export default function CurrentTraffic() {
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
               autoRefresh
                 ? 'bg-[#9D4EDD]/15 text-[#9D4EDD] border-[#9D4EDD]/30'
-                : 'bg-admin-surface border-admin-border text-admin-text-muted hover:bg-admin-surface2'
+                : 'bg-white/[0.03] border-white/[0.08] text-white/50 hover:text-white'
             }`}
           >
             <RefreshCw className={`w-4 h-4 ${autoRefresh ? 'animate-spin' : ''}`} strokeWidth={1.5} />
@@ -158,7 +158,7 @@ export default function CurrentTraffic() {
           </button>
           <button
             onClick={load}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-admin-surface border border-admin-border text-admin-text-muted hover:bg-admin-surface2 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.03] border border-white/[0.08] text-white/50 hover:text-white transition-colors"
           >
             <RefreshCw className="w-4 h-4" strokeWidth={1.5} />
             Rafraîchir
@@ -167,12 +167,12 @@ export default function CurrentTraffic() {
       </div>
 
       {/* Counter bar */}
-      <div className="card-standard p-4 flex items-center gap-4">
+      <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl p-4 flex items-center gap-4">
         <Activity className="w-4 h-4 text-[#9D4EDD]" strokeWidth={1.5} />
-        <span className="text-admin-text font-semibold text-lg">{sorted.length}</span>
-        <span className="text-admin-text-muted text-sm">connexion(s) enregistrée(s)</span>
+        <span className="text-white font-semibold text-lg">{sorted.length}</span>
+        <span className="text-white/50 text-sm">connexion(s) enregistrée(s)</span>
         {autoRefresh && (
-          <span className="ml-auto text-[10px] text-admin-text-muted flex items-center gap-1">
+          <span className="ml-auto text-[10px] text-white/50 flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
             Mise à jour en temps réel
           </span>
@@ -180,19 +180,19 @@ export default function CurrentTraffic() {
       </div>
 
       {/* Filters */}
-      <div className="card-standard p-4">
+      <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl p-4">
         <div className="flex items-center gap-3 flex-wrap">
-          <Filter className="w-4 h-4 text-admin-text-muted flex-shrink-0" strokeWidth={1.5} />
+          <Filter className="w-4 h-4 text-white/50 flex-shrink-0" strokeWidth={1.5} />
           <Input
             placeholder="Filtrer par IP..."
             value={filterIp}
             onChange={e => setFilterIp(e.target.value)}
-            className="bg-admin-bg border-admin-border text-admin-text text-xs w-44 h-8"
+            className="bg-white/[0.03] border-white/[0.08] text-white text-xs w-44 h-8"
           />
           <select
             value={filterDomain}
             onChange={e => setFilterDomain(e.target.value)}
-            className="h-8 text-xs px-3 py-1 bg-admin-bg border border-admin-border rounded-md text-admin-text focus:outline-none"
+            className="h-8 text-xs px-3 py-1 bg-white/[0.03] border border-white/[0.08] rounded-md text-white focus:outline-none"
           >
             <option value="">Tous les domaines</option>
             {domains.map(d => <option key={d} value={d}>{d}</option>)}
@@ -200,7 +200,7 @@ export default function CurrentTraffic() {
           <select
             value={filterProto}
             onChange={e => setFilterProto(e.target.value)}
-            className="h-8 text-xs px-3 py-1 bg-admin-bg border border-admin-border rounded-md text-admin-text focus:outline-none"
+            className="h-8 text-xs px-3 py-1 bg-white/[0.03] border border-white/[0.08] rounded-md text-white focus:outline-none"
           >
             <option value="">Tous les protocoles</option>
             {protos.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
@@ -208,70 +208,70 @@ export default function CurrentTraffic() {
           {(filterIp || filterDomain || filterProto) && (
             <button
               onClick={() => { setFilterIp(''); setFilterDomain(''); setFilterProto(''); setCurrentPage(1); }}
-              className="text-xs text-admin-text-muted hover:text-admin-text transition-colors"
+              className="text-xs text-white/50 hover:text-white transition-colors"
             >
               Réinitialiser
             </button>
           )}
-          <span className="ml-auto text-xs text-admin-text-muted">
+          <span className="ml-auto text-xs text-white/50">
             {sorted.length} entrée(s)
           </span>
         </div>
       </div>
 
       {/* Table */}
-      <div className="card-standard overflow-hidden p-0">
-        <div className="flex items-center gap-2 px-6 py-4 border-b border-admin-border">
+      <div className="bg-[#161722]/50 backdrop-blur-2xl border border-white/[0.08] rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 px-6 py-4 border-b border-white/[0.08]">
           <Zap className="w-4 h-4 text-[#9D4EDD]" strokeWidth={1.5} />
-          <h2 className="text-admin-text font-semibold text-sm">Flux en direct</h2>
-          <span className="text-xs text-admin-text-muted ml-1">— vert = &lt;5s, jaune = &lt;15s</span>
+          <h2 className="text-white font-medium text-sm">Flux en direct</h2>
+          <span className="text-xs text-white/50 ml-1">— vert = &lt;5s, jaune = &lt;15s</span>
         </div>
 
         {sorted.length === 0 ? (
-          <div className="p-12 text-center text-admin-text-muted text-sm">
+          <div className="p-12 text-center text-white/50 text-sm">
             <Wifi className="w-10 h-10 mx-auto mb-3 opacity-20" strokeWidth={1} />
             Aucune connexion enregistrée
           </div>
         ) : (
           <Table>
             <TableHeader>
-              <TableRow className="border-admin-border">
-                <TableHead className="text-admin-text-muted text-xs w-4" />
-                <TableHead className="text-admin-text-muted text-xs">IP</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Pays</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Domaine</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Protocole</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Backend</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Req</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Data</TableHead>
-                <TableHead className="text-admin-text-muted text-xs">Dernier hit</TableHead>
+              <TableRow className="border-white/[0.08]">
+                <TableHead className="text-white/50 text-xs w-4" />
+                <TableHead className="text-white/50 text-xs">IP</TableHead>
+                <TableHead className="text-white/50 text-xs">Pays</TableHead>
+                <TableHead className="text-white/50 text-xs">Domaine</TableHead>
+                <TableHead className="text-white/50 text-xs">Protocole</TableHead>
+                <TableHead className="text-white/50 text-xs">Backend</TableHead>
+                <TableHead className="text-white/50 text-xs">Req</TableHead>
+                <TableHead className="text-white/50 text-xs">Data</TableHead>
+                <TableHead className="text-white/50 text-xs">Dernier hit</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedConnections.map((c, i) => (
-                <TableRow key={`${c.ip}-${c.protocol}-${c.domainId}-${i}`} className="border-admin-border">
+                <TableRow key={`${c.ip}-${c.protocol}-${c.domainId}-${i}`} className="border-white/[0.08]">
                   <TableCell className="pr-0">
                     <span className={`w-2 h-2 rounded-full inline-block ${recencyClass(c.lastSeen).replace('text-', 'bg-')}`} />
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-admin-text">{c.ip}</TableCell>
+                  <TableCell className="font-mono text-sm text-white">{c.ip}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       {c.country
                         ? <FlagImg code={c.country} title={c.country} className="w-5 h-3.5 rounded-sm" />
-                        : <Globe className="w-4 h-4 text-admin-text-muted opacity-40" strokeWidth={1.5} />
+                        : <Globe className="w-4 h-4 text-white/50 opacity-40" strokeWidth={1.5} />
                       }
-                      <span className="text-xs text-admin-text-muted font-mono">{c.country || '—'}</span>
+                      <span className="text-xs text-white/50 font-mono">{c.country || '—'}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-admin-text max-w-[160px] truncate">
-                    {c.hostname || <span className="text-admin-text-muted italic">—</span>}
+                  <TableCell className="text-xs text-white max-w-[160px] truncate">
+                    {c.hostname || <span className="text-white/40 italic">—</span>}
                   </TableCell>
                   <TableCell><ProtoBadge proto={c.protocol} /></TableCell>
-                  <TableCell className="text-xs text-admin-text-muted font-mono max-w-[140px] truncate">
+                  <TableCell className="text-xs text-white/50 font-mono max-w-[140px] truncate">
                     {c.backend || '—'}
                   </TableCell>
-                  <TableCell className="text-sm font-semibold text-admin-text">{c.reqCount}</TableCell>
-                  <TableCell className="text-xs text-admin-text-muted">{fmtBytes(c.bytes)}</TableCell>
+                  <TableCell className="text-sm font-semibold text-white">{c.reqCount}</TableCell>
+                  <TableCell className="text-xs text-white/50">{fmtBytes(c.bytes)}</TableCell>
                   <TableCell className={`text-xs font-mono ${recencyClass(c.lastSeen)}`}>
                     {timeAgo(c.lastSeen)}
                   </TableCell>
@@ -282,7 +282,7 @@ export default function CurrentTraffic() {
         )}
 
         {sorted.length > 0 && (
-          <div className="px-6 py-4 border-t border-admin-border">
+          <div className="px-6 py-4 border-t border-white/[0.08]">
             <PaginationControls
               currentPage={currentPage}
               totalPages={totalPages}

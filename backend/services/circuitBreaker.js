@@ -128,6 +128,7 @@ class CircuitBreaker {
         failures: 0,
         successes: 0,
         lastFailure: null,
+        lastError: null,
         openedAt: null,
         halfOpenCalls: 0
       });
@@ -206,8 +207,10 @@ class CircuitBreaker {
    * Record a failed backend call.
    * Increments failure counter and opens the circuit if threshold reached.
    */
-  onFailure(key) {
+  onFailure(key, error) {
     const breaker = this._get(key);
+    const errorText = error?.code || error?.message || null;
+    if (errorText) breaker.lastError = errorText;
 
     if (breaker.state === STATES.HALF_OPEN) {
       // Probe failed → go back to OPEN
@@ -245,6 +248,29 @@ class CircuitBreaker {
         failures: breaker.failures,
         openedAt: breaker.openedAt
       };
+    }
+    return result;
+  }
+
+  /**
+   * Same as getStatus() but scoped to one domain's own backends (keys are
+   * "domainId:host:port") and including the failure reason — safe to expose
+   * to that domain's owner, unlike the system-wide getStatus().
+   */
+  getStatusForDomain(domainId) {
+    const prefix = `${domainId}:`;
+    const result = [];
+    for (const [key, breaker] of this.breakers) {
+      if (!key.startsWith(prefix)) continue;
+      const parsed = this._parseKey(key);
+      result.push({
+        backend: parsed ? `${parsed.host}:${parsed.port}` : key,
+        state: breaker.state,
+        failures: breaker.failures,
+        lastFailure: breaker.lastFailure,
+        lastError: breaker.lastError,
+        openedAt: breaker.openedAt
+      });
     }
     return result;
   }
