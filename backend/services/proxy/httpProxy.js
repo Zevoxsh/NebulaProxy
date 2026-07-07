@@ -3,8 +3,8 @@
 
 import http from 'http';
 import https from 'https';
-import tls from 'tls';
 import { logger } from '../../utils/logger.js';
+import { logBatchQueue } from '../../logBatchQueue.js';
 import { renderNotFoundPage } from './renderers.js';
 
 export class HttpProxy {
@@ -48,6 +48,8 @@ async _startHttpProxy(domain) {
   async _startSharedHttpServer() {
     return new Promise((resolve) => {
       this.httpServer = http.createServer((req, res) => {
+        const startTime = Date.now();
+
         if (this._handleProxyCheck(req, res)) {
           return;
         }
@@ -101,7 +103,24 @@ async _startHttpProxy(domain) {
       }
 
       // If SSL enabled, redirect to HTTPS
-      if (domain.ssl_enabled) {
+      const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+      const isTrustedForwardedHttps = this._isTrustedProxy(req.socket?.remoteAddress || '') && forwardedProto === 'https';
+
+      if (domain.ssl_enabled && !isTrustedForwardedHttps) {
+        logBatchQueue.queueRequestLog({
+          domainId: domain.id,
+          hostname: domain.hostname,
+          method: req.method,
+          path: req.url.split('?')[0],
+          queryString: req.url.includes('?') ? req.url.split('?')[1] : null,
+          statusCode: 301,
+          responseTime: Date.now() - startTime,
+          ipAddress: this._getRealClientIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          referer: req.headers['referer'] || req.headers['referrer'] || null,
+          errorMessage: 'Redirected to HTTPS'
+        });
+
         const redirectUrl = `https://${hostname}${req.url}`;
         res.writeHead(301, { Location: redirectUrl });
         res.end();
