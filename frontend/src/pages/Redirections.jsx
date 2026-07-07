@@ -154,14 +154,12 @@ export default function Redirections() {
       {/* Page Header */}
       <div className="page-header">
         <div className="page-header-inner">
-          {/* Title */}
-          <div className="animate-fade-in">
-            <h1 className="text-xl md:text-2xl font-light text-white mb-2 tracking-tight">Redirections</h1>
-            <p className="text-xs text-white/50 font-light tracking-wide">Manage your short URL redirections</p>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-2.5 mt-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+          {/* Title + Actions */}
+          <div className="flex items-center justify-between gap-4 flex-wrap animate-fade-in">
+            <div>
+              <h1 className="text-xl md:text-2xl font-light text-white mb-2 tracking-tight">Redirections</h1>
+              <p className="text-xs text-white/50 font-light tracking-wide">Manage your short URL redirections</p>
+            </div>
             <button
               onClick={() => {
                 setEditingRedirection(null);

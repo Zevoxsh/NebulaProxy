@@ -1,15 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  User, Camera, Save, Mail, Bell, Key, Plus, Trash2,
-  Copy, Check, AlertCircle, Activity, Loader, Globe, Shield,
+  User, Camera, Save, Mail, Key, Plus, Trash2,
+  Copy, Check, AlertCircle, Activity, Loader, Shield,
   RefreshCw, X as XIcon, Lock, Smartphone, AtSign, ChevronRight,
   Eye, EyeOff
 } from 'lucide-react';
 import { userAPI, apiKeysAPI, authAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { getAvatarUrl } from '../utils/gravatar';
-import axios from 'axios';
 import { startRegistration } from '@simplewebauthn/browser';
 import QRCode from 'qrcode';
 
@@ -21,7 +20,6 @@ export default function AccountSettings() {
   const getTabFromPath = () => {
     const path = location.pathname;
     if (path.includes('/security')) return 'security';
-    if (path.includes('/notifications')) return 'notifications';
     if (path.includes('/api-keys')) return 'api-keys';
     return 'profile';
   };
@@ -39,8 +37,6 @@ export default function AccountSettings() {
   const [success, setSuccess] = useState('');
 
   const [profileForm, setProfileForm] = useState({ displayName: '', email: '', avatarUrl: '' });
-  const [notifPrefs, setNotifPrefs] = useState(null);
-  const [notifMessage, setNotifMessage] = useState(null);
 
   const [apiKeys, setApiKeys] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -110,13 +106,12 @@ export default function AccountSettings() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [profileRes, notifRes, keysRes, twoFactorRes, passkeyPromptRes, passkeysRes] = await Promise.all([
-        userAPI.getMe(), axios.get('/api/notification-preferences'), apiKeysAPI.list(),
+      const [profileRes, keysRes, twoFactorRes, passkeyPromptRes, passkeysRes] = await Promise.all([
+        userAPI.getMe(), apiKeysAPI.list(),
         authAPI.get2faStatus(), userAPI.getPasskeyPromptStatus(), userAPI.listPasskeys()
       ]);
       const profile = profileRes.data.user || {};
       setProfileForm({ displayName: profile.displayName || '', email: profile.email || '', avatarUrl: profile.avatarUrl || '' });
-      setNotifPrefs(notifRes.data.preferences);
       setApiKeys(keysRes.data.apiKeys || []);
       const nextTwoFactor = twoFactorRes.data?.twoFactor || { enabled: false, method: null, methods: [], hasEmail: Boolean(profile.email), email2faReady: false };
       setTwoFactor(nextTwoFactor);
@@ -249,18 +244,6 @@ export default function AccountSettings() {
     finally { setPasskeyBusy(false); }
   };
 
-  const handleNotifSave = async () => {
-    try {
-      setSaving(true);
-      await axios.put('/api/notification-preferences', { ...notifPrefs, webhook_enabled: false, webhook_url: '', webhook_secret: '' });
-      setNotifMessage({ type: 'success', text: 'Preferences saved.' });
-      setTimeout(() => setNotifMessage(null), 3000);
-    } catch { setNotifMessage({ type: 'error', text: 'Failed to save.' }); }
-    finally { setSaving(false); }
-  };
-
-  const updateNotifPref = (key, value) => setNotifPrefs({ ...notifPrefs, [key]: value });
-
   const fetchApiKeys = async () => {
     try { const r = await apiKeysAPI.list(); setApiKeys(r.data.apiKeys || []); } catch { /* ignore */ }
   };
@@ -289,16 +272,6 @@ export default function AccountSettings() {
   const toggleScope = (scope) => setKeyFormData(prev => ({ ...prev, scopes: prev.scopes.includes(scope) ? prev.scopes.filter(s => s !== scope) : [...prev.scopes, scope] }));
   const formatDate = (d) => d ? new Date(d).toLocaleString() : 'Never';
   const isExpired = (d) => d ? new Date(d) < new Date() : false;
-
-  const Toggle = ({ value, onChange }) => (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${value ? 'bg-white' : 'bg-white/10'}`}
-    >
-      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-zinc-900 transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-    </button>
-  );
 
   const SectionCard = ({ children, className = '' }) => (
     <div className={`bg-[#111113] border border-[#27272a] rounded-xl overflow-hidden ${className}`}>
@@ -339,7 +312,6 @@ export default function AccountSettings() {
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User, path: '/account/profile' },
     { id: 'security', label: 'Security', icon: Shield, path: '/account/security' },
-    { id: 'notifications', label: 'Notifications', icon: Bell, path: '/account/notifications' },
     { id: 'api-keys', label: 'API Keys', icon: Key, path: '/account/api-keys' },
   ];
 
@@ -793,84 +765,6 @@ export default function AccountSettings() {
                   </div>
                 </SectionCard>
 
-              </div>
-            )}
-
-            {/* ═══════════════════════════ NOTIFICATIONS ═══════════════════════════ */}
-            {activeTab === 'notifications' && notifPrefs && (
-              <div className="space-y-4 animate-fade-in">
-                {notifMessage && (
-                  <div className={`flex items-center gap-2.5 rounded-xl px-4 py-3 border ${notifMessage.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-red-500/10 border-red-500/25 text-red-300'}`}>
-                    {notifMessage.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                    <p className="text-sm">{notifMessage.text}</p>
-                  </div>
-                )}
-
-                <SectionCard>
-                  <SectionHeader
-                    icon={Globe}
-                    title="Domain alerts"
-                    description="Get notified when your domains change state"
-                    action={
-                      <button onClick={handleNotifSave} disabled={saving} className="btn-primary text-xs px-3 py-2 shrink-0">
-                        {saving ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Save
-                      </button>
-                    }
-                  />
-                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {[
-                      { key: 'domain_added_enabled', label: 'Domain added' },
-                      { key: 'domain_deleted_enabled', label: 'Domain deleted' },
-                      { key: 'domain_updated_enabled', label: 'Domain updated' },
-                      { key: 'domain_down_enabled', label: 'Domain goes down' },
-                      { key: 'domain_up_enabled', label: 'Domain comes back online' },
-                      { key: 'backend_down_enabled', label: 'Backend goes down' },
-                      { key: 'backend_up_enabled', label: 'Backend recovers' },
-                      { key: 'high_response_time_enabled', label: 'High response time' },
-                    ].map(({ key, label }) => (
-                      <div key={key} className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-white/[0.02] border border-[#27272a]">
-                        <p className="text-sm text-zinc-300">{label}</p>
-                        <Toggle value={notifPrefs[key]} onChange={(v) => updateNotifPref(key, v)} />
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <SectionCard>
-                    <SectionHeader icon={Shield} title="SSL certificates" description="Renewal and expiry alerts" />
-                    <div className="p-5 space-y-2">
-                      {[
-                        { key: 'ssl_expiring_enabled', label: 'Certificate expiring' },
-                        { key: 'ssl_renewed_enabled', label: 'Certificate renewed' },
-                        { key: 'ssl_failed_enabled', label: 'Certificate failed' },
-                      ].map(({ key, label }) => (
-                        <div key={key} className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-white/[0.02] border border-[#27272a]">
-                          <p className="text-sm text-zinc-300">{label}</p>
-                          <Toggle value={notifPrefs[key]} onChange={(v) => updateNotifPref(key, v)} />
-                        </div>
-                      ))}
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard>
-                    <SectionHeader icon={AlertCircle} title="Account" description="Security and quota alerts" />
-                    <div className="p-5 space-y-2">
-                      {[
-                        { key: 'quota_warning_enabled', label: 'Quota warning' },
-                        { key: 'quota_reached_enabled', label: 'Quota reached' },
-                        { key: 'new_ip_login_enabled', label: 'Login from new IP' },
-                        { key: 'account_disabled_enabled', label: 'Account disabled' },
-                      ].map(({ key, label }) => (
-                        <div key={key} className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-white/[0.02] border border-[#27272a]">
-                          <p className="text-sm text-zinc-300">{label}</p>
-                          <Toggle value={notifPrefs[key]} onChange={(v) => updateNotifPref(key, v)} />
-                        </div>
-                      ))}
-                    </div>
-                  </SectionCard>
-                </div>
               </div>
             )}
 

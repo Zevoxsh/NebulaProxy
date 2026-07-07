@@ -22,7 +22,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   User,
-  Bell,
   Database,
   Radio,
   Cable
@@ -213,7 +212,6 @@ export function AdminLayout() {
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
         { path: '/admin/tunnels', icon: Cable, label: 'Tunnels' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
-        { path: '/admin/ddos', icon: Shield, label: 'Challenge' },
         { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }
       ]
     },
@@ -230,7 +228,6 @@ export function AdminLayout() {
     {
       title: 'Security',
       items: [
-        { path: '/admin/ddos', icon: ShieldAlert, label: 'Challenge' },
         { path: '/admin/updates', icon: Sparkles, label: 'Updates' },
         { path: '/admin/audit', icon: FileText, label: 'Audit Trail' }
       ]
@@ -479,13 +476,6 @@ export function AdminLayout() {
                   >
                     <User className="w-4 h-4 mr-2" />
                     Profile Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => navigate('/account/notifications')}
-                    className="text-admin-text hover:bg-admin-border focus:bg-admin-border"
-                  >
-                    <Bell className="w-4 h-4 mr-2" />
-                    Notifications
                   </DropdownMenuItem>
                   <DropdownMenuSeparator className="bg-admin-border" />
                   <DropdownMenuItem

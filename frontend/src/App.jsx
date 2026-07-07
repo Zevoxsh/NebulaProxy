@@ -26,7 +26,6 @@ const TeamDetail = lazy(() => import('./pages/TeamDetail'));
 const SSLCertificates = lazy(() => import('./pages/SSLCertificates'));
 const CertificateDetail = lazy(() => import('./pages/CertificateDetail'));
 const AccountSettings = lazy(() => import('./pages/AccountSettings'));
-const NotificationSettings = lazy(() => import('./pages/NotificationSettings'));
 const Traffic = lazy(() => import('./pages/Traffic'));
 const TrafficMap = lazy(() => import('./pages/TrafficMap'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -48,7 +47,6 @@ const UrlBlockingRules = lazy(() => import('./pages/UrlBlockingRules'));
 const AdminUrlBlockingRules = lazy(() => import('./pages/admin/UrlBlockingRules'));
 const AdminAudit = lazy(() => import('./pages/admin/AdminAudit'));
 const AdminBackups = lazy(() => import('./pages/admin/AdminBackups'));
-const AdminDdos = lazy(() => import('./pages/admin/AdminDdos'));
 const AdminTraffic = lazy(() => import('./pages/admin/AdminTraffic'));
 const AdminPinReset = lazy(() => import('./pages/admin/AdminPinReset'));
 const StatusPage = lazy(() => import('./pages/StatusPage'));
@@ -79,7 +77,6 @@ const ROUTE_METADATA = [
   { patterns: ['/certificates/:domainId'], title: 'Certificate Details', description: 'View SSL certificate details for a domain.' },
   { patterns: ['/account', '/account/profile'], title: 'Account Profile', description: 'Manage your profile and account info.' },
   { patterns: ['/account/security'], title: 'Account Security', description: 'Manage security settings, 2FA, and passkeys.' },
-  { patterns: ['/account/notifications'], title: 'Account Notifications', description: 'Manage personal notification settings.' },
   { patterns: ['/account/api-keys'], title: 'API Keys', description: 'Manage API keys and access scopes.' },
   { patterns: ['/admin/dashboard', '/admin'], title: 'Admin Dashboard', description: 'Administrative overview and core system metrics.' },
   { patterns: ['/admin/users'], title: 'Admin Users', description: 'Manage users, roles, quotas, and access.' },
@@ -95,7 +92,6 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/smtp'], title: 'Admin SMTP Setup', description: 'Configure SMTP transport for email notifications.' },
   { patterns: ['/admin/smtp-proxy'], title: 'Admin SMTP Proxy', description: 'Configure and monitor SMTP proxy settings.' },
   { patterns: ['/admin/backups'], title: 'Admin Backups', description: 'Create, export, and reimport database backups.' },
-  { patterns: ['/admin/ddos'], title: 'Challenge', description: 'Configure HTTP challenge types.' },
   { patterns: ['/admin/traffic'], title: 'Admin Live Traffic', description: 'Monitor live connections across all domains.' },
   { patterns: ['/domains/:id/traffic'], title: 'Domain Live Traffic', description: 'Monitor live connections for this domain.' },
   { patterns: ['/admin/updates'], title: 'Admin Updates', description: 'Manage system updates and release status.' },
@@ -290,7 +286,6 @@ function App() {
           <Route path="/account" element={<AccountSettings />} />
           <Route path="/account/profile" element={<AccountSettings />} />
           <Route path="/account/security" element={<AccountSettings />} />
-          <Route path="/account/notifications" element={<NotificationSettings />} />
           <Route path="/account/api-keys" element={<AccountSettings />} />
         </Route>
 
@@ -322,7 +317,6 @@ function App() {
           <Route path="/admin/backups" element={<AdminBackups />} />
           <Route path="/admin/updates" element={<AdminUpdates />} />
           <Route path="/admin/url-blocking" element={<AdminUrlBlockingRules />} />
-          <Route path="/admin/ddos" element={<AdminDdos />} />
           <Route path="/admin/audit" element={<AdminAudit />} />
           <Route path="/admin/traffic" element={<AdminTraffic />} />
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

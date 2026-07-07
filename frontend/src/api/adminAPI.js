@@ -14,10 +14,6 @@ export const adminAPI = {
   updateDomain: (id, data) => api.put(`/admin/domains/${id}`, data),
   deleteDomain: (id) => api.delete(`/admin/domains/${id}`),
 
-  // Challenge types
-  getChallengeTypes: () => api.get('/admin/ddos/challenge-types'),
-  setChallengeTypes: (enabledIds) => api.put('/admin/ddos/challenge-types', { enabledIds }),
-
   // Live traffic (all domains)
   getAdminLiveTraffic: () => api.get('/admin/traffic/live'),
   clearAdminLiveTraffic: () => api.delete('/admin/traffic/live'),
