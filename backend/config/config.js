@@ -358,15 +358,7 @@ export const config = {
   logs: {
     get retentionDays() { return parseInt(getConfig('LOG_RETENTION_DAYS', '30'), 10); },
     get cleanupIntervalHours() { return parseInt(getConfig('LOG_CLEANUP_INTERVAL_HOURS', '24'), 10); },
-    // 'db' (default) or 'syslog' — when 'syslog', proxy logs bypass the DB entirely
-    get backend() { return (getConfig('LOG_BACKEND', 'db') || 'db').toLowerCase(); },
-    syslog: {
-      get host()     { return getConfig('LOG_SYSLOG_HOST', '127.0.0.1'); },
-      get port()     { return parseInt(getConfig('LOG_SYSLOG_PORT', '514'), 10); },
-      get protocol() { return (getConfig('LOG_SYSLOG_PROTOCOL', 'udp') || 'udp').toLowerCase(); },
-      get facility() { return parseInt(getConfig('LOG_SYSLOG_FACILITY', '16'), 10); }, // 16 = local0
-      get appName()  { return getConfig('LOG_SYSLOG_APP_NAME', 'nebulaproxy'); }
-    }
+    get backend() { return 'db'; }
   },
 
   // CORS
