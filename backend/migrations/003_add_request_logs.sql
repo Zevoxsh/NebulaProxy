@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
   -- Response details
   status_code INTEGER,
   response_time INTEGER, -- milliseconds
-  response_size INTEGER, -- bytes
+  response_size BIGINT, -- bytes
 
   -- Client details
   ip_address VARCHAR(45),
