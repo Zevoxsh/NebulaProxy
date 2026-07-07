@@ -178,9 +178,9 @@ services:
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - LOG_LEVEL=warn
       - LOG_RETENTION_DAYS=3
-      # Cluster mode: keep a single worker to reduce CPU pressure. See
-      # backend/cluster.js and clusterCoordinator.js.
-      - CLUSTER_ENABLED=true
+      # Disable cluster mode to reduce CPU pressure. See backend/cluster.js
+      # and clusterCoordinator.js.
+      - CLUSTER_ENABLED=false
       - CLUSTER_WORKERS=1
     healthcheck:
       # Was `wget /health` alone — with CLUSTER_ENABLED, that can land on
@@ -215,7 +215,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
+          cpus: '1.0'
           # Bumped from 1024M: 2 worker processes now each run a full Node
           # heap (see entrypoint.sh's NODE_OPTIONS split). 1024M was already
           # tight for a single process given --max-old-space-size alone
