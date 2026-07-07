@@ -3,7 +3,7 @@ import { MapPin, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { analyticsAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { LiveWorldMap, toLngLat } from './WorldTrafficMap';
-import { getCountryCoordinates } from '../utils/countryCoordinates';
+import { COUNTRY_COORDINATES } from '../utils/countryCoordinates';
 import { normalizeCountryCode } from '../utils/countryUtils';
 
 const MAX_PULSES = 40;
@@ -33,7 +33,7 @@ export default function TrafficMap() {
         const recent = log[country].filter((ts) => now - ts <= VOLUME_WINDOW_MS);
         if (recent.length === 0) { delete log[country]; continue; }
         log[country] = recent;
-          const coords = getCountryCoordinates(country);
+          const coords = COUNTRY_COORDINATES[country];
         if (coords) next.push({ country, count: recent.length, position: toLngLat(coords) });
       }
       setVolumes(next);
@@ -67,7 +67,7 @@ export default function TrafficMap() {
             setTotalReqs((n) => n + 1);
 
             const country = normalizeCountryCode(msg.payload.country);
-            const coords = getCountryCoordinates(country);
+            const coords = country && COUNTRY_COORDINATES[country];
             if (coords) {
               if (!eventLogRef.current[country]) eventLogRef.current[country] = [];
               eventLogRef.current[country].push(Date.now());

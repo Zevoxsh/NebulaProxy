@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ComposableMap, Geographies, Geography, Marker, Line } from 'react-simple-maps';
-import { getCountryCoordinates } from '../utils/countryCoordinates';
+import { COUNTRY_COORDINATES } from '../utils/countryCoordinates';
 import { normalizeCountryCode } from '../utils/countryUtils';
 import worldGeoUrl from '../assets/world-countries-110m.json';
 
@@ -89,7 +89,7 @@ export function WorldTrafficMap({ countries, proxyLocation }) {
   const points = useMemo(() => {
     return (countries || [])
       .map((c) => {
-        const coords = getCountryCoordinates(c.country);
+        const coords = COUNTRY_COORDINATES[normalizeCountryCode(c.country) || ''];
         if (!coords) return null;
         return { ...c, country: normalizeCountryCode(c.country), position: toLngLat(coords) };
       })
