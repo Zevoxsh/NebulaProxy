@@ -80,10 +80,19 @@ echo "================================================"
 
 # ── Set Node.js memory limits ──────────────────────────────────────────────
 # With CLUSTER_ENABLED=true, cluster.fork() inherits this NODE_OPTIONS into
-# every worker — a per-process heap sized for a single process (2048M) would
-# let N workers try to use N x 2048M old-space against one shared container
+# every worker — a per-process heap sized for a single process would let N
+# workers try to use N x that much old-space against one shared container
 # memory limit. Split a fixed total budget across the worker count instead.
-TOTAL_HEAP_MB=1536
+#
+# Must stay comfortably under the backend container's memory limit (see
+# docker-compose.yml) — old-space is only PART of a Node process's footprint
+# (new-space, native buffers, worker threads like pino's thread-stream all
+# add on top). Setting this too close to (or above) the container ceiling
+# starves that headroom: V8 runs the GC harder and harder trying to stay
+# under the *real* limit as it's approached, which pegs every core at 100%
+# CPU well before an actual OOM kill. ~70% of the container limit leaves
+# enough room for that overhead.
+TOTAL_HEAP_MB=896
 WORKER_COUNT="${CLUSTER_WORKERS:-2}"
 if [ "${CLUSTER_ENABLED:-false}" = "true" ] && [ "$WORKER_COUNT" -gt 1 ] 2>/dev/null; then
   PER_WORKER_MB=$((TOTAL_HEAP_MB / WORKER_COUNT))
