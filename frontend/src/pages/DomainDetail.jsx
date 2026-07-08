@@ -1096,6 +1096,15 @@ export default function DomainDetail() {
                         </td>
                         <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
                           {log.response_time ? `${log.response_time}ms` : '-'}
+                          {domain?.proxy_type === 'minecraft' && log.request_headers?.['max-backend-silence-ms'] > 3000 && (
+                            <span
+                              title={`Backend silencieux ${(log.request_headers['max-backend-silence-ms'] / 1000).toFixed(1)}s avant la coupure — probablement un freeze/lag du serveur MC, pas le proxy`}
+                              className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 align-middle"
+                            >
+                              <AlertCircle className="w-3 h-3" strokeWidth={1.5} />
+                              stall {(log.request_headers['max-backend-silence-ms'] / 1000).toFixed(1)}s
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
                           {formatBytes(log.response_size)}
