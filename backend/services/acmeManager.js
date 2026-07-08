@@ -320,13 +320,20 @@ ${trimmedStderr}`);
 
       for (const domainObj of domainsWithSSL) {
         const hostname = domainObj.hostname;
-        if (await this.certExpiresSoon(hostname)) {
-          logger.info(`[AcmeManager] Renewing certificate for ${hostname}...`);
+        // certExpiresSoon() alone misses domains that never got a cert in the
+        // first place (e.g. a transient HTTP-01 failure at creation time) —
+        // it returns false when there's no expiry to compare against, so
+        // those domains would otherwise be silently skipped by this cron
+        // forever. certFilesExist() also treats an already-expired cert as
+        // absent, so this covers "never issued" and "expired" alike.
+        const needsCert = !(await this.certFilesExist(hostname));
+        if (needsCert || await this.certExpiresSoon(hostname)) {
+          logger.info(`[AcmeManager] ${needsCert ? 'Requesting missing' : 'Renewing'} certificate for ${hostname}...`);
           try {
             await this.ensureCert(hostname);
             renewedCount++;
           } catch (error) {
-            logger.error(`[AcmeManager] Failed to renew cert for ${hostname}:`, error.message);
+            logger.error(`[AcmeManager] Failed to ${needsCert ? 'issue' : 'renew'} cert for ${hostname}:`, error.message);
             errorCount++;
           }
         }

@@ -87,6 +87,7 @@ try {
 
   let context;
   let expiresAt = null;
+  let shouldRetryAcme = false;
 
   if (certData) {
     try {
@@ -101,14 +102,27 @@ try {
   } else {
     logger.warn(`[ProxyManager] No certificate in DB for ${servername}, using static fallback`);
     context = STATIC_FALLBACK_CONTEXT;
+    shouldRetryAcme = true;
   }
 
-  // Short TTL for the static fallback so we retry the DB on the next request
+  // Short TTL for the static fallback so we retry on a future request. For a
+  // missing cert specifically, this doubles as ACME retry backoff (~4
+  // attempts/hour per hostname — safely under Let's Encrypt's 5/hour
+  // failed-validation limit) instead of falling back silently forever.
   this.secureContextCache.set(servername, {
     context,
     timestamp: Date.now(),
-    expiresAt: expiresAt || (Date.now() + 5 * 60 * 1000)
+    expiresAt: expiresAt || (Date.now() + (shouldRetryAcme ? 15 : 5) * 60 * 1000)
   });
+
+  if (shouldRetryAcme && this.acmeManager) {
+    // Fire-and-forget — a certbot run can take several seconds and must not
+    // block this TLS handshake. On success the real cert lands in the DB and
+    // the next SNI lookup (after this fallback's TTL) picks it up.
+    this._loadCertificateForDomain(servername).catch((err) => {
+      logger.warn(`[ProxyManager] Background cert retry failed for ${servername}:`, err.message);
+    });
+  }
 
   callback(null, context);
 } catch (error) {
