@@ -92,7 +92,7 @@ echo "================================================"
 # under the *real* limit as it's approached, which pegs every core at 100%
 # CPU well before an actual OOM kill. ~70% of the container limit leaves
 # enough room for that overhead.
-TOTAL_HEAP_MB=896
+TOTAL_HEAP_MB=2048
 WORKER_COUNT="${CLUSTER_WORKERS:-2}"
 if [ "${CLUSTER_ENABLED:-false}" = "true" ] && [ "$WORKER_COUNT" -gt 1 ] 2>/dev/null; then
   PER_WORKER_MB=$((TOTAL_HEAP_MB / WORKER_COUNT))

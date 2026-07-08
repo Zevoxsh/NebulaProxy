@@ -94,7 +94,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
         reservations:
           memory: 64M
 
@@ -126,13 +126,12 @@ services:
     deploy:
       resources:
         limits:
-          # Bumped from 512M: too tight for 70+ domains worth of health-check
-          # writes, log batching, and general query activity — Postgres was
-          # stalling under load, causing connection timeouts that cascaded
-          # into DB write failures and eventually took the backend down.
-          memory: 768M
+          # Host now has 24GB/8 cores (was 3.8GB) — comfortable headroom for
+          # real shared_buffers/cache instead of the bare minimum needed to
+          # avoid connection timeouts under load.
+          memory: 2048M
         reservations:
-          memory: 192M
+          memory: 512M
 
   # ── Backend ────────────────────────────────────────────────────────────────
   # SECURITY NOTE: network_mode: host is required because the proxy must bind
@@ -182,10 +181,12 @@ services:
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - LOG_LEVEL=warn
       - LOG_RETENTION_DAYS=3
-      # Disable cluster mode to reduce CPU pressure. See backend/cluster.js
-      # and clusterCoordinator.js.
-      - CLUSTER_ENABLED=false
-      - CLUSTER_WORKERS=1
+      # 2 workers now that the host has 8 cores / 24GB — was disabled when
+      # the box only had 3.8GB (halving per-worker DB pool + heap budget
+      # wasn't worth it there). See backend/cluster.js and
+      # clusterCoordinator.js for the leader-gated singleton jobs.
+      - CLUSTER_ENABLED=true
+      - CLUSTER_WORKERS=2
     healthcheck:
       # Was `wget /health` alone — with CLUSTER_ENABLED, that can land on
       # either worker (shared port, SCHED_NONE) and pass even if the other
@@ -219,12 +220,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          # CLUSTER_ENABLED=false below — single worker process, so this only
-          # needs to cover one Node heap. Dialed back from 2048M (sized for
-          # 2 cluster workers, which isn't what actually runs here) to free
-          # up headroom for Postgres on a memory-constrained 4GB host.
-          memory: 1280M
+          # Host now has 24GB/8 cores (was 3.8GB/4 cores). CLUSTER_ENABLED=true
+          # with 2 workers below — sized to give each worker roughly a full
+          # core's worth of headroom for its event loop plus libuv thread pool
+          # (crypto, TLS, DNS, fs) and V8's parallel GC/compilation.
+          cpus: '3.0'
+          # Shared across both cluster workers — entrypoint.sh splits
+          # TOTAL_HEAP_MB across CLUSTER_WORKERS for --max-old-space-size.
+          memory: 3072M
         reservations:
           cpus: '0.2'
           memory: 256M
