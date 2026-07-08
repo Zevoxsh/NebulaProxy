@@ -52,7 +52,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { AdminButton } from '@/components/admin';
-import CompleteProfileModal from '../features/CompleteProfileModal';
 import NotificationBell from '../features/NotificationBell';
 import { useBrandingStore } from '../../store/brandingStore';
 
@@ -406,7 +405,6 @@ export default function Layout() {
         </div>
       </div>
 
-      {isProfileIncomplete && <CompleteProfileModal />}
       <Dialog open={showPasskeyPrompt} onOpenChange={(open) => !open && handlePasskeyPromptAction('later')}>
         <DialogContent className="bg-[#111113] border-[#27272a] max-w-md shadow-none">
           <DialogHeader>
