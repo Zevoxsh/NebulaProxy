@@ -111,6 +111,15 @@ export default function DomainConnectionsPanel({ domainId }) {
   const connectionsRef = useRef(null);
   useEffect(() => { connectionsRef.current = connections; }, [connections]);
 
+  // Bumped by every state-mutating event (WS message or a load() that
+  // actually applied). load() captures this value before its request goes
+  // out; if it's changed by the time the response arrives, a WS event (or
+  // another load) landed in the meantime and is necessarily fresher than an
+  // HTTP response reflecting the state at request-SEND time — applying the
+  // stale response anyway is what caused the "works sometimes, needs a
+  // refresh other times" bug (out-of-order async writes racing each other).
+  const seqRef = useRef(0);
+
   // applyRates() is the same "derive a rate from two consecutive byte
   // samples" logic used by both the poll path and the WS snapshot path —
   // extracted so the WS-driven updates (now the primary source) and the
@@ -142,11 +151,19 @@ export default function DomainConnectionsPanel({ domainId }) {
 
   const load = useCallback(async () => {
     if (!domainId) return;
+    const seqAtStart = seqRef.current;
     try {
       const res = await domainAPI.getActiveConnections(domainId);
+      // Something else (a WS event, or another load()) already mutated
+      // state while this request was in flight — that view is newer than
+      // this response, so don't clobber it with stale data.
+      if (seqRef.current !== seqAtStart) return;
       const raw = res.data.connections || [];
       const nowTs = Date.now();
-      setConnections(applyRates(raw, nowTs));
+      const withRates = applyRates(raw, nowTs);
+      connectionsRef.current = withRates;
+      seqRef.current += 1;
+      setConnections(withRates);
       setNow(nowTs);
     } catch (_) {
       // Fail quiet — best-effort context, not critical path
@@ -191,6 +208,7 @@ export default function DomainConnectionsPanel({ domainId }) {
           if (!list.some((c) => c.connectionId === connectionId)) {
             const next = [...list, { connectionId, protocol, clientIp, label, connectedAt, country: null, bytesIn: 0, bytesOut: 0, rateIn: null, rateOut: null }];
             connectionsRef.current = next;
+            seqRef.current += 1;
             setConnections(next);
           }
           setNow(Date.now());
@@ -199,6 +217,7 @@ export default function DomainConnectionsPanel({ domainId }) {
           delete prevBytesRef.current[connectionId];
           const next = (connectionsRef.current || []).filter((c) => c.connectionId !== connectionId);
           connectionsRef.current = next;
+          seqRef.current += 1;
           setConnections(next);
           setNow(Date.now());
         } else if (msg.type === 'connections_snapshot') {
@@ -213,6 +232,7 @@ export default function DomainConnectionsPanel({ domainId }) {
             nowTs
           );
           connectionsRef.current = rated;
+          seqRef.current += 1;
           setConnections(rated);
           setNow(nowTs);
         }
@@ -240,7 +260,10 @@ export default function DomainConnectionsPanel({ domainId }) {
     // Optimistic: a kick should be near-instant, don't make the user wait
     // for the next 15s poll to see it gone. The following poll reconciles
     // either way if something went wrong.
-    setConnections((prev) => (prev || []).filter((c) => c.connectionId !== connectionId));
+    const next = (connectionsRef.current || []).filter((c) => c.connectionId !== connectionId);
+    connectionsRef.current = next;
+    seqRef.current += 1;
+    setConnections(next);
     try {
       await domainAPI.kickConnection(domainId, connectionId);
     } catch (_) {

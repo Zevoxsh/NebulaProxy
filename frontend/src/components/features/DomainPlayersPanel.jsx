@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, ChevronDown, ChevronRight } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 
@@ -98,10 +98,21 @@ export default function DomainPlayersPanel({ domainId }) {
   const [players, setPlayers] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Bumped by every state-mutating event (WS message or an applied load()).
+  // load() captures this before its request goes out; if it changed by the
+  // time the response lands, a WS event raced ahead of it and is fresher —
+  // applying the stale response anyway would flip a status back to what it
+  // was before that WS event, intermittently, depending on network timing
+  // (the same class of bug found and fixed in DomainConnectionsPanel.jsx).
+  const seqRef = useRef(0);
+
   const load = useCallback(async () => {
     if (!domainId) return;
+    const seqAtStart = seqRef.current;
     try {
       const res = await domainAPI.getPlayers(domainId);
+      if (seqRef.current !== seqAtStart) return;
+      seqRef.current += 1;
       setPlayers(res.data.players || []);
     } catch (_) {
       // Fail quiet — best-effort context, not critical path
@@ -139,6 +150,7 @@ export default function DomainPlayersPanel({ domainId }) {
         if (msg.type === 'player_online' || msg.type === 'player_offline') {
           const isOnline = msg.type === 'player_online';
           const { username } = msg.payload;
+          seqRef.current += 1;
           setPlayers((prevList) => {
             if (!prevList) return prevList;
             let found = false;
