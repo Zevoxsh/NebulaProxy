@@ -8,6 +8,8 @@ import { config } from '../../config/config.js';
 import { database } from '../database.js';
 import { parseHandshake, parseLoginStart } from '../minecraftProtocol.js';
 import { urlFilterService } from '../urlFilterService.js';
+import { geoIpService } from '../geoIpService.js';
+import * as activeConnections from '../activeConnectionsRegistry.js';
 
 // Module-level "is this player actively connected right now" registry, keyed
 // by `${domainId}:${usernameLower}`. Lives outside any connection/class
@@ -85,6 +87,7 @@ async _startSharedMinecraftServer() {
       let loginUsername = null;
       let maxBackendSilenceMs = 0;
       let maxClientSilenceMs = 0;
+      const connectionId = activeConnections.nextConnectionId('minecraft');
 
       // Configure client socket
       clientSocket.setNoDelay(true);
@@ -106,6 +109,8 @@ async _startSharedMinecraftServer() {
       const cleanup = () => {
         if (isClosing) return;
         isClosing = true;
+
+        activeConnections.unregister(connectionId);
 
         if (loginUsername && domain) {
           onlinePlayers.delete(onlineKey(domain.id, loginUsername));
@@ -159,28 +164,33 @@ async _startSharedMinecraftServer() {
             errorMessage = `Backend stalled ${(maxBackendSilenceMs / 1000).toFixed(1)}s before disconnect (no data from backend — likely server-side lag/GC pause, not the proxy)`;
           }
 
-          database.createRequestLog({
-            domainId: domain.id,
-            hostname: domain.hostname,
-            method: 'MINECRAFT',
-            path: `${routedHostname || 'unknown'}`,
-            queryString: null,
-            statusCode: blockedByPolicy ? 403 : (errorMessage ? 502 : 200),
-            responseTime,
-            responseSize: bytesSent,
-            ipAddress: clientIp,
-            userAgent: null,
-            referer: null,
-            requestHeaders: {
-              'bytes-received': bytesReceived,
-              'bytes-sent': bytesSent,
-              'max-backend-silence-ms': maxBackendSilenceMs,
-              'max-client-silence-ms': maxClientSilenceMs
-            },
-            responseHeaders: {},
-            errorMessage
-          }).catch(err => {
-            logger.error('[MinecraftProxy] Failed to write log:', err);
+          // Fire-and-forget: same pattern as the HTTP proxy path — resolving
+          // the country never delays connection cleanup.
+          geoIpService.getCountryCode(clientIp).catch(() => null).then((country) => {
+            database.createRequestLog({
+              domainId: domain.id,
+              hostname: domain.hostname,
+              method: 'MINECRAFT',
+              path: `${routedHostname || 'unknown'}`,
+              queryString: null,
+              statusCode: blockedByPolicy ? 403 : (errorMessage ? 502 : 200),
+              responseTime,
+              responseSize: bytesSent,
+              ipAddress: clientIp,
+              country,
+              userAgent: null,
+              referer: null,
+              requestHeaders: {
+                'bytes-received': bytesReceived,
+                'bytes-sent': bytesSent,
+                'max-backend-silence-ms': maxBackendSilenceMs,
+                'max-client-silence-ms': maxClientSilenceMs
+              },
+              responseHeaders: {},
+              errorMessage
+            }).catch(err => {
+              logger.error('[MinecraftProxy] Failed to write log:', err);
+            });
           });
         }
       };
@@ -324,6 +334,14 @@ async _startSharedMinecraftServer() {
 
         // Live traffic tracking (fire-and-forget)
         { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'minecraft', `${backendHost}:${backendPort}`); }
+
+        activeConnections.register(connectionId, {
+          domainId: domain.id,
+          protocol: 'minecraft',
+          clientIp,
+          connectedAt: startTime,
+          label: loginUsername || `${backendHost}:${backendPort}`
+        });
 
         logger.debug(`[DEBUG:MC] client=${clientIp} connecting to backend ${backendHost}:${backendPort} t+${Date.now() - startTime}ms`);
         const tcpConnectStart = Date.now();

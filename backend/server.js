@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import pino from 'pino';
+import pretty from 'pino-pretty';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import cors from '@fastify/cors';
@@ -48,9 +49,16 @@ const __dirname  = dirname(__filename);
 
 await initializeConfig();
 
-// ── Fastify instance ─────────────────────────────────────────────────────────
-const fastify = Fastify({
-  logger: {
+// pino-pretty via `transport:` spawns a worker thread through thread-stream,
+// which crashes at startup on some Node versions ("this should not happen:
+// undefined"). Building the pretty stream in-process and handing Fastify a
+// ready-made pino instance avoids the worker entirely.
+const fastifyLoggerStream = config.nodeEnv !== 'production'
+  ? pretty({ colorize: true, translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' })
+  : undefined;
+
+const fastifyLogger = pino(
+  {
     level: config.logging.level,
     // See utils/logger.js for why: pino only auto-serializes an Error under
     // `err` by default — the 232+ `fastify.log.error({ error }, ...)` call
@@ -62,14 +70,14 @@ const fastify = Fastify({
     serializers: {
       err: pino.stdSerializers.err,
       error: pino.stdSerializers.err
-    },
-    ...(config.nodeEnv !== 'production' && {
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true, translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' }
-      }
-    })
+    }
   },
+  fastifyLoggerStream
+);
+
+// ── Fastify instance ─────────────────────────────────────────────────────────
+const fastify = Fastify({
+  logger: fastifyLogger,
   disableRequestLogging: true,
   trustProxy: config.security.trustedProxies,
   bodyLimit: 10485760 // 10 MB

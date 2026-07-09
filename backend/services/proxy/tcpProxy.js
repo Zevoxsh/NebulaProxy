@@ -6,6 +6,7 @@ import { lts, getLb } from '../proxyContext.js';
 import { logger } from '../../utils/logger.js';
 import { urlFilterService } from '../urlFilterService.js';
 import { logBatchQueue } from '../logBatchQueue.js';
+import * as activeConnections from '../activeConnectionsRegistry.js';
 
 export class TcpProxy {
 // ==================== TCP PROXY ====================
@@ -28,6 +29,7 @@ export class TcpProxy {
       let errorMessage = null;
       let blockedByPolicy = false;
       let backendHost, backendPort;
+      const connectionId = activeConnections.nextConnectionId('tcp');
 
       // Per-IP connection limit (layer 4 DDoS protection)
       if (this.TCP_MAX_CONNECTIONS_PER_IP > 0) {
@@ -79,6 +81,14 @@ export class TcpProxy {
       // Live traffic tracking (fire-and-forget)
       { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'tcp', `${backendHost}:${backendPort}`); }
 
+      activeConnections.register(connectionId, {
+        domainId: domain.id,
+        protocol: 'tcp',
+        clientIp,
+        connectedAt: startTime,
+        label: `${backendHost}:${backendPort}`
+      });
+
       clientSocket.setNoDelay(true);
       if (this.TCP_KEEPALIVE_MS > 0) {
         clientSocket.setKeepAlive(true, this.TCP_KEEPALIVE_MS);
@@ -90,6 +100,8 @@ export class TcpProxy {
       const cleanup = () => {
         if (isClosing) return;
         isClosing = true;
+
+        activeConnections.unregister(connectionId);
 
         // Least-connections: release the slot for this backend
         if (tcpBackendId) { const lb = getLb(); if (lb) lb.decrementConnections(tcpBackendId); }

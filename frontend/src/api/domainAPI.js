@@ -43,5 +43,9 @@ export const domainAPI = {
 
   // Minecraft players (Java edition only)
   getPlayers: (id) => api.get(`/domains/${id}/players`),
-  getPlayerIpHistory: (id, username) => api.get(`/domains/${id}/players/${encodeURIComponent(username)}/ips`)
+  getPlayerIpHistory: (id, username) => api.get(`/domains/${id}/players/${encodeURIComponent(username)}/ips`),
+
+  // Active connections right now (tcp / udp / minecraft) — distinct from
+  // getLiveTraffic above, which is recent-hit history, not "still open".
+  getActiveConnections: (id) => api.get(`/domains/${id}/connections`)
 };

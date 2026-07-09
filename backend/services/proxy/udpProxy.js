@@ -8,6 +8,7 @@ import { database } from '../database.js';
 import { loadBalancer } from '../loadBalancer.js';
 import { urlFilterService } from '../urlFilterService.js';
 import { logBatchQueue } from '../logBatchQueue.js';
+import * as activeConnections from '../activeConnectionsRegistry.js';
 
 export class UdpProxy {
 // ==================== UDP PROXY ====================
@@ -145,10 +146,18 @@ _startUdpProxy(domain) {
         metrics.errorMessage = `Upstream error: ${err.message}`;
       });
 
-      upstreamEntry = { upstream, timeout: null, metrics, clientIp, backendHost, backendPort, proxySent: false };
+      const connectionId = activeConnections.nextConnectionId('udp');
+      upstreamEntry = { upstream, timeout: null, metrics, clientIp, backendHost, backendPort, proxySent: false, connectionId };
       upstreams.set(clientKey, upstreamEntry);
       // Live traffic tracking (fire-and-forget)
       { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'udp', `${backendHost}:${backendPort}`); }
+      activeConnections.register(connectionId, {
+        domainId: domain.id,
+        protocol: 'udp',
+        clientIp,
+        connectedAt: metrics.startTime,
+        label: `${backendHost}:${backendPort}`
+      });
       logger.info(`[UDP Proxy ${domain.id}] New client ${clientKey} -> ${backendHost}:${backendPort}`);
     }
 
@@ -188,6 +197,7 @@ _startUdpProxy(domain) {
           } catch (e) {
             // Ignore
           }
+          activeConnections.unregister(upstreamEntry.connectionId);
           upstreams.delete(clientKey);
           logger.info(`[UDP Proxy ${domain.id}] Client ${clientKey} timed out after ${this.UDP_CLIENT_TIMEOUT / 1000}s`);
         }, this.UDP_CLIENT_TIMEOUT);

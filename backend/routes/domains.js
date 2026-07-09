@@ -20,6 +20,8 @@ import {
   canAccessDomain, canModifyDomain
 } from '../services/domainService.js';
 import { getOnlineUsernamesForDomain } from '../services/proxy/minecraftProxy.js';
+import { getByDomain as getActiveConnectionsByDomain } from '../services/activeConnectionsRegistry.js';
+import { geoIpService } from '../services/geoIpService.js';
 
 export async function domainRoutes(fastify, _options) {
   // Static catalogue of all challenge puzzle types (id/label/desc/category) —
@@ -217,6 +219,49 @@ export async function domainRoutes(fastify, _options) {
       reply.code(500).send({
         error: 'Internal Server Error',
         message: 'Failed to fetch player IP history'
+      });
+    }
+  });
+
+  // ── Active connections (tcp / udp / minecraft) ──────────────────────────────
+  // "Is this connection open right now" — not to be confused with the players
+  // route above (login identity for MC) or liveTrafficService (recent-hit
+  // history). Backed by services/activeConnectionsRegistry.js, pure in-memory.
+  fastify.get('/:id/connections', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const userId = request.user.id;
+      const isAdmin = request.user.role === 'admin';
+
+      const domain = await database.getDomainById(domainId);
+      if (!domain) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      }
+      if (!await canAccessDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to access this domain' });
+      }
+      if (!['tcp', 'udp', 'minecraft'].includes(domain.proxy_type)) {
+        return reply.code(400).send({ error: 'Bad Request', message: 'Active connections are only available for tcp, udp and minecraft domains' });
+      }
+
+      const connections = getActiveConnectionsByDomain(domain.id);
+      const withCountry = await Promise.all(connections.map(async (c) => ({
+        connectionId: c.connectionId,
+        protocol: c.protocol,
+        clientIp: c.clientIp,
+        country: await geoIpService.getCountryCode(c.clientIp).catch(() => null),
+        connectedAt: c.connectedAt,
+        label: c.label
+      })));
+
+      reply.send({ success: true, connections: withCountry });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch active connections');
+      reply.code(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch active connections'
       });
     }
   });

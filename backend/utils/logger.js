@@ -1,7 +1,18 @@
 // @ts-check
 import pino from 'pino';
+import pretty from 'pino-pretty';
 
 const level = process.env.LOG_LEVEL || 'warn';
+
+// pino-pretty is used as an in-process stream rather than via `transport:`
+// (which spawns it in a worker thread through thread-stream). On some
+// Node versions that worker crashes at startup with "this should not
+// happen: undefined" — a known thread-stream issue. Building the stream
+// directly avoids the worker entirely at the cost of pretty-printing
+// happening on the main thread (negligible for a dev-only code path).
+const stream = process.env.NODE_ENV === 'development'
+  ? pretty({ colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' })
+  : undefined;
 
 export const logger = pino({
   level,
@@ -15,8 +26,5 @@ export const logger = pino({
   serializers: {
     err: pino.stdSerializers.err,
     error: pino.stdSerializers.err
-  },
-  transport: process.env.NODE_ENV === 'development'
-    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' } }
-    : undefined
-});
+  }
+}, stream);

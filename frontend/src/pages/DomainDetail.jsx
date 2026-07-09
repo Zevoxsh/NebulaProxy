@@ -4,7 +4,7 @@ import {
   ArrowLeft, Globe, Server, Activity, Clock, AlertCircle,
   CheckCircle, Filter, Search, RefreshCw, Download, TrendingUp,
   Zap, Database, Users, BarChart3, Settings, FileText, Shield, Power, Trash2,
-  Radio, Wifi, ChevronDown, ChevronRight, Wrench
+  Radio, Wifi, ChevronDown, ChevronRight, Wrench, Cable
 } from 'lucide-react';
 import { domainAPI } from '../api/client';
 import { FlagImg } from '../utils/flagCache';
@@ -15,6 +15,7 @@ import DomainMaintenancePanel from '../components/features/DomainMaintenancePane
 import DomainChallengePanel from '../components/features/DomainChallengePanel';
 import DomainHealthPanel from '../components/features/DomainHealthPanel';
 import DomainPlayersPanel from '../components/features/DomainPlayersPanel';
+import DomainConnectionsPanel from '../components/features/DomainConnectionsPanel';
 import { Combobox } from '../components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 
@@ -44,7 +45,7 @@ const PROTO_STYLE = {
 // mode (see store/viewModeStore.js) — editing vs. observing a domain.
 const TABS_BY_MODE = {
   config: ['overview', 'load-balancing', 'advanced', 'maintenance', 'challenge'],
-  visualization: ['logs', 'traffic', 'players'],
+  visualization: ['logs', 'traffic', 'players', 'connections'],
 };
 const DEFAULT_TAB_BY_MODE = { config: 'overview', visualization: 'logs' };
 // Maintenance mode and the visitor Challenge only make sense for HTTP
@@ -53,6 +54,10 @@ const HTTP_ONLY_TABS = ['maintenance', 'challenge'];
 // Player tracking only works for Java Edition (Login Start packet parsing) —
 // Bedrock/Geyser goes over UDP/RakNet and isn't tracked.
 const MINECRAFT_JAVA_ONLY_TABS = ['players'];
+// "Currently open connections" only exists for long-lived-session protocols
+// (services/activeConnectionsRegistry.js is only fed by tcp/udp/minecraft) —
+// HTTP is request/response, nothing to show as an "open session" there.
+const TCP_UDP_MC_ONLY_TABS = ['connections'];
 
 function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh, onClear }) {
   const [filterIp, setFilterIp] = useState('');
@@ -215,6 +220,7 @@ export default function DomainDetail() {
     if (path.endsWith('/challenge')) return 'challenge';
     if (path.endsWith('/traffic')) return 'traffic';
     if (path.endsWith('/players')) return 'players';
+    if (path.endsWith('/connections')) return 'connections';
     // Bare `/domains/:id` — default depends on which mode you're in
     // (Configuration lands on the settings form, Visualisation on logs).
     return DEFAULT_TAB_BY_MODE[mode] || 'overview';
@@ -329,6 +335,16 @@ export default function DomainDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain?.proxy_type, domain?.minecraft_edition, activeTab]);
 
+  // Connections tab only makes sense for long-lived-session protocols.
+  useEffect(() => {
+    if (!domain) return;
+    const supportsConnections = ['tcp', 'udp', 'minecraft'].includes(domain.proxy_type);
+    if (!supportsConnections && TCP_UDP_MC_ONLY_TABS.includes(activeTab)) {
+      navigateToTab(DEFAULT_TAB_BY_MODE[mode] || 'overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain?.proxy_type, activeTab]);
+
   const navigateToTab = (tab) => {
     const pathMap = {
       'overview':       `/domains/${id}`,
@@ -339,6 +355,7 @@ export default function DomainDetail() {
       'challenge':      `/domains/${id}/challenge`,
       'traffic':        `/domains/${id}/traffic`,
       'players':        `/domains/${id}/players`,
+      'connections':    `/domains/${id}/connections`,
     };
     navigate(pathMap[tab] || `/domains/${id}`, { replace: true });
   };
@@ -472,6 +489,25 @@ export default function DomainDetail() {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(n) / Math.log(k));
     return Math.round((n / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const formatDuration = (ms) => {
+    // For minecraft/tcp domains, "response time" is really the connection's
+    // total lifetime — a status ping closes in ~200ms but a play session can
+    // run for hours, so raw ms (e.g. "47761ms") is noisy/unreadable at a
+    // glance. Scale the unit to the magnitude instead.
+    const n = Number(ms);
+    if (!n || !Number.isFinite(n)) return '0ms';
+    if (n < 1000) return `${Math.round(n)}ms`;
+    if (n < 60000) return `${(n / 1000).toFixed(1)}s`;
+    if (n < 3600000) {
+      const m = Math.floor(n / 60000);
+      const s = Math.round((n % 60000) / 1000);
+      return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+    const h = Math.floor(n / 3600000);
+    const m = Math.round((n % 3600000) / 60000);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   };
 
   const formatDate = (timestamp) => {
@@ -626,10 +662,12 @@ export default function DomainDetail() {
                 { id: 'challenge',      label: 'Challenge',     icon: Zap },
                 { id: 'traffic',        label: 'Trafic live',   icon: Radio },
                 { id: 'players',        label: 'Joueurs',       icon: Users },
+                { id: 'connections',    label: 'Connexions',    icon: Cable },
               ].filter((tab) =>
                 TABS_BY_MODE[mode]?.includes(tab.id) &&
                 (domain?.proxy_type === 'http' || !HTTP_ONLY_TABS.includes(tab.id)) &&
-                (!MINECRAFT_JAVA_ONLY_TABS.includes(tab.id) || (domain?.proxy_type === 'minecraft' && domain?.minecraft_edition !== 'bedrock'))
+                (!MINECRAFT_JAVA_ONLY_TABS.includes(tab.id) || (domain?.proxy_type === 'minecraft' && domain?.minecraft_edition !== 'bedrock')) &&
+                (!TCP_UDP_MC_ONLY_TABS.includes(tab.id) || ['tcp', 'udp', 'minecraft'].includes(domain?.proxy_type))
               ).map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -701,11 +739,11 @@ export default function DomainDetail() {
                 <div className="flex-1">
                   <p className="text-xs font-medium text-white/50 uppercase tracking-[0.15em] mb-1">Avg Response</p>
                   <p className="text-xl font-light text-white tracking-tight">
-                    {stats.avg_response_time ? Math.round(stats.avg_response_time) : 0}ms
+                    {formatDuration(stats.avg_response_time)}
                   </p>
                   {(stats.p95_response_time || stats.p99_response_time) && (
                     <p className="text-[11px] font-light text-white/35 mt-0.5">
-                      p95 {Math.round(stats.p95_response_time || 0)}ms · p99 {Math.round(stats.p99_response_time || 0)}ms
+                      p95 {formatDuration(stats.p95_response_time)} · p99 {formatDuration(stats.p99_response_time)}
                     </p>
                   )}
                 </div>
@@ -943,11 +981,11 @@ export default function DomainDetail() {
                       <div className="flex-1">
                         <p className="text-xs font-medium text-white/50 uppercase tracking-[0.15em] mb-1">Avg Response</p>
                         <p className="text-xl font-light text-white tracking-tight">
-                          {stats.avg_response_time ? Math.round(stats.avg_response_time) : 0}ms
+                          {formatDuration(stats.avg_response_time)}
                         </p>
                         {(stats.p95_response_time || stats.p99_response_time) && (
                           <p className="text-[11px] font-light text-white/35 mt-0.5">
-                            p95 {Math.round(stats.p95_response_time || 0)}ms · p99 {Math.round(stats.p99_response_time || 0)}ms
+                            p95 {formatDuration(stats.p95_response_time)} · p99 {formatDuration(stats.p99_response_time)}
                           </p>
                         )}
                       </div>
@@ -1113,7 +1151,7 @@ export default function DomainDetail() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-white/70 font-light whitespace-nowrap">
-                          {log.response_time ? `${log.response_time}ms` : '-'}
+                          {log.response_time ? formatDuration(log.response_time) : '-'}
                           {domain?.proxy_type === 'minecraft' && log.request_headers?.['max-backend-silence-ms'] > 3000 && (
                             <span
                               title={`Backend silencieux ${(log.request_headers['max-backend-silence-ms'] / 1000).toFixed(1)}s avant la coupure — probablement un freeze/lag du serveur MC, pas le proxy`}
@@ -1224,6 +1262,11 @@ export default function DomainDetail() {
           {/* Players Tab (Java Edition Minecraft only) */}
           {activeTab === 'players' && (
             <DomainPlayersPanel domainId={id} />
+          )}
+
+          {/* Connections Tab (tcp / udp / minecraft — open sessions right now) */}
+          {activeTab === 'connections' && (
+            <DomainConnectionsPanel domainId={id} />
           )}
         </div>
       </div>
