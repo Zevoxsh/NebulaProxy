@@ -18,6 +18,7 @@ import NotificationService       from '../services/notificationService.js';
 import { resourceMonitor }       from '../services/resourceMonitor.js';
 import { bandwidthTracker }      from '../services/bandwidthTracker.js';
 import { logBroadcastService }   from '../services/logBroadcastService.js';
+import * as activeConnections    from '../services/activeConnectionsRegistry.js';
 import { tunnelRelayService }    from '../services/tunnelRelayService.js';
 import { container }             from '../services/container.js';
 import BackupScheduler           from '../services/backupScheduler.js';
@@ -206,6 +207,7 @@ export async function startupSequence(fastify, config) {
     resourceMonitor.start();
     bandwidthTracker.start();
     logBroadcastService.setWebSocketManager(wsManager);
+    activeConnections.setWebSocketManager(wsManager);
 
     await tunnelRelayService.init(fastify.server, fastify.log);
     fastify.tunnelRelayService = tunnelRelayService;

@@ -98,48 +98,139 @@ export default function DomainConnectionsPanel({ domainId }) {
   // samples rather than tracked server-side.
   const prevBytesRef = useRef({});
 
+  // Mirrors `connections` so the WS handler (registered once per `domainId`
+  // change, not per render) can read the latest list synchronously and call
+  // setConnections(value) directly rather than setConnections(prevList =>
+  // ...). That distinction matters: React 18 StrictMode double-invokes
+  // functional setState updaters to catch impurities, and applyRates()'s
+  // side effect (advancing prevBytesRef) is NOT safe to run twice for the
+  // same tick — the second invocation would see a zero time-delta against
+  // the baseline the first invocation just wrote, permanently stuck at
+  // "not enough samples yet". Reading/writing outside the updater sidesteps
+  // this entirely.
+  const connectionsRef = useRef(null);
+  useEffect(() => { connectionsRef.current = connections; }, [connections]);
+
+  // applyRates() is the same "derive a rate from two consecutive byte
+  // samples" logic used by both the poll path and the WS snapshot path —
+  // extracted so the WS-driven updates (now the primary source) and the
+  // slow fallback poll compute rates identically.
+  const applyRates = useCallback((raw, nowTs) => {
+    const prev = prevBytesRef.current;
+    const withRates = raw.map((c) => {
+      const bytesIn = c.bytesIn || 0;
+      const bytesOut = c.bytesOut || 0;
+      const p = prev[c.connectionId];
+      let rateIn = null;
+      let rateOut = null;
+      if (p) {
+        const dtSec = (nowTs - p.ts) / 1000;
+        if (dtSec > 0) {
+          rateIn = (bytesIn - p.bytesIn) / dtSec;
+          rateOut = (bytesOut - p.bytesOut) / dtSec;
+        }
+      }
+      return { ...c, bytesIn, bytesOut, rateIn, rateOut };
+    });
+    const nextSnapshot = {};
+    for (const c of withRates) {
+      nextSnapshot[c.connectionId] = { bytesIn: c.bytesIn, bytesOut: c.bytesOut, ts: nowTs };
+    }
+    prevBytesRef.current = nextSnapshot;
+    return withRates;
+  }, []);
+
   const load = useCallback(async () => {
     if (!domainId) return;
     try {
       const res = await domainAPI.getActiveConnections(domainId);
       const raw = res.data.connections || [];
       const nowTs = Date.now();
-      const prev = prevBytesRef.current;
-
-      const withRates = raw.map((c) => {
-        const bytesIn = c.bytesIn || 0;
-        const bytesOut = c.bytesOut || 0;
-        const p = prev[c.connectionId];
-        let rateIn = null;
-        let rateOut = null;
-        if (p) {
-          const dtSec = (nowTs - p.ts) / 1000;
-          if (dtSec > 0) {
-            rateIn = (bytesIn - p.bytesIn) / dtSec;
-            rateOut = (bytesOut - p.bytesOut) / dtSec;
-          }
-        }
-        return { ...c, bytesIn, bytesOut, rateIn, rateOut };
-      });
-
-      const nextSnapshot = {};
-      for (const c of withRates) {
-        nextSnapshot[c.connectionId] = { bytesIn: c.bytesIn, bytesOut: c.bytesOut, ts: nowTs };
-      }
-      prevBytesRef.current = nextSnapshot;
-
-      setConnections(withRates);
+      setConnections(applyRates(raw, nowTs));
       setNow(nowTs);
     } catch (_) {
       // Fail quiet — best-effort context, not critical path
     } finally {
       setLoading(false);
     }
-  }, [domainId]);
+  }, [domainId, applyRates]);
+
+  // WebSocket is the primary update path — connection_open/connection_close
+  // land instantly, connections_snapshot (every ~3s server-side) drives the
+  // throughput column. The poll below is only a slow reconciliation net for
+  // whatever a missed/dropped WS message might leave stale — same pattern
+  // as the reconnect-resync below. Same /ws/notifications channel and
+  // connect/reconnect shape already used by RealtimeTraffic.jsx.
+  useEffect(() => {
+    if (!domainId) return;
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${proto}//${window.location.host}/ws/notifications`;
+    let ws, reconnectTimeout, unmounted = false, hadOpenedBefore = false;
+
+    function connect() {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        // A reconnect (not the first connect) means we may have missed
+        // open/close/snapshot events during the gap — resync immediately
+        // rather than waiting for the next slow poll tick.
+        if (hadOpenedBefore) load();
+        hadOpenedBefore = true;
+      };
+      ws.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        if (!msg || !msg.payload) return;
+        // domainId here comes from useParams() (always a string, e.g. "35")
+        // while the backend broadcasts domain.id as a number — compare as
+        // strings on both sides rather than relying on ===.
+        const sameDomain = (id) => String(id) === String(domainId);
+
+        if (msg.type === 'connection_open' && sameDomain(msg.payload.domainId)) {
+          const { connectionId, protocol, clientIp, label, connectedAt } = msg.payload;
+          const list = connectionsRef.current || [];
+          if (!list.some((c) => c.connectionId === connectionId)) {
+            const next = [...list, { connectionId, protocol, clientIp, label, connectedAt, country: null, bytesIn: 0, bytesOut: 0, rateIn: null, rateOut: null }];
+            connectionsRef.current = next;
+            setConnections(next);
+          }
+          setNow(Date.now());
+        } else if (msg.type === 'connection_close' && sameDomain(msg.payload.domainId)) {
+          const { connectionId } = msg.payload;
+          delete prevBytesRef.current[connectionId];
+          const next = (connectionsRef.current || []).filter((c) => c.connectionId !== connectionId);
+          connectionsRef.current = next;
+          setConnections(next);
+          setNow(Date.now());
+        } else if (msg.type === 'connections_snapshot') {
+          const mine = (msg.payload.connections || []).filter((c) => sameDomain(c.domainId));
+          if (mine.length === 0) return;
+          const prevList = connectionsRef.current;
+          if (!prevList || prevList.length === 0) return;
+          const nowTs = Date.now();
+          const byId = new Map(mine.map((c) => [c.connectionId, c]));
+          const rated = applyRates(
+            prevList.map((c) => byId.has(c.connectionId) ? { ...c, ...byId.get(c.connectionId) } : c),
+            nowTs
+          );
+          connectionsRef.current = rated;
+          setConnections(rated);
+          setNow(nowTs);
+        }
+      };
+      ws.onclose = () => {
+        if (!unmounted) reconnectTimeout = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+    return () => { unmounted = true; clearTimeout(reconnectTimeout); if (ws) ws.close(); };
+  }, [domainId, load, applyRates]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    // Fallback reconciliation only — WS above is the primary live path.
+    const t = setInterval(load, 45000);
     return () => clearInterval(t);
   }, [load]);
 

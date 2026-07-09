@@ -114,6 +114,7 @@ async _startSharedMinecraftServer() {
 
         if (loginUsername && domain) {
           onlinePlayers.delete(onlineKey(domain.id, loginUsername));
+          activeConnections.broadcastEvent('player_offline', { domainId: domain.id, username: loginUsername });
         }
 
         if (silenceTimer) { clearInterval(silenceTimer); silenceTimer = null; }
@@ -296,6 +297,7 @@ async _startSharedMinecraftServer() {
         // the DB write — a slow/failed write shouldn't stall the connection.
         if (loginUsername) {
           onlinePlayers.add(onlineKey(domain.id, loginUsername));
+          activeConnections.broadcastEvent('player_online', { domainId: domain.id, username: loginUsername });
           database.upsertPlayerLogin(domain.id, loginUsername, clientIp).catch(err => {
             logger.error(`[MinecraftProxy] Failed to record player login for "${loginUsername}":`, err.message);
           });

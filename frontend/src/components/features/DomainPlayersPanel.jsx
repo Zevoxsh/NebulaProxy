@@ -110,9 +110,61 @@ export default function DomainPlayersPanel({ domainId }) {
     }
   }, [domainId]);
 
+  // WebSocket is the primary path for online/offline status — player_online
+  // /player_offline land the instant a login/disconnect happens server-side.
+  // Only flips the flag on an already-known player; a genuinely first-ever
+  // join still needs the poll below to add their row (with avatar etc.) —
+  // that's an acceptable few-seconds-to-next-reconciliation gap, not a
+  // regression, since today that row wouldn't exist at all until a poll.
+  // Same /ws/notifications channel/shape as RealtimeTraffic.jsx.
+  useEffect(() => {
+    if (!domainId) return;
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${proto}//${window.location.host}/ws/notifications`;
+    let ws, reconnectTimeout, unmounted = false, hadOpenedBefore = false;
+
+    function connect() {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        if (hadOpenedBefore) load();
+        hadOpenedBefore = true;
+      };
+      ws.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        // domainId here comes from useParams() (string) while the backend
+        // broadcasts domain.id as a number — compare as strings.
+        if (!msg || !msg.payload || String(msg.payload.domainId) !== String(domainId)) return;
+
+        if (msg.type === 'player_online' || msg.type === 'player_offline') {
+          const isOnline = msg.type === 'player_online';
+          const { username } = msg.payload;
+          setPlayers((prevList) => {
+            if (!prevList) return prevList;
+            let found = false;
+            const next = prevList.map((p) => {
+              if (p.username.toLowerCase() !== username.toLowerCase()) return p;
+              found = true;
+              return { ...p, isOnline, lastSeenAt: isOnline ? new Date().toISOString() : p.lastSeenAt };
+            });
+            return found ? next : prevList;
+          });
+        }
+      };
+      ws.onclose = () => {
+        if (!unmounted) reconnectTimeout = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+    return () => { unmounted = true; clearTimeout(reconnectTimeout); if (ws) ws.close(); };
+  }, [domainId, load]);
+
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    // Fallback reconciliation only — WS above is the primary live path.
+    const t = setInterval(load, 45000);
     return () => clearInterval(t);
   }, [load]);
 
