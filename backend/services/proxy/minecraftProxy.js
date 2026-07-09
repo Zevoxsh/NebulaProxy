@@ -288,6 +288,17 @@ async _startSharedMinecraftServer() {
             connectTimeout = null;
           }
 
+          // ── PROXY Protocol v1 ─────────────────────────────────────────
+          if (domain.proxy_protocol) {
+            const clientPort = clientSocket.remotePort || 0;
+            const serverAddr = targetSocket.localAddress || '0.0.0.0';
+            const serverPort = targetSocket.localPort || backendPort;
+            const family = clientIp.includes(':') ? 'TCP6' : 'TCP4';
+            targetSocket.write(
+              Buffer.from(`PROXY ${family} ${clientIp} ${serverAddr} ${clientPort} ${serverPort}\r\n`, 'ascii')
+            );
+          }
+
           // Send the buffered handshake packet, then forward live traffic.
           if (handshakeBuffer.length > 0) {
             targetSocket.write(handshakeBuffer);
