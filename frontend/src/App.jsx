@@ -96,6 +96,7 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/backups'], title: 'Admin Backups', description: 'Create, export, and reimport database backups.' },
   { patterns: ['/admin/traffic'], title: 'Admin Live Traffic', description: 'Monitor live connections across all domains.' },
   { patterns: ['/domains/:id/traffic'], title: 'Domain Live Traffic', description: 'Monitor live connections for this domain.' },
+  { patterns: ['/domains/:id/players'], title: 'Domain Players', description: 'Minecraft players seen on this domain, with IP history.' },
   { patterns: ['/admin/updates'], title: 'Admin Updates', description: 'Manage system updates and release status.' },
   { patterns: ['/admin/url-blocking'], title: 'Admin URL Blocking', description: 'Manage URL blocking rules across all domains.' },
   { patterns: ['/admin/audit'], title: 'Admin Audit Trail', description: 'Inspect administrative audit logs and events.' },
@@ -273,6 +274,7 @@ function App() {
           <Route path="/domains/:id/maintenance" element={<DomainDetail />} />
           <Route path="/domains/:id/challenge" element={<DomainDetail />} />
           <Route path="/domains/:id/traffic" element={<DomainDetail />} />
+          <Route path="/domains/:id/players" element={<DomainDetail />} />
           <Route path="/tunnels" element={<Tunnels />} />
           <Route path="/tunnels/new" element={<TunnelCreate />} />
           <Route path="/tunnels/:id" element={<TunnelDetail />} />

@@ -26,6 +26,7 @@ import { BackendRepository } from '../repositories/backendRepository.js';
 import { ApiKeyRepository } from '../repositories/apiKeyRepository.js';
 import { QueueRepository } from '../repositories/queueRepository.js';
 import { NotificationRepository } from '../repositories/notificationRepository.js';
+import { MinecraftPlayerRepository } from '../repositories/minecraftPlayerRepository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -83,7 +84,9 @@ class DatabaseService {
       'tunnels',
       'tunnel_agents',
       'tunnel_bindings',
-      'tunnel_access'
+      'tunnel_access',
+      'mc_players',
+      'mc_player_ips'
     ];
 
     const result = await this.pgPool.query(
@@ -274,7 +277,8 @@ const _repositories = [
   BackendRepository,
   ApiKeyRepository,
   QueueRepository,
-  NotificationRepository
+  NotificationRepository,
+  MinecraftPlayerRepository
 ];
 for (const Repo of _repositories) {
   Object.getOwnPropertyNames(Repo.prototype)

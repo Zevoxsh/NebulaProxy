@@ -14,6 +14,7 @@ import DomainAdvancedPanel from '../components/features/DomainAdvancedPanel';
 import DomainMaintenancePanel from '../components/features/DomainMaintenancePanel';
 import DomainChallengePanel from '../components/features/DomainChallengePanel';
 import DomainHealthPanel from '../components/features/DomainHealthPanel';
+import DomainPlayersPanel from '../components/features/DomainPlayersPanel';
 import { Combobox } from '../components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 
@@ -43,12 +44,15 @@ const PROTO_STYLE = {
 // mode (see store/viewModeStore.js) — editing vs. observing a domain.
 const TABS_BY_MODE = {
   config: ['overview', 'load-balancing', 'advanced', 'maintenance', 'challenge'],
-  visualization: ['logs', 'traffic'],
+  visualization: ['logs', 'traffic', 'players'],
 };
 const DEFAULT_TAB_BY_MODE = { config: 'overview', visualization: 'logs' };
 // Maintenance mode and the visitor Challenge only make sense for HTTP
 // domains — hidden entirely for TCP/UDP/Minecraft.
 const HTTP_ONLY_TABS = ['maintenance', 'challenge'];
+// Player tracking only works for Java Edition (Login Start packet parsing) —
+// Bedrock/Geyser goes over UDP/RakNet and isn't tracked.
+const MINECRAFT_JAVA_ONLY_TABS = ['players'];
 
 function TrafficTab({ connections, loading, autoRefresh, onToggleAuto, onRefresh, onClear }) {
   const [filterIp, setFilterIp] = useState('');
@@ -210,6 +214,7 @@ export default function DomainDetail() {
     if (path.endsWith('/maintenance')) return 'maintenance';
     if (path.endsWith('/challenge')) return 'challenge';
     if (path.endsWith('/traffic')) return 'traffic';
+    if (path.endsWith('/players')) return 'players';
     // Bare `/domains/:id` — default depends on which mode you're in
     // (Configuration lands on the settings form, Visualisation on logs).
     return DEFAULT_TAB_BY_MODE[mode] || 'overview';
@@ -314,6 +319,16 @@ export default function DomainDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain?.proxy_type, activeTab]);
 
+  // Players tab only makes sense for Java Edition Minecraft domains.
+  useEffect(() => {
+    if (!domain) return;
+    const isMinecraftJava = domain.proxy_type === 'minecraft' && domain.minecraft_edition !== 'bedrock';
+    if (!isMinecraftJava && MINECRAFT_JAVA_ONLY_TABS.includes(activeTab)) {
+      navigateToTab(DEFAULT_TAB_BY_MODE[mode] || 'overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain?.proxy_type, domain?.minecraft_edition, activeTab]);
+
   const navigateToTab = (tab) => {
     const pathMap = {
       'overview':       `/domains/${id}`,
@@ -323,6 +338,7 @@ export default function DomainDetail() {
       'maintenance':    `/domains/${id}/maintenance`,
       'challenge':      `/domains/${id}/challenge`,
       'traffic':        `/domains/${id}/traffic`,
+      'players':        `/domains/${id}/players`,
     };
     navigate(pathMap[tab] || `/domains/${id}`, { replace: true });
   };
@@ -609,9 +625,11 @@ export default function DomainDetail() {
                 { id: 'maintenance',    label: 'Maintenance',   icon: Wrench },
                 { id: 'challenge',      label: 'Challenge',     icon: Zap },
                 { id: 'traffic',        label: 'Trafic live',   icon: Radio },
+                { id: 'players',        label: 'Joueurs',       icon: Users },
               ].filter((tab) =>
                 TABS_BY_MODE[mode]?.includes(tab.id) &&
-                (domain?.proxy_type === 'http' || !HTTP_ONLY_TABS.includes(tab.id))
+                (domain?.proxy_type === 'http' || !HTTP_ONLY_TABS.includes(tab.id)) &&
+                (!MINECRAFT_JAVA_ONLY_TABS.includes(tab.id) || (domain?.proxy_type === 'minecraft' && domain?.minecraft_edition !== 'bedrock'))
               ).map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -1201,6 +1219,11 @@ export default function DomainDetail() {
               onRefresh={loadTraffic}
               onClear={clearTraffic}
             />
+          )}
+
+          {/* Players Tab (Java Edition Minecraft only) */}
+          {activeTab === 'players' && (
+            <DomainPlayersPanel domainId={id} />
           )}
         </div>
       </div>

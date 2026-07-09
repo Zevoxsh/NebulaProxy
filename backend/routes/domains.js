@@ -19,6 +19,7 @@ import {
   resolveDns, probeUrl,
   canAccessDomain, canModifyDomain
 } from '../services/domainService.js';
+import { getOnlineUsernamesForDomain } from '../services/proxy/minecraftProxy.js';
 
 export async function domainRoutes(fastify, _options) {
   // Static catalogue of all challenge puzzle types (id/label/desc/category) —
@@ -131,6 +132,91 @@ export async function domainRoutes(fastify, _options) {
       reply.code(500).send({
         error: 'Internal Server Error',
         message: 'Failed to fetch domain'
+      });
+    }
+  });
+
+  // ── Minecraft players ───────────────────────────────────────────────────────
+  // Only meaningful for Java-edition Minecraft domains — the shared MC server
+  // (services/proxy/minecraftProxy.js) parses the Login Start packet to
+  // capture usernames; Bedrock (Geyser/UDP) uses a different protocol and
+  // isn't tracked here.
+  async function loadMinecraftJavaDomain(request, reply) {
+    const domainId = parseInt(request.params.id, 10);
+    const userId = request.user.id;
+
+    const domain = await database.getDomainById(domainId);
+    if (!domain) {
+      reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      return null;
+    }
+    if (!await canAccessDomain(domain, userId)) {
+      reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to access this domain' });
+      return null;
+    }
+    if (domain.proxy_type !== 'minecraft' || domain.minecraft_edition === 'bedrock') {
+      reply.code(400).send({ error: 'Bad Request', message: 'Player tracking is only available for Java Edition Minecraft domains' });
+      return null;
+    }
+    return domain;
+  }
+
+  fastify.get('/:id/players', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domain = await loadMinecraftJavaDomain(request, reply);
+      if (!domain) return;
+
+      const players = await database.getPlayersByDomain(domain.id);
+      const onlineUsernames = getOnlineUsernamesForDomain(domain.id);
+
+      reply.send({
+        success: true,
+        players: players.map(p => ({
+          username: p.username,
+          currentIp: p.current_ip,
+          isOnline: onlineUsernames.has(p.username.toLowerCase()),
+          ipCount: p.ip_count,
+          firstSeenAt: p.first_seen_at,
+          lastSeenAt: p.last_seen_at
+        }))
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch Minecraft players');
+      reply.code(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch players'
+      });
+    }
+  });
+
+  fastify.get('/:id/players/:username/ips', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domain = await loadMinecraftJavaDomain(request, reply);
+      if (!domain) return;
+
+      const player = await database.getPlayerByDomainAndUsername(domain.id, request.params.username);
+      if (!player) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Player not found' });
+      }
+
+      const ips = await database.getPlayerIpHistory(player.id);
+      reply.send({
+        success: true,
+        ips: ips.map(row => ({
+          ip: row.ip_address,
+          firstSeenAt: row.first_seen_at,
+          lastSeenAt: row.last_seen_at
+        }))
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch player IP history');
+      reply.code(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch player IP history'
       });
     }
   });

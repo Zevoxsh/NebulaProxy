@@ -39,5 +39,9 @@ export const domainAPI = {
   // Live traffic
   getAllLiveTraffic: () => api.get('/domains/traffic/live'),
   getLiveTraffic: (id) => api.get(`/domains/${id}/traffic/live`),
-  clearLiveTraffic: (id) => api.delete(`/domains/${id}/traffic/live`)
+  clearLiveTraffic: (id) => api.delete(`/domains/${id}/traffic/live`),
+
+  // Minecraft players (Java edition only)
+  getPlayers: (id) => api.get(`/domains/${id}/players`),
+  getPlayerIpHistory: (id, username) => api.get(`/domains/${id}/players/${encodeURIComponent(username)}/ips`)
 };

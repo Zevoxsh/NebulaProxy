@@ -6,8 +6,32 @@ import { lts } from '../proxyContext.js';
 import { logger } from '../../utils/logger.js';
 import { config } from '../../config/config.js';
 import { database } from '../database.js';
-import { parseHandshake } from '../minecraftProtocol.js';
+import { parseHandshake, parseLoginStart } from '../minecraftProtocol.js';
 import { urlFilterService } from '../urlFilterService.js';
+
+// Module-level "is this player actively connected right now" registry, keyed
+// by `${domainId}:${usernameLower}`. Lives outside any connection/class
+// instance since ProxyManager is a singleton — this only reflects live
+// proxied connections, not persisted state (resets on restart, same as the
+// rest of this proxy's in-memory runtime state).
+const onlinePlayers = new Set();
+
+function onlineKey(domainId, username) {
+  return `${domainId}:${username.toLowerCase()}`;
+}
+
+export function isPlayerOnline(domainId, username) {
+  return onlinePlayers.has(onlineKey(domainId, username));
+}
+
+export function getOnlineUsernamesForDomain(domainId) {
+  const prefix = `${domainId}:`;
+  const usernames = new Set();
+  for (const key of onlinePlayers) {
+    if (key.startsWith(prefix)) usernames.add(key.slice(prefix.length));
+  }
+  return usernames;
+}
 
 export class MinecraftProxy {
 // ==================== MINECRAFT PROXY ====================
@@ -57,6 +81,8 @@ async _startSharedMinecraftServer() {
       let blockedByPolicy = false;
       let routedHostname = null;
       let domain = null;
+      let handshakeResult = null;
+      let loginUsername = null;
       let maxBackendSilenceMs = 0;
       let maxClientSilenceMs = 0;
 
@@ -80,6 +106,10 @@ async _startSharedMinecraftServer() {
       const cleanup = () => {
         if (isClosing) return;
         isClosing = true;
+
+        if (loginUsername && domain) {
+          onlinePlayers.delete(onlineKey(domain.id, loginUsername));
+        }
 
         if (silenceTimer) { clearInterval(silenceTimer); silenceTimer = null; }
 
@@ -193,32 +223,52 @@ async _startSharedMinecraftServer() {
           return;
         }
 
-        // Try to parse handshake
-        const parseStart = Date.now();
-        const result = parseHandshake(handshakeBuffer);
-        const parseMs = Date.now() - parseStart;
+        // Try to parse handshake (only once — subsequent chunks just feed
+        // the login-start tail parse below until that completes too).
+        if (!handshakeResult) {
+          const parseStart = Date.now();
+          const result = parseHandshake(handshakeBuffer);
+          const parseMs = Date.now() - parseStart;
 
-        if (result.incomplete) {
-          logger.debug(`[DEBUG:MC] client=${clientIp} handshake incomplete (${handshakeBuffer.length}B so far, parse=${parseMs}ms)`);
-          return;
+          if (result.incomplete) {
+            logger.debug(`[DEBUG:MC] client=${clientIp} handshake incomplete (${handshakeBuffer.length}B so far, parse=${parseMs}ms)`);
+            return;
+          }
+
+          if (!result.success) {
+            errorMessage = result.error;
+            logger.error(`[MinecraftProxy] Handshake parse error:`, result.error);
+            cleanup();
+            return;
+          }
+
+          handshakeResult = result;
+          routedHostname = result.hostname;
+          clearTimeout(handshakeTimeout);
+          handshakeTimeout = null;
+          logger.debug(`[DEBUG:MC] client=${clientIp} handshake OK hostname="${result.hostname}" parse=${parseMs}ms bufLen=${handshakeBuffer.length}B t+${Date.now() - startTime}ms`);
         }
 
-        if (!result.success) {
-          errorMessage = result.error;
-          logger.error(`[MinecraftProxy] Handshake parse error:`, result.error);
-          cleanup();
-          return;
+        // Login connections (nextState 2) send a Login Start packet right
+        // after the handshake, carrying the player's username — capture it
+        // for player tracking before proceeding. Status-ping connections
+        // (nextState 1, server list ping) never log in, so skip this.
+        if (handshakeResult.nextState === 2 && !loginUsername) {
+          const loginTail = handshakeBuffer.subarray(handshakeResult.totalBytes);
+          const loginResult = parseLoginStart(loginTail);
+          if (!loginResult) {
+            // Login Start not fully received yet — wait for more data.
+            // Still bounded by the same MAX_HANDSHAKE_BYTES guard above.
+            return;
+          }
+          loginUsername = loginResult.username;
+          logger.debug(`[DEBUG:MC] client=${clientIp} login start OK username="${loginUsername}" t+${Date.now() - startTime}ms`);
         }
 
-        // Handshake complete and valid!
+        // Handshake (+ login start, if applicable) fully parsed — proceed.
         handshakeComplete = true;
-        clearTimeout(handshakeTimeout);
-        handshakeTimeout = null;
 
-        const hostname = result.hostname;
-        routedHostname = hostname;
-        const t0 = Date.now();
-        logger.debug(`[DEBUG:MC] client=${clientIp} handshake OK hostname="${hostname}" parse=${parseMs}ms bufLen=${handshakeBuffer.length}B t+${t0 - startTime}ms`);
+        const hostname = handshakeResult.hostname;
 
         // Route to domain — filter by 'minecraft' so an HTTP domain
         // with the same hostname doesn't intercept MC connections.
@@ -230,6 +280,16 @@ async _startSharedMinecraftServer() {
           return;
         }
         logger.debug(`[DEBUG:MC] client=${clientIp} domain found id=${domain.id} t+${Date.now() - startTime}ms`);
+
+        // Player tracking: record the login + mark the player online now
+        // that we know which domain they're connecting to. Fire-and-forget
+        // the DB write — a slow/failed write shouldn't stall the connection.
+        if (loginUsername) {
+          onlinePlayers.add(onlineKey(domain.id, loginUsername));
+          database.upsertPlayerLogin(domain.id, loginUsername, clientIp).catch(err => {
+            logger.error(`[MinecraftProxy] Failed to record player login for "${loginUsername}":`, err.message);
+          });
+        }
 
         const policyStart = Date.now();
         try {
