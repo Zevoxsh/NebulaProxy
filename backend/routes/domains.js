@@ -20,7 +20,7 @@ import {
   canAccessDomain, canModifyDomain
 } from '../services/domainService.js';
 import { getOnlineUsernamesForDomain } from '../services/proxy/minecraftProxy.js';
-import { getByDomain as getActiveConnectionsByDomain } from '../services/activeConnectionsRegistry.js';
+import { getByDomain as getActiveConnectionsByDomain, kick as kickActiveConnection } from '../services/activeConnectionsRegistry.js';
 import { geoIpService } from '../services/geoIpService.js';
 
 export async function domainRoutes(fastify, _options) {
@@ -262,6 +262,48 @@ export async function domainRoutes(fastify, _options) {
       reply.code(500).send({
         error: 'Internal Server Error',
         message: 'Failed to fetch active connections'
+      });
+    }
+  });
+
+  // Forcibly close one currently-open connection (tcp/udp/minecraft).
+  fastify.delete('/:id/connections/:connectionId', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const { connectionId } = request.params;
+      const userId = request.user.id;
+      const isAdmin = request.user.role === 'admin';
+
+      const domain = await database.getDomainById(domainId);
+      if (!domain) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      }
+      if (!await canAccessDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to access this domain' });
+      }
+      if (!['tcp', 'udp', 'minecraft'].includes(domain.proxy_type)) {
+        return reply.code(400).send({ error: 'Bad Request', message: 'Active connections are only available for tcp, udp and minecraft domains' });
+      }
+
+      // Belt-and-suspenders: the connection must both exist AND belong to
+      // this domain — a requester who can only guess a connectionId string
+      // (they're not otherwise secret, just opaque) can't kick a session on
+      // a domain they don't own.
+      const ownedConnection = getActiveConnectionsByDomain(domain.id)
+        .find((c) => c.connectionId === connectionId);
+      if (!ownedConnection) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Connection not found' });
+      }
+
+      kickActiveConnection(connectionId);
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to kick connection');
+      reply.code(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to kick connection'
       });
     }
   });

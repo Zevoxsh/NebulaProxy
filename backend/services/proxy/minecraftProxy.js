@@ -340,7 +340,10 @@ async _startSharedMinecraftServer() {
           protocol: 'minecraft',
           clientIp,
           connectedAt: startTime,
-          label: loginUsername || `${backendHost}:${backendPort}`
+          label: loginUsername || `${backendHost}:${backendPort}`,
+          // cleanup() already unregisters + clears onlinePlayers — kicking
+          // just needs to trigger the same one teardown path, no duplication.
+          close: () => cleanup()
         });
 
         logger.debug(`[DEBUG:MC] client=${clientIp} connecting to backend ${backendHost}:${backendPort} t+${Date.now() - startTime}ms`);

@@ -86,7 +86,10 @@ export class TcpProxy {
         protocol: 'tcp',
         clientIp,
         connectedAt: startTime,
-        label: `${backendHost}:${backendPort}`
+        label: `${backendHost}:${backendPort}`,
+        // `cleanup` is defined below but not called until kick() actually
+        // invokes this closure, well after `cleanup` is assigned.
+        close: () => cleanup()
       });
 
       clientSocket.setNoDelay(true);

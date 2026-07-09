@@ -47,5 +47,6 @@ export const domainAPI = {
 
   // Active connections right now (tcp / udp / minecraft) — distinct from
   // getLiveTraffic above, which is recent-hit history, not "still open".
-  getActiveConnections: (id) => api.get(`/domains/${id}/connections`)
+  getActiveConnections: (id) => api.get(`/domains/${id}/connections`),
+  kickConnection: (id, connectionId) => api.delete(`/domains/${id}/connections/${encodeURIComponent(connectionId)}`)
 };

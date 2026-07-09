@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cable } from 'lucide-react';
+import { Cable, PowerOff } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { FlagImg } from '../../utils/flagCache';
 
@@ -28,7 +28,7 @@ function formatDuration(ms) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function ConnectionRow({ conn, now }) {
+function ConnectionRow({ conn, now, onKick, kicking }) {
   const style = PROTOCOL_STYLE[conn.protocol] || PROTOCOL_STYLE.tcp;
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.02] transition-colors">
@@ -48,6 +48,15 @@ function ConnectionRow({ conn, now }) {
       <span className="ml-auto text-xs text-white/50 font-mono shrink-0">
         {formatDuration(now - conn.connectedAt)}
       </span>
+      <button
+        onClick={() => onKick(conn.connectionId)}
+        disabled={kicking}
+        title="Fermer cette connexion"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#F87171] hover:bg-[#EF4444]/20 transition-all shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <PowerOff className="w-3.5 h-3.5" strokeWidth={1.5} />
+        Kick
+      </button>
     </div>
   );
 }
@@ -60,6 +69,7 @@ export default function DomainConnectionsPanel({ domainId }) {
   const [connections, setConnections] = useState(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [kickingId, setKickingId] = useState(null);
 
   const load = useCallback(async () => {
     if (!domainId) return;
@@ -79,6 +89,24 @@ export default function DomainConnectionsPanel({ domainId }) {
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [load]);
+
+  const handleKick = useCallback(async (connectionId) => {
+    if (!window.confirm('Fermer cette connexion ?')) return;
+    setKickingId(connectionId);
+    // Optimistic: a kick should be near-instant, don't make the user wait
+    // for the next 15s poll to see it gone. The following poll reconciles
+    // either way if something went wrong.
+    setConnections((prev) => (prev || []).filter((c) => c.connectionId !== connectionId));
+    try {
+      await domainAPI.kickConnection(domainId, connectionId);
+    } catch (_) {
+      // Fail quiet here too — the next poll will re-show it if the kick
+      // didn't actually take effect server-side.
+    } finally {
+      setKickingId(null);
+      load();
+    }
+  }, [domainId, load]);
 
   if (loading && connections === null) {
     return (
@@ -108,7 +136,13 @@ export default function DomainConnectionsPanel({ domainId }) {
       ) : (
         <div>
           {connections.map((c) => (
-            <ConnectionRow key={c.connectionId} conn={c} now={now} />
+            <ConnectionRow
+              key={c.connectionId}
+              conn={c}
+              now={now}
+              onKick={handleKick}
+              kicking={kickingId === c.connectionId}
+            />
           ))}
         </div>
       )}

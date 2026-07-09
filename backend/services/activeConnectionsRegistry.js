@@ -12,7 +12,7 @@
  * `onlinePlayers` Set.
  */
 
-const connections = new Map(); // connectionId -> { domainId, protocol, clientIp, connectedAt, label }
+const connections = new Map(); // connectionId -> { domainId, protocol, clientIp, connectedAt, label, close }
 
 let counter = 0;
 export function nextConnectionId(protocol) {
@@ -20,18 +20,47 @@ export function nextConnectionId(protocol) {
   return `${protocol}:${counter}:${Date.now()}`;
 }
 
-export function register(connectionId, { domainId, protocol, clientIp, connectedAt, label }) {
-  connections.set(connectionId, { domainId, protocol, clientIp, connectedAt: connectedAt || Date.now(), label: label || null });
+// `close` is an optional zero-arg callback that forcibly tears down this
+// specific connection (used by kick()) — each proxy passes its own existing
+// teardown function/closure, never duplicated here.
+export function register(connectionId, { domainId, protocol, clientIp, connectedAt, label, close }) {
+  connections.set(connectionId, {
+    domainId,
+    protocol,
+    clientIp,
+    connectedAt: connectedAt || Date.now(),
+    label: label || null,
+    close: typeof close === 'function' ? close : null
+  });
 }
 
 export function unregister(connectionId) {
   connections.delete(connectionId);
 }
 
+// Forcibly closes a specific connection via its registered `close` callback.
+// Returns true if the connection existed (and was asked to close), false if
+// no such connection is currently tracked.
+export function kick(connectionId) {
+  const entry = connections.get(connectionId);
+  if (!entry) return false;
+  try {
+    entry.close?.();
+  } catch (err) {
+    // Swallow — the caller only needs to know the connection was found;
+    // whatever cleanup path each proxy uses handles its own logging.
+  }
+  return true;
+}
+
 export function getByDomain(domainId) {
   const out = [];
   for (const [connectionId, entry] of connections) {
-    if (entry.domainId === domainId) out.push({ connectionId, ...entry });
+    if (entry.domainId !== domainId) continue;
+    // Never leak the raw close callback into API responses — this is the
+    // only place external code reads the registry, so strip it here.
+    const { close, ...safe } = entry;
+    out.push({ connectionId, ...safe });
   }
   out.sort((a, b) => a.connectedAt - b.connectedAt);
   return out;

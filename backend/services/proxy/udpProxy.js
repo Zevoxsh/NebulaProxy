@@ -62,8 +62,55 @@ _buildProxyV2Header(srcIp, srcPort, dstIp, dstPort) {
  * Multi-client bidirectional forwarding with load balancing
  */
 _startUdpProxy(domain) {
-  const serverSocket = dgram.createSocket('udp4');
+  // udp6 (not udp4) so bind(port, '::') below actually works — a udp4
+  // socket bound to the IPv6 wildcard address throws EINVAL. udp6 without
+  // ipv6Only accepts both IPv4-mapped and IPv6 traffic, same dual-stack
+  // intent as the TCP/minecraft listeners elsewhere in this codebase that
+  // already bind '::' successfully via net's default dual-stack behavior.
+  const serverSocket = dgram.createSocket('udp6');
   const upstreams = new Map(); // clientKey -> { upstream, timeout, metrics, backendHost, backendPort }
+
+  // Shared teardown for a client's NAT-like UDP session — used by both the
+  // idle-timeout path and the manual "kick" action (activeConnectionsRegistry's
+  // close callback) so there's exactly one place that logs, closes the
+  // upstream socket, and removes the session, however it ends.
+  const closeUpstreamSession = (clientKey) => {
+    const upstreamEntry = upstreams.get(clientKey);
+    if (!upstreamEntry) return;
+
+    if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
+
+    const responseTime = Date.now() - upstreamEntry.metrics.startTime;
+    database.createRequestLog({
+      domainId: domain.id,
+      hostname: domain.hostname,
+      method: 'UDP',
+      path: `${upstreamEntry.backendHost}:${upstreamEntry.backendPort}`,
+      queryString: null,
+      statusCode: upstreamEntry.metrics.errorMessage ? 502 : 200,
+      responseTime: responseTime,
+      responseSize: upstreamEntry.metrics.bytesSent,
+      ipAddress: upstreamEntry.clientIp,
+      userAgent: null,
+      referer: null,
+      requestHeaders: {
+        'bytes-received': upstreamEntry.metrics.bytesReceived,
+        'bytes-sent': upstreamEntry.metrics.bytesSent
+      },
+      responseHeaders: {},
+      errorMessage: upstreamEntry.metrics.errorMessage
+    }).catch((err) => {
+      logger.error('[ProxyManager] Failed to write UDP log:', err);
+    });
+
+    try {
+      upstreamEntry.upstream.close();
+    } catch (e) {
+      // Ignore
+    }
+    activeConnections.unregister(upstreamEntry.connectionId);
+    upstreams.delete(clientKey);
+  };
 
     serverSocket.on('error', (err) => {
       logger.error(`[UDP Proxy ${domain.id}] Server error:`, err.message);
@@ -156,7 +203,8 @@ _startUdpProxy(domain) {
         protocol: 'udp',
         clientIp,
         connectedAt: metrics.startTime,
-        label: `${backendHost}:${backendPort}`
+        label: `${backendHost}:${backendPort}`,
+        close: () => closeUpstreamSession(clientKey)
       });
       logger.info(`[UDP Proxy ${domain.id}] New client ${clientKey} -> ${backendHost}:${backendPort}`);
     }
@@ -168,37 +216,7 @@ _startUdpProxy(domain) {
       if (this.UDP_CLIENT_TIMEOUT > 0) {
         if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
         upstreamEntry.timeout = setTimeout(() => {
-          // Log UDP session before cleanup
-          const responseTime = Date.now() - upstreamEntry.metrics.startTime;
-          database.createRequestLog({
-            domainId: domain.id,
-            hostname: domain.hostname,
-            method: 'UDP',
-            path: `${upstreamEntry.backendHost}:${upstreamEntry.backendPort}`,
-            queryString: null,
-            statusCode: upstreamEntry.metrics.errorMessage ? 502 : 200,
-            responseTime: responseTime,
-            responseSize: upstreamEntry.metrics.bytesSent,
-            ipAddress: upstreamEntry.clientIp,
-            userAgent: null,
-            referer: null,
-            requestHeaders: {
-              'bytes-received': upstreamEntry.metrics.bytesReceived,
-              'bytes-sent': upstreamEntry.metrics.bytesSent
-            },
-            responseHeaders: {},
-            errorMessage: upstreamEntry.metrics.errorMessage
-          }).catch((err) => {
-            logger.error('[ProxyManager] Failed to write UDP log:', err);
-          });
-
-          try {
-            upstreamEntry.upstream.close();
-          } catch (e) {
-            // Ignore
-          }
-          activeConnections.unregister(upstreamEntry.connectionId);
-          upstreams.delete(clientKey);
+          closeUpstreamSession(clientKey);
           logger.info(`[UDP Proxy ${domain.id}] Client ${clientKey} timed out after ${this.UDP_CLIENT_TIMEOUT / 1000}s`);
         }, this.UDP_CLIENT_TIMEOUT);
       }
