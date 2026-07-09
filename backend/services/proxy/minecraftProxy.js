@@ -57,6 +57,8 @@ async _startSharedMinecraftServer() {
       let blockedByPolicy = false;
       let routedHostname = null;
       let domain = null;
+      let maxBackendSilenceMs = 0;
+      let maxClientSilenceMs = 0;
 
       // Configure client socket
       clientSocket.setNoDelay(true);
@@ -117,6 +119,16 @@ async _startSharedMinecraftServer() {
         // Log connection
         if (domain) {
           const responseTime = Date.now() - startTime;
+
+          // If the connection died after a long stretch of silence from the
+          // backend and nothing else already explains it, surface that as the
+          // reason — this is what a "Timed out" on the client usually traces
+          // back to (backend/game server froze, not the proxy or the client link).
+          const STALL_THRESHOLD_MS = 3000;
+          if (!errorMessage && maxBackendSilenceMs > STALL_THRESHOLD_MS) {
+            errorMessage = `Backend stalled ${(maxBackendSilenceMs / 1000).toFixed(1)}s before disconnect (no data from backend — likely server-side lag/GC pause, not the proxy)`;
+          }
+
           database.createRequestLog({
             domainId: domain.id,
             hostname: domain.hostname,
@@ -131,7 +143,9 @@ async _startSharedMinecraftServer() {
             referer: null,
             requestHeaders: {
               'bytes-received': bytesReceived,
-              'bytes-sent': bytesSent
+              'bytes-sent': bytesSent,
+              'max-backend-silence-ms': maxBackendSilenceMs,
+              'max-client-silence-ms': maxClientSilenceMs
             },
             responseHeaders: {},
             errorMessage
@@ -318,6 +332,8 @@ async _startSharedMinecraftServer() {
             const now = Date.now();
             const backendSilence = now - lastDataFromBackend;
             const clientSilence  = now - lastDataFromClient;
+            if (backendSilence > maxBackendSilenceMs) maxBackendSilenceMs = backendSilence;
+            if (clientSilence > maxClientSilenceMs) maxClientSilenceMs = clientSilence;
             if (backendSilence > 500) {
               logger.warn(`[DEBUG:MC] client=${clientIp} SILENCE backend->client for ${backendSilence}ms (sent=${bytesSent}B recv=${bytesReceived}B)`);
             }
