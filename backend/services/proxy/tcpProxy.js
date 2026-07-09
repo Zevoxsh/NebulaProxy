@@ -203,8 +203,8 @@ export class TcpProxy {
           );
         }
 
-        clientSocket.on('data', (chunk) => { bytesReceived += chunk.length; });
-        targetSocket.on('data', (chunk) => { bytesSent += chunk.length; });
+        clientSocket.on('data', (chunk) => { bytesReceived += chunk.length; activeConnections.addBytes(connectionId, chunk.length, 0); });
+        targetSocket.on('data', (chunk) => { bytesSent += chunk.length; activeConnections.addBytes(connectionId, 0, chunk.length); });
         clientSocket.pipe(targetSocket);
         targetSocket.pipe(clientSocket);
         logger.debug(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} relay ACTIVE (pipe mode)`);

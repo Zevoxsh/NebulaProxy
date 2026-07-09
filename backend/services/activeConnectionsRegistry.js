@@ -30,12 +30,25 @@ export function register(connectionId, { domainId, protocol, clientIp, connected
     clientIp,
     connectedAt: connectedAt || Date.now(),
     label: label || null,
-    close: typeof close === 'function' ? close : null
+    close: typeof close === 'function' ? close : null,
+    bytesIn: 0,
+    bytesOut: 0
   });
 }
 
 export function unregister(connectionId) {
   connections.delete(connectionId);
+}
+
+// Accumulates live byte counters on a connection entry — a parallel counter
+// to whatever each proxy already tracks locally for its final request-log
+// write. Safe to call after the connection has been unregistered (a data
+// event can race with teardown on a closing socket) — no-ops silently.
+export function addBytes(connectionId, inDelta = 0, outDelta = 0) {
+  const entry = connections.get(connectionId);
+  if (!entry) return;
+  entry.bytesIn += inDelta;
+  entry.bytesOut += outDelta;
 }
 
 // Forcibly closes a specific connection via its registered `close` callback.

@@ -253,7 +253,9 @@ export async function domainRoutes(fastify, _options) {
         clientIp: c.clientIp,
         country: await geoIpService.getCountryCode(c.clientIp).catch(() => null),
         connectedAt: c.connectedAt,
-        label: c.label
+        label: c.label,
+        bytesIn: c.bytesIn,
+        bytesOut: c.bytesOut
       })));
 
       reply.send({ success: true, connections: withCountry });

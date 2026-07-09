@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Cable, PowerOff } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Cable, PowerOff, ArrowDown, ArrowUp } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { FlagImg } from '../../utils/flagCache';
 
@@ -28,6 +28,17 @@ function formatDuration(ms) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+// bytes/sec -> "12.4 KB/s" style. `null` means "not enough samples yet" —
+// rendered as a distinct placeholder rather than 0, since a fresh connection
+// with a real 0 rate should look different from "still measuring."
+function formatRate(bytesPerSec) {
+  if (bytesPerSec === null || bytesPerSec === undefined || !Number.isFinite(bytesPerSec)) return null;
+  const n = Math.max(0, bytesPerSec);
+  if (n < 1024) return `${Math.round(n)} B/s`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB/s`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB/s`;
+}
+
 function ConnectionRow({ conn, now, onKick, kicking }) {
   const style = PROTOCOL_STYLE[conn.protocol] || PROTOCOL_STYLE.tcp;
   return (
@@ -45,7 +56,17 @@ function ConnectionRow({ conn, now, onKick, kicking }) {
       {conn.label && (
         <span className="text-xs text-white/40 truncate">{conn.label}</span>
       )}
-      <span className="ml-auto text-xs text-white/50 font-mono shrink-0">
+      <span className="ml-auto flex items-center gap-2.5 text-[11px] font-mono text-white/40 shrink-0" title="Débit (moyenne depuis le dernier rafraîchissement)">
+        <span className="flex items-center gap-0.5">
+          <ArrowDown className="w-3 h-3 text-[#67E8F9]" strokeWidth={2} />
+          {formatRate(conn.rateIn) ?? '…'}
+        </span>
+        <span className="flex items-center gap-0.5">
+          <ArrowUp className="w-3 h-3 text-[#C4B5FD]" strokeWidth={2} />
+          {formatRate(conn.rateOut) ?? '…'}
+        </span>
+      </span>
+      <span className="text-xs text-white/50 font-mono shrink-0">
         {formatDuration(now - conn.connectedAt)}
       </span>
       <button
@@ -71,12 +92,44 @@ export default function DomainConnectionsPanel({ domainId }) {
   const [now, setNow] = useState(Date.now());
   const [kickingId, setKickingId] = useState(null);
 
+  // Previous poll's byte counters per connection, used to derive a live
+  // rate (bytesDelta / timeDelta) — the backend only exposes cumulative
+  // totals, so "live" throughput is computed here from two consecutive
+  // samples rather than tracked server-side.
+  const prevBytesRef = useRef({});
+
   const load = useCallback(async () => {
     if (!domainId) return;
     try {
       const res = await domainAPI.getActiveConnections(domainId);
-      setConnections(res.data.connections || []);
-      setNow(Date.now());
+      const raw = res.data.connections || [];
+      const nowTs = Date.now();
+      const prev = prevBytesRef.current;
+
+      const withRates = raw.map((c) => {
+        const bytesIn = c.bytesIn || 0;
+        const bytesOut = c.bytesOut || 0;
+        const p = prev[c.connectionId];
+        let rateIn = null;
+        let rateOut = null;
+        if (p) {
+          const dtSec = (nowTs - p.ts) / 1000;
+          if (dtSec > 0) {
+            rateIn = (bytesIn - p.bytesIn) / dtSec;
+            rateOut = (bytesOut - p.bytesOut) / dtSec;
+          }
+        }
+        return { ...c, bytesIn, bytesOut, rateIn, rateOut };
+      });
+
+      const nextSnapshot = {};
+      for (const c of withRates) {
+        nextSnapshot[c.connectionId] = { bytesIn: c.bytesIn, bytesOut: c.bytesOut, ts: nowTs };
+      }
+      prevBytesRef.current = nextSnapshot;
+
+      setConnections(withRates);
+      setNow(nowTs);
     } catch (_) {
       // Fail quiet — best-effort context, not critical path
     } finally {

@@ -178,6 +178,7 @@ _startUdpProxy(domain) {
       upstream.on('message', (upMsg) => {
         // Track bytes sent to client
         metrics.bytesSent += upMsg.length;
+        activeConnections.addBytes(connectionId, 0, upMsg.length);
 
         // Forward response back to original client
         serverSocket.send(upMsg, rinfo.port, rinfo.address, (err) => {
@@ -211,6 +212,7 @@ _startUdpProxy(domain) {
 
     // Track bytes received from client
     upstreamEntry.metrics.bytesReceived += msg.length;
+    activeConnections.addBytes(upstreamEntry.connectionId, msg.length, 0);
 
       // Reset timeout for this client (inactivity)
       if (this.UDP_CLIENT_TIMEOUT > 0) {

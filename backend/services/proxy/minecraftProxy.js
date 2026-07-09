@@ -429,6 +429,7 @@ async _startSharedMinecraftServer() {
             if (!targetSocket.destroyed) {
               lastDataFromClient = Date.now();
               bytesReceived += chunk.length; // Count bytes received from client
+              activeConnections.addBytes(connectionId, chunk.length, 0);
               if (!targetSocket.write(chunk)) {
                 mcBpClientCount++;
                 mcBpClientAt = Date.now();
@@ -442,6 +443,7 @@ async _startSharedMinecraftServer() {
             if (!clientSocket.destroyed) {
               lastDataFromBackend = Date.now();
               bytesSent += chunk.length; // Count bytes sent to client
+              activeConnections.addBytes(connectionId, 0, chunk.length);
               if (!clientSocket.write(chunk)) {
                 mcBpBackendCount++;
                 mcBpBackendAt = Date.now();
