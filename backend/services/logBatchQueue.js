@@ -91,35 +91,54 @@ class LogBatchQueue {
     const proxyLogsToFlush   = this.proxyLogs.splice(0);
     if (requestLogsToFlush.length === 0 && proxyLogsToFlush.length === 0) return;
 
-    // Database backend
-    try {
-      const promises = [];
-      if (requestLogsToFlush.length > 0) promises.push(this._insertRequestLogs(requestLogsToFlush));
-      if (proxyLogsToFlush.length > 0)   promises.push(this._insertProxyLogs(proxyLogsToFlush));
-      await Promise.all(promises);
-    } catch (error) {
-      logger.error('[LogBatchQueue] Flush operation failed:', error.message);
-      this.requestLogs.unshift(...requestLogsToFlush);
-      this.proxyLogs.unshift(...proxyLogsToFlush);
-    }
+    // Each entry is inserted independently (see _insertRequestLogs/_insertProxyLogs)
+    // and only the ones that genuinely failed come back — a log referencing a
+    // domain that's been deleted in the meantime (FK violation) can never
+    // succeed and is dropped there rather than returned, so it's safe to
+    // requeue whatever comes back here.
+    const [failedRequestLogs, failedProxyLogs] = await Promise.all([
+      requestLogsToFlush.length > 0 ? this._insertRequestLogs(requestLogsToFlush) : [],
+      proxyLogsToFlush.length > 0 ? this._insertProxyLogs(proxyLogsToFlush) : []
+    ]);
+    if (failedRequestLogs.length > 0) this.requestLogs.unshift(...failedRequestLogs);
+    if (failedProxyLogs.length > 0) this.proxyLogs.unshift(...failedProxyLogs);
+  }
+
+  // Postgres foreign_key_violation — the domain (or other row) this log
+  // references no longer exists, almost always because it was deleted while
+  // a request/connection that started before the deletion was still in
+  // flight. Retrying is pointless (the row isn't coming back), so instead of
+  // requeuing forever every flush interval this drops the entry and logs it
+  // once. This used to be handled by letting Promise.all reject and blindly
+  // requeuing the WHOLE original batch — which meant one permanently-broken
+  // entry blocked the batch forever AND caused every other (valid, already
+  // successfully inserted) log in that same batch to be silently retried
+  // and duplicated on every subsequent flush tick.
+  static FK_VIOLATION = '23503';
+
+  _reapFailures(results, logs, kind) {
+    const toRetry = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') return;
+      const err = result.reason;
+      if (err?.code === LogBatchQueue.FK_VIOLATION) {
+        logger.warn(`[LogBatchQueue] Dropping orphaned ${kind} log (referenced row no longer exists): ${err.message}`);
+        return;
+      }
+      logger.error(`[LogBatchQueue] Failed to insert ${kind} log, will retry:`, err?.message || err);
+      toRetry.push(logs[i]);
+    });
+    return toRetry;
   }
 
   async _insertRequestLogs(logs) {
-    if (logs.length === 1) { await database.createRequestLog(logs[0]); return; }
-    if (database.createRequestLogsBatch) {
-      await database.createRequestLogsBatch(logs);
-    } else {
-      await Promise.all(logs.map(log => database.createRequestLog(log)));
-    }
+    const results = await Promise.allSettled(logs.map(log => database.createRequestLog(log)));
+    return this._reapFailures(results, logs, 'request');
   }
 
   async _insertProxyLogs(logs) {
-    if (logs.length === 1) { await database.createProxyLog(logs[0]); return; }
-    if (database.createProxyLogsBatch) {
-      await database.createProxyLogsBatch(logs);
-    } else {
-      await Promise.all(logs.map(log => database.createProxyLog(log)));
-    }
+    const results = await Promise.allSettled(logs.map(log => database.createProxyLog(log)));
+    return this._reapFailures(results, logs, 'proxy');
   }
 
   getStatus() {
