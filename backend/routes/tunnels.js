@@ -151,12 +151,103 @@ else
   node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
 fi
 
-if command -v nohup >/dev/null 2>&1; then
-  nohup node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
-  echo "[nebula-tunnel] Agent démarré en arrière-plan."
-  echo "[nebula-tunnel] Logs: $LOG_FILE"
+# Register the agent as a persistent OS-level service instead of a plain
+# background process -- nohup alone survives a closed terminal but NOT a
+# reboot, since nothing re-launches it at boot. This is what previously made
+# the agent silently stop coming back after restarting the host it runs on.
+OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
+NODE_BIN="$(command -v node)"
+
+start_plain_background() {
+  echo "[nebula-tunnel] Lancement en arriere-plan simple (ne survivra PAS a un redemarrage)."
+  if command -v nohup >/dev/null 2>&1; then
+    nohup node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+  else
+    node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE"
+  fi
+}
+
+if [ "$OS_NAME" = "Darwin" ]; then
+  PLIST_DIR="$HOME/Library/LaunchAgents"
+  PLIST_FILE="$PLIST_DIR/com.nebulaproxy.tunnel-agent.plist"
+  mkdir -p "$PLIST_DIR"
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+    echo '<plist version="1.0">'
+    echo '<dict>'
+    echo '  <key>Label</key>'
+    echo '  <string>com.nebulaproxy.tunnel-agent</string>'
+    echo '  <key>ProgramArguments</key>'
+    echo '  <array>'
+    echo "    <string>$NODE_BIN</string>"
+    if [ -n "$NODE_WS_ARGS" ]; then
+      echo "    <string>$NODE_WS_ARGS</string>"
+    fi
+    echo "    <string>$AGENT_FILE</string>"
+    echo '    <string>run</string>'
+    echo '    <string>--server</string>'
+    echo "    <string>$API_BASE</string>"
+    echo '    <string>--config</string>'
+    echo "    <string>$CONFIG_FILE</string>"
+    echo '  </array>'
+    echo '  <key>RunAtLoad</key>'
+    echo '  <true/>'
+    echo '  <key>KeepAlive</key>'
+    echo '  <true/>'
+    echo '  <key>StandardOutPath</key>'
+    echo "  <string>$LOG_FILE</string>"
+    echo '  <key>StandardErrorPath</key>'
+    echo "  <string>$LOG_FILE</string>"
+    echo '</dict>'
+    echo '</plist>'
+  } > "$PLIST_FILE"
+
+  launchctl unload "$PLIST_FILE" >/dev/null 2>&1 || true
+  if launchctl load -w "$PLIST_FILE" >/dev/null 2>&1; then
+    echo "[nebula-tunnel] Agent installe comme service launchd (demarre a la connexion, redemarre automatiquement)."
+    echo "[nebula-tunnel] Service: $PLIST_FILE"
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+  else
+    start_plain_background
+  fi
+
+elif command -v systemctl >/dev/null 2>&1; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  UNIT_FILE="$UNIT_DIR/nebula-tunnel-agent.service"
+  mkdir -p "$UNIT_DIR"
+  {
+    echo "[Unit]"
+    echo "Description=NebulaProxy Tunnel Agent"
+    echo "After=network-online.target"
+    echo "Wants=network-online.target"
+    echo ""
+    echo "[Service]"
+    echo "ExecStart=$NODE_BIN $NODE_WS_ARGS $AGENT_FILE run --server $API_BASE --config $CONFIG_FILE"
+    echo "Restart=always"
+    echo "RestartSec=5"
+    echo "StandardOutput=append:$LOG_FILE"
+    echo "StandardError=append:$LOG_FILE"
+    echo ""
+    echo "[Install]"
+    echo "WantedBy=default.target"
+  } > "$UNIT_FILE"
+
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  if systemctl --user enable --now nebula-tunnel-agent.service >/dev/null 2>&1; then
+    echo "[nebula-tunnel] Agent installe comme service systemd --user (survit aux redemarrages, redemarre automatiquement)."
+    echo "[nebula-tunnel] Service: $UNIT_FILE"
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+    if command -v loginctl >/dev/null 2>&1; then
+      loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || echo "[nebula-tunnel] Astuce: lance 'loginctl enable-linger $(id -un)' (root) pour que l'agent tourne meme sans session ouverte."
+    fi
+  else
+    start_plain_background
+  fi
+
 else
-  node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE"
+  start_plain_background
 fi
 `;
 }
@@ -252,9 +343,45 @@ if ($PreviewTunnelId -and $ExistingTunnelId -and $ExistingTunnelId -eq $PreviewT
   node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
 }
 
-$process = Start-Process -FilePath node -ArgumentList @($NodeWsArgs + @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile)) -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
-Write-Host "[nebula-tunnel] Agent démarré. PID: $($process.Id)"
-Write-Host "[nebula-tunnel] Logs: $LogFile"
+# Register the agent as a persistent Scheduled Task instead of a bare
+# Start-Process -- a plain background process doesn't survive a reboot or
+# even a logoff, since nothing re-launches it. Scheduled Tasks don't
+# cleanly pass through multi-arg node invocations, so write a small wrapper
+# script and point the task at that.
+$NodePath = (Get-Command node).Source
+$NodeArgsList = @($NodeWsArgs + @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile))
+$QuotedNodeArgs = ($NodeArgsList | ForEach-Object { '"' + $_ + '"' }) -join ' '
+
+$RunScript = Join-Path $InstallDir "run-agent.ps1"
+$RunScriptContent = @"
+& '$NodePath' $QuotedNodeArgs *>> '$LogFile'
+"@
+Set-Content -Path $RunScript -Value $RunScriptContent -Encoding UTF8
+
+$TaskName = "NebulaProxyTunnelAgent"
+try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+
+$installedAsTask = $false
+try {
+  $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""$RunScript""")
+  $Trigger = New-ScheduledTaskTrigger -AtLogOn
+  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "NebulaProxy tunnel agent" | Out-Null
+  Start-ScheduledTask -TaskName $TaskName
+  $installedAsTask = $true
+} catch {
+  $installedAsTask = $false
+}
+
+if ($installedAsTask) {
+  Write-Host "[nebula-tunnel] Agent installe comme tache planifiee '$TaskName' (demarre a la connexion, relance automatique)."
+  Write-Host "[nebula-tunnel] Logs: $LogFile"
+} else {
+  Write-Host "[nebula-tunnel] Echec de l'enregistrement de la tache planifiee, lancement en arriere-plan simple (ne survivra pas a un redemarrage)."
+  $process = Start-Process -FilePath node -ArgumentList $NodeArgsList -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
+  Write-Host "[nebula-tunnel] Agent demarre. PID: $($process.Id)"
+  Write-Host "[nebula-tunnel] Logs: $LogFile"
+}
 `;
 }
 
