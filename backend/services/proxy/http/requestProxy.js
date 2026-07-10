@@ -493,6 +493,21 @@ const dispatch = (target, attempt) => {
   };
 
   const proxyReq = protocol.request(options, (proxyRes) => {
+    // upstreamTimeoutMs below exists to catch a backend that never responds
+    // at all — it must NOT keep applying once headers have actually arrived,
+    // or any response that legitimately takes longer than that to fully
+    // stream (a direct-played video file, a large download, a long-polling
+    // endpoint) gets killed mid-transfer once the clock runs out, no matter
+    // how much data is still actively flowing. This is what was silently
+    // aborting long Jellyfin direct-play streams at ~5min (the configured
+    // upstreamTimeoutMs) while short, segmented (HLS) transcoded streams
+    // never hit it — confirmed via "ETIMEDOUT - Upstream request timeout
+    // after 300000ms" + "upstream response stream error: aborted" in prod.
+    // Once the backend has responded, its own idle/keepalive behavior (or
+    // req.abort() from the client disconnecting) is what should end things,
+    // not a fixed wall-clock cap on the whole exchange.
+    proxyReq.setTimeout(0);
+
     const responseTime = Date.now() - startTime;
     const statusCode = proxyRes.statusCode;
     let responseSize = 0;
