@@ -90,8 +90,20 @@ async getRequestLogsByDomain(domainId, options = {}) {
     statusCode = null,
     search = null,
     startDate = null,
-    endDate = null
+    endDate = null,
+    limit = 200,
+    offset = 0
   } = options;
+
+  // This was doing `SELECT * ... ORDER BY timestamp DESC` with NO limit at
+  // all despite the function name/comment claiming pagination — a domain
+  // with a large enough request_logs history loads its ENTIRE row set into
+  // memory in one query, which is exactly what OOM-crashed the production
+  // backend (confirmed: "JavaScript heap out of memory" right after this
+  // query ran for a busy domain). Clamp to a sane range regardless of what
+  // the caller passes so this can never happen again.
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 500);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
   let query = `
     SELECT *
@@ -125,7 +137,8 @@ async getRequestLogsByDomain(domainId, options = {}) {
     params.push(endDate);
   }
 
-  query += ` ORDER BY timestamp DESC`;
+  query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+  params.push(safeLimit, safeOffset);
 
   return this.queryAll(query, params);
 }

@@ -1214,7 +1214,7 @@ export async function domainRoutes(fastify, _options) {
         });
       }
 
-      const { method, statusCode, search, startDate, endDate } = request.query;
+      const { method, statusCode, search, startDate, endDate, limit, offset } = request.query;
 
       const logs = await database.getRequestLogsByDomain(domainId, {
         method,
@@ -1222,6 +1222,8 @@ export async function domainRoutes(fastify, _options) {
         search,
         startDate,
         endDate,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
       });
 
       reply.send({
