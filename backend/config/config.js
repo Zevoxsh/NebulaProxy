@@ -207,6 +207,17 @@ export const config = {
       // failing fast on genuinely dead backends.
       return parseInt(getConfig('HTTP_PROXY_REQUEST_TIMEOUT_MS', '30000'), 10);
     },
+    // Idle timeout applied ONLY once a proxied response is confirmed to be
+    // media (video/audio/HLS — see requestProxy.js). A single direct-played
+    // video is one long-lived connection with legitimate multi-minute quiet
+    // stretches (player buffered ahead, user paused, seeking) that easily
+    // exceed requestTimeoutMs — but it still needs *some* ceiling so a
+    // backend that dies mid-stream doesn't hang the connection forever.
+    // Every other response type (pages, APIs, small assets) is unaffected
+    // and keeps failing fast on requestTimeoutMs, unchanged.
+    get streamIdleTimeoutMs() {
+      return parseInt(getConfig('HTTP_PROXY_STREAM_IDLE_TIMEOUT_MS', '1200000'), 10); // 20min
+    },
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
     },

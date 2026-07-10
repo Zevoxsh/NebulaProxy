@@ -493,25 +493,39 @@ const dispatch = (target, attempt) => {
   };
 
   const proxyReq = protocol.request(options, (proxyRes) => {
-    // upstreamTimeoutMs below exists to catch a backend that never responds
-    // at all — it must NOT keep applying once headers have actually arrived,
-    // or any response that legitimately takes longer than that to fully
-    // stream (a direct-played video file, a large download, a long-polling
-    // endpoint) gets killed mid-transfer once the clock runs out, no matter
-    // how much data is still actively flowing. This is what was silently
-    // aborting long Jellyfin direct-play streams at ~5min (the configured
-    // upstreamTimeoutMs) while short, segmented (HLS) transcoded streams
-    // never hit it — confirmed via "ETIMEDOUT - Upstream request timeout
-    // after 300000ms" + "upstream response stream error: aborted" in prod.
-    // Once the backend has responded, its own idle/keepalive behavior (or
-    // req.abort() from the client disconnecting) is what should end things,
-    // not a fixed wall-clock cap on the whole exchange.
-    proxyReq.setTimeout(0);
-
     const responseTime = Date.now() - startTime;
     const statusCode = proxyRes.statusCode;
     let responseSize = 0;
     const contentType = String(proxyRes.headers['content-type'] || '').toLowerCase();
+
+    // upstreamTimeoutMs exists to catch a backend that never responds at
+    // all — fine for pages/APIs, which finish in well under that window
+    // regardless. It's wrong for media: a direct-played video is one
+    // long-lived connection with legitimate multi-minute silent stretches
+    // (player buffered ahead, playback paused, seeking) that easily exceed
+    // it, aborting mid-stream even though nothing is actually broken.
+    // Confirmed in production: Jellyfin direct-play consistently hit
+    // "ETIMEDOUT - Upstream request timeout after 300000ms" this way, while
+    // the same content transcoded into short HLS segments never did (each
+    // segment is its own short request, never idle that long).
+    //
+    // Re-arm a much longer idle timeout for media responses instead of
+    // clearing it entirely — still auto-resets on every chunk, so it only
+    // fires on genuine, sustained silence, but it means a backend that
+    // dies mid-stream is eventually caught rather than hanging forever.
+    // Every other content type is untouched and keeps failing fast on the
+    // original requestTimeoutMs.
+    const isStreamingMedia = /^(video|audio)\//.test(contentType)
+      || contentType.includes('mpegurl')          // HLS manifests (.m3u8)
+      || contentType.includes('dash+xml')          // DASH manifests (.mpd)
+      || contentType.includes('octet-stream');      // generic/unlabeled media download
+    if (isStreamingMedia) {
+      proxyReq.setTimeout(config.proxy.streamIdleTimeoutMs, () => {
+        const timeoutError = new Error(`Upstream stream idle timeout after ${config.proxy.streamIdleTimeoutMs}ms`);
+        timeoutError.code = 'ETIMEDOUT';
+        proxyReq.destroy(timeoutError);
+      });
+    }
     const isHtmlResponse = contentType.includes('text/html');
 
     proxyMetrics.recordStatus(statusCode);
