@@ -77,6 +77,37 @@ function RespTimeBadge({ ms }) {
   return <span className={`text-xs font-mono ${color}`}>{fmtMs(ms)}</span>;
 }
 
+// ─── severity ────────────────────────────────────────────────────────────────
+
+const SEVERITY = {
+  grave:  { label: 'Grave',  dot: 'bg-[#F87171]',  cls: 'bg-[#EF4444]/15 text-[#F87171] border-[#EF4444]/30',  row: 'border-l-2 border-l-[#EF4444]/70' },
+  haute:  { label: 'Haute',  dot: 'bg-[#FBBF24]',  cls: 'bg-[#F59E0B]/15 text-[#FBBF24] border-[#F59E0B]/30',  row: 'border-l-2 border-l-[#F59E0B]/60' },
+  faible: { label: 'Faible', dot: 'bg-[#34D399]',  cls: 'bg-[#10B981]/15 text-[#34D399] border-[#10B981]/30',  row: '' },
+};
+
+function getSeverity(log) {
+  const s  = log.status_code  || 0;
+  const rt = log.response_time || 0;
+  const hasErr = !!log.error_message;
+
+  // Grave: 5xx server errors, timeout (>5s), or any error with 4xx+error_message on high RT
+  if (s >= 500 || rt > 5000 || (hasErr && s >= 500)) return 'grave';
+  // Haute: 4xx client errors, slow responses (>1s), or presence of error message
+  if (s >= 400 || rt > 1000 || hasErr) return 'haute';
+  // Faible: 2xx/3xx fast with no error
+  return 'faible';
+}
+
+function SeverityBadge({ severity }) {
+  const cfg = SEVERITY[severity] || SEVERITY.faible;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${cfg.cls}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot} ${severity === 'grave' ? 'animate-pulse' : ''}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
 function HealthEventBadge({ status, prevStatus, isTransition }) {
   if (isTransition) {
     if (status === 'failed') {
@@ -148,6 +179,9 @@ export default function ActivityLog() {
   const [healthStatus, setHealthStatus] = useState('');
   const [transitionsOnly, setTransitionsOnly] = useState(false);
 
+  // Severity filter (client-side, requests tab only)
+  const [severityFilter, setSeverityFilter] = useState('');
+
   // Pagination
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 100;
@@ -161,16 +195,23 @@ export default function ActivityLog() {
   const [loading, setLoading] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
 
-  // Derived stats from loaded data
-  const stats = (() => {
-    if (activeTab === 'requests') {
-      if (!logs.length) return { total, errorRate: 0, avgRt: 0 };
-      const errors = logs.filter(l => l.status_code >= 400).length;
-      const rtLogs = logs.filter(l => l.response_time != null);
-      const avgRt = rtLogs.length ? Math.round(rtLogs.reduce((s, l) => s + l.response_time, 0) / rtLogs.length) : 0;
-      return { total, errorRate: logs.length ? ((errors / logs.length) * 100).toFixed(1) : 0, avgRt };
+  // Derived stats + visible rows
+  const { stats, visibleLogs, severityCounts } = (() => {
+    if (activeTab !== 'requests' || !logs.length) {
+      return { stats: { total, errorRate: 0, avgRt: 0 }, visibleLogs: logs, severityCounts: { grave: 0, haute: 0, faible: 0 } };
     }
-    return { total, errorRate: 0, avgRt: 0 };
+    const counts = { grave: 0, haute: 0, faible: 0 };
+    for (const l of logs) counts[getSeverity(l)]++;
+
+    const visible = severityFilter ? logs.filter(l => getSeverity(l) === severityFilter) : logs;
+    const errors  = logs.filter(l => l.status_code >= 400).length;
+    const rtLogs  = logs.filter(l => l.response_time != null);
+    const avgRt   = rtLogs.length ? Math.round(rtLogs.reduce((s, l) => s + l.response_time, 0) / rtLogs.length) : 0;
+    return {
+      stats: { total, errorRate: logs.length ? ((errors / logs.length) * 100).toFixed(1) : 0, avgRt },
+      visibleLogs: visible,
+      severityCounts: counts,
+    };
   })();
 
   // Debounce search
@@ -182,7 +223,7 @@ export default function ActivityLog() {
   };
 
   // Reset page on filter change
-  useEffect(() => { setPage(1); }, [domainFilter, timeRange, statusRange, methodFilter, healthStatus, transitionsOnly, activeTab]);
+  useEffect(() => { setPage(1); }, [domainFilter, timeRange, statusRange, methodFilter, healthStatus, transitionsOnly, activeTab, severityFilter]);
 
   // Compute startDate from timeRange
   const getStartDate = useCallback(() => {
@@ -309,11 +350,25 @@ export default function ActivityLog() {
       <div className="page-body">
 
         {/* ── Stats ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={Activity}      label="Total"       value={total.toLocaleString()}   sub={`in ${timeRange}`}         color="bg-gradient-to-br from-[#9D4EDD]/10 to-[#9D4EDD]/5 border border-[#9D4EDD]/20 text-[#C77DFF]" delay="0.1s" />
-          <StatCard icon={AlertTriangle} label="Error Rate"  value={`${stats.errorRate}%`}    sub="4xx + 5xx"                 color="bg-gradient-to-br from-[#EF4444]/10 to-[#EF4444]/5 border border-[#EF4444]/20 text-[#F87171]" delay="0.15s" />
-          <StatCard icon={Clock}         label="Avg Resp."   value={fmtMs(stats.avgRt)}       sub="this page"                 color="bg-gradient-to-br from-[#06B6D4]/10 to-[#06B6D4]/5 border border-[#06B6D4]/20 text-[#22D3EE]" delay="0.2s" />
-          <StatCard icon={WifiOff}       label="Domains Down" value={domainsDown}              sub="right now"                 color="bg-gradient-to-br from-[#F59E0B]/10 to-[#F59E0B]/5 border border-[#F59E0B]/20 text-[#FBBF24]" delay="0.25s" />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+          <StatCard icon={Activity}      label="Total"       value={total.toLocaleString()}          sub={`in ${timeRange}`}  color="bg-gradient-to-br from-[#9D4EDD]/10 to-[#9D4EDD]/5 border border-[#9D4EDD]/20 text-[#C77DFF]" delay="0.1s" />
+          <StatCard icon={AlertTriangle} label="Error Rate"  value={`${stats.errorRate}%`}           sub="4xx + 5xx"          color="bg-gradient-to-br from-[#EF4444]/10 to-[#EF4444]/5 border border-[#EF4444]/20 text-[#F87171]" delay="0.15s" />
+          <StatCard icon={Clock}         label="Avg Resp."   value={fmtMs(stats.avgRt)}              sub="this page"          color="bg-gradient-to-br from-[#06B6D4]/10 to-[#06B6D4]/5 border border-[#06B6D4]/20 text-[#22D3EE]" delay="0.2s" />
+          <StatCard icon={WifiOff}       label="Domains Down" value={domainsDown}                    sub="right now"          color="bg-gradient-to-br from-[#F59E0B]/10 to-[#F59E0B]/5 border border-[#F59E0B]/20 text-[#FBBF24]" delay="0.25s" />
+          {activeTab === 'requests' && (
+            <div className="bg-[#1A1B28]/40 backdrop-blur-xl border border-white/[0.08] rounded-xl p-4 animate-fade-in" style={{ animationDelay: '0.3s' }}>
+              <p className="text-xs font-medium text-white/50 uppercase tracking-[0.15em] mb-2">Gravité</p>
+              <div className="space-y-1">
+                {[['grave','Grave','text-[#F87171]'],['haute','Haute','text-[#FBBF24]'],['faible','Faible','text-[#34D399]']].map(([k, l, c]) => (
+                  <button key={k} onClick={() => setSeverityFilter(f => f === k ? '' : k)}
+                    className={`w-full flex items-center justify-between px-2 py-1 rounded-lg text-xs transition-all ${severityFilter === k ? 'bg-white/[0.08] ring-1 ring-white/20' : 'hover:bg-white/[0.04]'}`}>
+                    <span className={`font-medium ${c}`}>{l}</span>
+                    <span className="font-mono text-white/60">{severityCounts[k] ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Filters ── */}
@@ -366,6 +421,24 @@ export default function ActivityLog() {
                 {[['', 'All'], ['GET', 'GET'], ['POST', 'POST'], ['PUT', 'PUT'], ['DELETE', 'DEL'], ['PATCH', 'PATCH']].map(([v, l]) => (
                   <button key={v} onClick={() => setMethodFilter(v)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${methodFilter === v ? 'bg-[#9D4EDD] text-white' : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+
+              {/* Severity */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-white/40 mr-1">Gravité</span>
+                {[['', 'Toutes'], ['grave', 'Grave'], ['haute', 'Haute'], ['faible', 'Faible']].map(([v, l]) => (
+                  <button key={v} onClick={() => setSeverityFilter(v)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      severityFilter === v
+                        ? v === 'grave'  ? 'bg-[#EF4444]/30 text-[#F87171] border border-[#EF4444]/40'
+                        : v === 'haute'  ? 'bg-[#F59E0B]/30 text-[#FBBF24] border border-[#F59E0B]/40'
+                        : v === 'faible' ? 'bg-[#10B981]/30 text-[#34D399] border border-[#10B981]/40'
+                        : 'bg-[#9D4EDD] text-white'
+                        : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'
+                    }`}>
                     {l}
                   </button>
                 ))}
@@ -454,39 +527,43 @@ export default function ActivityLog() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px]">
+                <table className="w-full min-w-[980px]">
                   <thead className="border-b border-white/[0.08]">
                     <tr>
-                      {['Time', 'Domain', 'Method', 'Path', 'Status', 'Resp.', 'Size', 'IP', 'Country'].map(h => (
+                      {['Gravité', 'Time', 'Domain', 'Method', 'Path', 'Status', 'Resp.', 'Size', 'IP', 'Country'].map(h => (
                         <th key={h} className="text-left text-[10px] uppercase tracking-[0.15em] text-white/40 font-medium px-3 py-2.5">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map(log => (
-                      <tr key={log.id} className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors ${log.status_code >= 500 ? 'border-l-2 border-l-[#EF4444]/50' : log.status_code >= 400 ? 'border-l-2 border-l-[#F59E0B]/40' : ''}`}>
-                        <td className="px-3 py-2">
-                          <span title={new Date(log.timestamp).toLocaleString()} className="text-xs text-white/50 font-mono whitespace-nowrap cursor-default">
-                            {timeAgo(log.timestamp)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className="text-xs text-white/70 font-light truncate max-w-[120px] block" title={log.hostname}>{log.hostname}</span>
-                        </td>
-                        <td className="px-3 py-2"><MethodBadge method={log.method} /></td>
-                        <td className="px-3 py-2 max-w-[200px]">
-                          <span className="text-xs text-white/80 font-mono truncate block" title={log.path}>{log.path}</span>
-                          {log.error_message && (
-                            <span className="text-[10px] text-[#F87171] truncate block" title={log.error_message}>{log.error_message}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2"><StatusBadge code={log.status_code} /></td>
-                        <td className="px-3 py-2"><RespTimeBadge ms={log.response_time} /></td>
-                        <td className="px-3 py-2"><span className="text-xs text-white/40 font-mono">{fmtBytes(log.response_size)}</span></td>
-                        <td className="px-3 py-2"><span className="text-xs text-white/50 font-mono">{log.ip_address || '—'}</span></td>
-                        <td className="px-3 py-2"><span className="text-xs text-white/40">{log.country || '—'}</span></td>
-                      </tr>
-                    ))}
+                    {visibleLogs.map(log => {
+                      const sev = getSeverity(log);
+                      return (
+                        <tr key={log.id} className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors ${SEVERITY[sev].row}`}>
+                          <td className="px-3 py-2"><SeverityBadge severity={sev} /></td>
+                          <td className="px-3 py-2">
+                            <span title={new Date(log.timestamp).toLocaleString()} className="text-xs text-white/50 font-mono whitespace-nowrap cursor-default">
+                              {timeAgo(log.timestamp)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-xs text-white/70 font-light truncate max-w-[120px] block" title={log.hostname}>{log.hostname}</span>
+                          </td>
+                          <td className="px-3 py-2"><MethodBadge method={log.method} /></td>
+                          <td className="px-3 py-2 max-w-[200px]">
+                            <span className="text-xs text-white/80 font-mono truncate block" title={log.path}>{log.path}</span>
+                            {log.error_message && (
+                              <span className="text-[10px] text-[#F87171] truncate block" title={log.error_message}>{log.error_message}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2"><StatusBadge code={log.status_code} /></td>
+                          <td className="px-3 py-2"><RespTimeBadge ms={log.response_time} /></td>
+                          <td className="px-3 py-2"><span className="text-xs text-white/40 font-mono">{fmtBytes(log.response_size)}</span></td>
+                          <td className="px-3 py-2"><span className="text-xs text-white/50 font-mono">{log.ip_address || '—'}</span></td>
+                          <td className="px-3 py-2"><span className="text-xs text-white/40">{log.country || '—'}</span></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
