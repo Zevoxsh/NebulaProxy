@@ -317,7 +317,7 @@ export default function ActivityLog() {
           <div className="flex items-center justify-between gap-3 flex-wrap animate-fade-in">
             <div>
               <h1 className="text-xl md:text-2xl font-light text-white mb-2 tracking-tight">Activity Log</h1>
-              <p className="text-xs text-white/50 font-light tracking-wide">All requests and health events across your domains</p>
+              <p className="text-xs text-white/50 font-light tracking-wide">Toutes les requêtes et la disponibilité de vos domaines en un seul endroit</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {/* Auto-refresh */}
@@ -393,7 +393,7 @@ export default function ActivityLog() {
                 <button
                   key={r.label}
                   onClick={() => setTimeRange(r.label)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${timeRange === r.label ? 'bg-[#9D4EDD] text-white' : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'}`}
+                  className={timeRange === r.label ? 'btn-primary px-2.5 py-1 text-xs' : 'btn-secondary px-2.5 py-1 text-xs'}
                 >
                   {r.label}
                 </button>
@@ -407,9 +407,9 @@ export default function ActivityLog() {
               {/* Status range */}
               <div className="flex items-center gap-1">
                 <span className="text-xs text-white/40 mr-1">Status</span>
-                {[['', 'All'], ['2xx', '2xx'], ['3xx', '3xx'], ['4xx', '4xx'], ['5xx', '5xx'], ['errors', 'Errors']].map(([v, l]) => (
+                {[['', 'Tous'], ['2xx', '2xx'], ['3xx', '3xx'], ['4xx', '4xx'], ['5xx', '5xx'], ['errors', 'Erreurs']].map(([v, l]) => (
                   <button key={v} onClick={() => setStatusRange(v)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${statusRange === v ? 'bg-[#9D4EDD] text-white' : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'}`}>
+                    className={statusRange === v ? 'btn-primary px-2.5 py-1 text-xs' : 'btn-secondary px-2.5 py-1 text-xs'}>
                     {l}
                   </button>
                 ))}
@@ -418,9 +418,9 @@ export default function ActivityLog() {
               {/* Method */}
               <div className="flex items-center gap-1">
                 <span className="text-xs text-white/40 mr-1">Method</span>
-                {[['', 'All'], ['GET', 'GET'], ['POST', 'POST'], ['PUT', 'PUT'], ['DELETE', 'DEL'], ['PATCH', 'PATCH']].map(([v, l]) => (
+                {[['', 'Tous'], ['GET', 'GET'], ['POST', 'POST'], ['PUT', 'PUT'], ['DELETE', 'DEL'], ['PATCH', 'PATCH']].map(([v, l]) => (
                   <button key={v} onClick={() => setMethodFilter(v)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${methodFilter === v ? 'bg-[#9D4EDD] text-white' : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'}`}>
+                    className={methodFilter === v ? 'btn-primary px-2.5 py-1 text-xs' : 'btn-secondary px-2.5 py-1 text-xs'}>
                     {l}
                   </button>
                 ))}
@@ -431,14 +431,7 @@ export default function ActivityLog() {
                 <span className="text-xs text-white/40 mr-1">Gravité</span>
                 {[['', 'Toutes'], ['grave', 'Grave'], ['haute', 'Haute'], ['faible', 'Faible']].map(([v, l]) => (
                   <button key={v} onClick={() => setSeverityFilter(v)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                      severityFilter === v
-                        ? v === 'grave'  ? 'bg-[#EF4444]/30 text-[#F87171] border border-[#EF4444]/40'
-                        : v === 'haute'  ? 'bg-[#F59E0B]/30 text-[#FBBF24] border border-[#F59E0B]/40'
-                        : v === 'faible' ? 'bg-[#10B981]/30 text-[#34D399] border border-[#10B981]/40'
-                        : 'bg-[#9D4EDD] text-white'
-                        : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'
-                    }`}>
+                    className={severityFilter === v ? 'btn-primary px-2.5 py-1 text-xs' : 'btn-secondary px-2.5 py-1 text-xs'}>
                     {l}
                   </button>
                 ))}
@@ -461,10 +454,10 @@ export default function ActivityLog() {
           {activeTab === 'health' && (
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-1">
-                <span className="text-xs text-white/40 mr-1">Status</span>
-                {[['', 'All'], ['failed', 'Down'], ['success', 'Up']].map(([v, l]) => (
+                <span className="text-xs text-white/40 mr-1">État</span>
+                {[['', 'Tous'], ['failed', 'Down'], ['success', 'Up']].map(([v, l]) => (
                   <button key={v} onClick={() => setHealthStatus(v)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${healthStatus === v ? 'bg-[#9D4EDD] text-white' : 'bg-white/[0.03] text-white/50 hover:bg-white/[0.06] hover:text-white/80'}`}>
+                    className={healthStatus === v ? 'btn-primary px-2.5 py-1 text-xs' : 'btn-secondary px-2.5 py-1 text-xs'}>
                     {l}
                   </button>
                 ))}
@@ -484,17 +477,17 @@ export default function ActivityLog() {
         </div>
 
         {/* ── Tab bar ── */}
-        <div className="flex items-center gap-1 mb-4">
-          {[['requests', 'Requests', Activity], ['health', 'Health Events', CheckCircle]].map(([id, label, Icon]) => (
+        <div className="flex items-center gap-2 mb-4">
+          {[['requests', 'Requêtes HTTP', Activity], ['health', 'Disponibilité', CheckCircle]].map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === id ? 'bg-[#9D4EDD]/20 text-[#C77DFF] border border-[#9D4EDD]/30' : 'text-white/50 hover:text-white/70 hover:bg-white/[0.03]'}`}
+              className={`flex items-center gap-2 text-xs ${activeTab === id ? 'btn-primary px-4 py-2' : 'btn-secondary px-4 py-2'}`}
             >
-              <Icon className="w-4 h-4" strokeWidth={1.5} />
+              <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
               {label}
               {activeTab === id && total > 0 && (
-                <span className="bg-[#9D4EDD]/30 text-[#C77DFF] text-[10px] px-1.5 py-0.5 rounded-full font-semibold">{total.toLocaleString()}</span>
+                <span className="bg-black/20 text-current text-[10px] px-1.5 py-0.5 rounded-full font-semibold">{total.toLocaleString()}</span>
               )}
             </button>
           ))}
@@ -569,12 +562,12 @@ export default function ActivityLog() {
               </div>
             )
           ) : (
-            /* Health Events tab */
+            /* Disponibilité tab */
             events.length === 0 ? (
               <div className="p-12 text-center">
                 <CheckCircle className="w-10 h-10 text-white/20 mx-auto mb-3" strokeWidth={1.5} />
-                <p className="text-sm font-light text-white/50">No health events in this period</p>
-                <p className="text-xs text-white/30 mt-1">Health checks may not be configured for your domains</p>
+                <p className="text-sm font-light text-white/50">Aucun événement de disponibilité sur cette période</p>
+                <p className="text-xs text-white/30 mt-1">Les health checks doivent être activés sur vos domaines</p>
               </div>
             ) : (
               <div className="overflow-x-auto">

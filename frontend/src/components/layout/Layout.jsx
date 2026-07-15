@@ -139,7 +139,7 @@ export default function Layout() {
             { path: '/domains', icon: Globe, label: 'Domains' },
             { path: '/traffic', icon: Activity, label: 'Traffic' },
             { path: '/map', icon: MapPin, label: 'Map' },
-            { path: '/activity', icon: ScrollText, label: 'Activity' }
+            { path: '/activity', icon: ScrollText, label: 'Logs' }
           ]
         }
       : {
