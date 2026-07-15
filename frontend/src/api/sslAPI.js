@@ -19,5 +19,8 @@ export const sslAPI = {
   validateDNS: (domainId, checkDNSFirst = false) =>
     api.post(`/ssl/validate-dns/${domainId}`, { checkDNSFirst }),
   checkDNSPropagation: (domainId) => api.post(`/ssl/check-dns/${domainId}`),
-  cancelDNS: (domainId) => api.post(`/ssl/cancel-dns/${domainId}`)
+  cancelDNS: (domainId) => api.post(`/ssl/cancel-dns/${domainId}`),
+
+  // Event history
+  getEvents: (domainId, limit = 50) => api.get(`/ssl/events/${domainId}`, { params: { limit } })
 };

@@ -18,6 +18,8 @@ class CertificateManager {
   constructor() {
     this.certificateCache = new Map();
     this.cacheMaxAge = 5 * 60 * 1000; // 5 minutes
+    // Called with (hostname) after a cert is stored — lets proxyManager flush its SNI cache.
+    this.afterCertStored = null;
   }
 
   /**
@@ -36,7 +38,12 @@ class CertificateManager {
 
       const cert = await database.getCertificateByHostname(hostname);
       if (cert && cert.fullchain && cert.privateKey) {
-        const expiresAt = new Date(cert.expiresAt || this.parseCertificateMetadata(cert.fullchain).expiresAt);
+        // Guard against epoch-0: treat any date before year 2000 as invalid/missing
+        const MIN_VALID_DATE = new Date('2000-01-01').getTime();
+        const rawExpiry = cert.expiresAt ? new Date(cert.expiresAt).getTime() : 0;
+        const expiresAt = (rawExpiry > MIN_VALID_DATE)
+          ? new Date(rawExpiry)
+          : new Date(this.parseCertificateMetadata(cert.fullchain).expiresAt);
         if (expiresAt >= new Date()) {
           const certData = { cert: cert.fullchain, key: cert.privateKey, ca: null };
           this.certificateCache.set(hostname, { data: certData, timestamp: Date.now() });
@@ -88,6 +95,7 @@ class CertificateManager {
       const domain = await database.getDomainById(domainId);
       if (domain) {
         this.certificateCache.delete(domain.hostname);
+        if (this.afterCertStored) this.afterCertStored(domain.hostname);
       }
 
       return true;
@@ -123,10 +131,11 @@ class CertificateManager {
 
       logger.info(`[CertManager] ✓ Certificat manuel stocké en BDD pour domaine ID ${domainId}`);
 
-      // Invalider le cache
+      // Invalider le cache + SNI context
       const domain = await database.getDomainById(domainId);
       if (domain) {
         this.certificateCache.delete(domain.hostname);
+        if (this.afterCertStored) this.afterCertStored(domain.hostname);
       }
 
       return true;
@@ -145,8 +154,19 @@ class CertificateManager {
     try {
       const x509 = new crypto.X509Certificate(certPEM);
       const issuer = x509.issuer || 'Unknown';
-      const issuedAt = new Date(x509.validFrom).toISOString();
-      const expiresAt = new Date(x509.validTo).toISOString();
+
+      // new Date(null) silently returns epoch 0 — guard explicitly so a cert
+      // with a missing/unparseable validTo doesn't store "1970-01-01" in the DB.
+      const validToDate = x509.validTo ? new Date(x509.validTo) : null;
+      if (!validToDate || isNaN(validToDate.getTime()) || validToDate.getTime() === 0) {
+        throw new Error(`Unparseable certificate validTo: ${x509.validTo}`);
+      }
+
+      const validFromDate = x509.validFrom ? new Date(x509.validFrom) : null;
+      const issuedAt = (validFromDate && !isNaN(validFromDate.getTime()) && validFromDate.getTime() !== 0)
+        ? validFromDate.toISOString()
+        : new Date().toISOString();
+      const expiresAt = validToDate.toISOString();
 
       return { issuer, issuedAt, expiresAt };
     } catch (error) {

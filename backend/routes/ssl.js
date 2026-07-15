@@ -4,6 +4,9 @@ import { acmeManager } from '../services/acmeManager.js';
 import { certificateManager } from '../services/certificateManager.js';
 import { sanitizeHostname, createSecureTempFiles } from '../utils/security.js';
 
+// Dates before this threshold are invalid (epoch-0, unset, etc.)
+const MIN_VALID_CERT_DATE = new Date('2000-01-01').getTime();
+
 import { spawn } from 'child_process';
 import path from 'path';
 import net from 'net';
@@ -69,16 +72,22 @@ export async function sslRoutes(fastify, _options) {
           fastify.log.warn({ error: err, domainId }, 'Failed to parse certificate details');
         }
 
+        const expiresTs = domain.ssl_expires_at ? new Date(domain.ssl_expires_at).getTime() : 0;
+        const issuedTs  = domain.ssl_issued_at  ? new Date(domain.ssl_issued_at).getTime()  : 0;
+
         return reply.send({
           certificate: {
             id: domain.id,
             domain: domain.hostname,
             issuer: domain.ssl_issuer || (domain.ssl_status === 'active' ? "Let's Encrypt" : 'Custom'),
             type: domain.ssl_cert_type === 'manual' ? 'manual' : 'auto',
-            issuedAt: domain.ssl_issued_at || domain.created_at,
-            expiresAt: domain.ssl_expires_at,
+            issuedAt:  issuedTs  > MIN_VALID_CERT_DATE ? domain.ssl_issued_at  : null,
+            expiresAt: expiresTs > MIN_VALID_CERT_DATE ? domain.ssl_expires_at : null,
             status: domain.ssl_status,
             autoRenew: domain.ssl_cert_type === 'acme',
+            renewing: acmeManager.running.has(domain.hostname),
+            renewalErrorCount: domain.ssl_renewal_error_count || 0,
+            renewalError: domain.ssl_renewal_error || null,
             details
           }
         });
@@ -121,6 +130,7 @@ export async function sslRoutes(fastify, _options) {
 
         await database.deleteCertificateFromDB(domainId);
         certificateManager.invalidateCache(domain.hostname);
+        await database.createSSLEvent(domainId, 'deleted', `Certificate deleted by user ${userId}`);
 
         return reply.send({ success: true });
       } catch (error) {
@@ -185,26 +195,45 @@ export async function sslRoutes(fastify, _options) {
         // Get user's domains + team domains
         const userDomains = await database.getDomainsByUserIdWithTeams(userId);
 
+        const runningDomains = acmeManager.getRunningDomains();
+
         const certificates = userDomains
           .filter(d => d.ssl_enabled)
           .map(domain => {
+            const renewing = runningDomains.has(domain.hostname);
             let status = 'expired';
             let daysUntilExpiry = null;
+            let expiresAt = null;
 
             if (domain.ssl_expires_at) {
-              const expiryDate = new Date(domain.ssl_expires_at);
-              const now = new Date();
-              const diffTime = expiryDate - now;
-              daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              const ts = new Date(domain.ssl_expires_at).getTime();
+              // Guard against epoch-0 / corrupted dates stored in DB
+              if (ts > MIN_VALID_CERT_DATE) {
+                expiresAt = new Date(ts);
+                const now = new Date();
+                daysUntilExpiry = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24));
 
-              if (daysUntilExpiry > 30) {
-                status = 'valid';
-              } else if (daysUntilExpiry > 0) {
-                status = 'expiring-soon';
+                if (renewing) {
+                  status = 'renewing';
+                } else if (daysUntilExpiry > 30) {
+                  status = 'valid';
+                } else if (daysUntilExpiry > 0) {
+                  status = 'expiring-soon';
+                } else {
+                  status = 'expired';
+                }
               } else {
-                status = 'expired';
+                // Corrupted date in DB
+                status = renewing ? 'renewing' : 'invalid-date';
               }
+            } else if (renewing) {
+              status = 'renewing';
             }
+
+            const issuedTs = domain.ssl_issued_at ? new Date(domain.ssl_issued_at).getTime() : 0;
+            const issuedAt = issuedTs > MIN_VALID_CERT_DATE
+              ? new Date(issuedTs)
+              : (domain.created_at ? new Date(domain.created_at) : new Date());
 
             return {
               id: domain.id,
@@ -213,13 +242,14 @@ export async function sslRoutes(fastify, _options) {
               teamName: domain.team_name,
               issuer: domain.ssl_issuer || (domain.ssl_cert_type === 'acme' ? "Let's Encrypt" : 'Manual'),
               type: domain.ssl_cert_type === 'manual' ? 'manual' : 'auto',
-              issuedAt: domain.ssl_issued_at
-                ? new Date(domain.ssl_issued_at)
-                : (domain.created_at ? new Date(domain.created_at) : new Date()),
-              expiresAt: domain.ssl_expires_at ? new Date(domain.ssl_expires_at) : null,
+              issuedAt,
+              expiresAt,
               status,
+              renewing,
               autoRenew: domain.ssl_cert_type === 'acme',
-              sslStatus: domain.ssl_status
+              sslStatus: domain.ssl_status,
+              renewalErrorCount: domain.ssl_renewal_error_count || 0,
+              renewalError: domain.ssl_renewal_error || null
             };
           });
 
@@ -245,13 +275,17 @@ export async function sslRoutes(fastify, _options) {
         let expiringSoonCount = 0;
         let expiredCount = 0;
 
+        const runningDomains_ = acmeManager.getRunningDomains();
         sslDomains.forEach(domain => {
+          if (runningDomains_.has(domain.hostname)) {
+            // Count renewing separately from expired
+            expiringSoonCount++;
+            return;
+          }
           if (domain.ssl_expires_at) {
-            const expiryDate = new Date(domain.ssl_expires_at);
-            const now = new Date();
-            const diffTime = expiryDate - now;
-            const daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
+            const ts = new Date(domain.ssl_expires_at).getTime();
+            if (ts <= MIN_VALID_CERT_DATE) { expiredCount++; return; }
+            const daysUntilExpiry = Math.ceil((ts - Date.now()) / (1000 * 60 * 60 * 24));
             if (daysUntilExpiry > 30) {
               validCount++;
             } else if (daysUntilExpiry > 0) {
@@ -513,6 +547,8 @@ export async function sslRoutes(fastify, _options) {
           validationResult.expiryDate
         );
 
+        await database.createSSLEvent(domainId, 'uploaded',
+          `Manual certificate uploaded (expires ${validationResult.expiryDate})`);
         fastify.log.info({ domainId, hostname: domain.hostname }, 'Custom certificate uploaded');
 
         return {
@@ -903,6 +939,31 @@ export async function sslRoutes(fastify, _options) {
         error: 'Internal Server Error',
         message: 'Failed to clear certificate cache'
       });
+    }
+  });
+
+  // Get SSL event history for a domain
+  fastify.get('/events/:domainId', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const userId = request.user.id;
+        const isAdmin = request.user.role === 'admin';
+        const { domainId } = request.params;
+        const limit = Math.min(parseInt(request.query.limit || '50', 10), 200);
+
+        const domain = await database.getDomainById(domainId);
+        if (!domain) return reply.code(404).send({ error: 'Domain not found' });
+        if (!await canAccessDomain(domain, userId, isAdmin)) {
+          return reply.code(403).send({ error: 'Forbidden' });
+        }
+
+        const events = await database.getSSLEvents(domainId, limit);
+        return reply.send({ events });
+      } catch (error) {
+        fastify.log.error({ error }, 'Error getting SSL events');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
     }
   });
 

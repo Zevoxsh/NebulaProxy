@@ -185,6 +185,7 @@ import { logger } from '../utils/logger.js';
         } else if (entry.type === 'http') {
           // HTTP proxies are handled by shared servers
           // Just remove from map
+          this._invalidateDomainCache(entry.meta?.hostname);
           this.proxies.delete(id);
           logger.info(`[ProxyManager] HTTP proxy ${id} unregistered`);
           resolve(true);

@@ -222,4 +222,48 @@ async clearDNSChallenge(domainId) {
   `, [domainId]);
   return this.getDomainById(domainId);
 }
+
+// ===== SSL EVENTS =====
+
+async createSSLEvent(domainId, eventType, message = null) {
+  try {
+    await this.execute(
+      'INSERT INTO ssl_events (domain_id, event_type, message) VALUES (?, ?, ?)',
+      [domainId, eventType, message]
+    );
+  } catch (err) {
+    logger.warn(`[DB] Failed to write ssl_event for domain ${domainId}:`, err.message);
+  }
+}
+
+async getSSLEvents(domainId, limit = 20) {
+  return this.queryAll(
+    'SELECT id, event_type, message, created_at FROM ssl_events WHERE domain_id = ? ORDER BY created_at DESC LIMIT ?',
+    [domainId, limit]
+  );
+}
+
+// ===== RENEWAL BACKOFF TRACKING =====
+
+async recordRenewalSuccess(domainId) {
+  await this.execute(`
+    UPDATE domains
+    SET ssl_renewal_error_count = 0,
+        ssl_last_renewal_attempt = CURRENT_TIMESTAMP,
+        ssl_renewal_error = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [domainId]);
+}
+
+async recordRenewalFailure(domainId, errorMessage) {
+  await this.execute(`
+    UPDATE domains
+    SET ssl_renewal_error_count = COALESCE(ssl_renewal_error_count, 0) + 1,
+        ssl_last_renewal_attempt = CURRENT_TIMESTAMP,
+        ssl_renewal_error = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [errorMessage ? errorMessage.substring(0, 500) : null, domainId]);
+}
 }

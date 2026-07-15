@@ -17,6 +17,7 @@ import { sanitizeHostname } from '../utils/security.js';
 import configManager from '../config/config-manager.js';
 import { logger } from '../utils/logger.js';
 import { clusterCoordinator } from './clusterCoordinator.js';
+import { container } from './container.js';
 
 class AcmeManager {
   constructor() {
@@ -148,23 +149,24 @@ class AcmeManager {
         if (code === 0) {
           logger.info(`[AcmeManager] SUCCESS: Certificate obtained for ${domain}`);
 
-          // Update SSL certificate info in database
           try {
             const dbDomain = await database.getDomainByHostname(domain);
             if (dbDomain) {
               const certPath = path.join(this.certDir, domain, 'fullchain.pem');
               const keyPath = path.join(this.certDir, domain, 'privkey.pem');
 
-              // Let's Encrypt certificates are valid for 90 days
-              const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+              // storeCertbotCertificateInDB reads and parses the real cert — no need
+              // to pre-write a hardcoded +90d expiry that would be immediately overwritten.
+              const stored = await certificateManager.storeCertbotCertificateInDB(dbDomain.id, certPath, keyPath);
 
-              await database.updateDomainSSLPaths(dbDomain.id, certPath, keyPath, expiresAt);
-              await database.updateDomainSSLStatus(dbDomain.id, 'active', certPath, keyPath, expiresAt);
+              if (stored) {
+                const isRenewal = dbDomain.ssl_issued_at != null;
+                await database.createSSLEvent(dbDomain.id, isRenewal ? 'renewed' : 'issued',
+                  `Certificate ${isRenewal ? 'renewed' : 'issued'} via HTTP-01`);
+                await database.recordRenewalSuccess(dbDomain.id);
+              }
 
-              // Store certificate in database
-              await certificateManager.storeCertbotCertificateInDB(dbDomain.id, certPath, keyPath);
-
-              logger.info(`[AcmeManager] SSL info updated for ${domain} (expires: ${expiresAt})`);
+              logger.info(`[AcmeManager] SSL info updated for ${domain}`);
             }
           } catch (dbError) {
             logger.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
@@ -306,9 +308,10 @@ ${trimmedStderr}`);
     logger.info('[AcmeManager] Checking for expiring certificates...');
 
     try {
-      // Get all domains with SSL enabled and ACME enabled
+      // Include all proxy types that have ACME enabled — HTTP-01 webroot works regardless
+      // of proxy type since the challenge is served on port 80 before domain routing.
       const domainsWithSSL = (await database.getAllActiveDomains())
-        .filter(d => d.proxy_type === 'http' && d.ssl_enabled && d.acme_enabled);
+        .filter(d => d.ssl_enabled && d.acme_enabled);
 
       if (domainsWithSSL.length === 0) {
         logger.info('[AcmeManager] No domains configured for auto-renewal');
@@ -317,17 +320,36 @@ ${trimmedStderr}`);
 
       let renewedCount = 0;
       let errorCount = 0;
+      let skippedBackoff = 0;
+      const renewalFailures = [];
 
       for (const domainObj of domainsWithSSL) {
         const hostname = domainObj.hostname;
+
+        // Exponential backoff on repeated failures:
+        // 0-2 errors → retry every day (normal cron cadence)
+        // 3 errors    → wait 3 days before retrying
+        // 4+ errors   → wait 7 days before retrying
+        const errorCount_ = domainObj.ssl_renewal_error_count || 0;
+        if (errorCount_ >= 3 && domainObj.ssl_last_renewal_attempt) {
+          const hoursSinceLast = (Date.now() - new Date(domainObj.ssl_last_renewal_attempt).getTime()) / 3600000;
+          const hoursRequired = errorCount_ >= 4 ? 168 : 72;
+          if (hoursSinceLast < hoursRequired) {
+            logger.info(`[AcmeManager] Skipping ${hostname}: in backoff (${errorCount_} errors, ${Math.floor(hoursRequired - hoursSinceLast)}h remaining)`);
+            skippedBackoff++;
+            continue;
+          }
+        }
+
         // certExpiresSoon() alone misses domains that never got a cert in the
         // first place (e.g. a transient HTTP-01 failure at creation time) —
         // it returns false when there's no expiry to compare against, so
         // those domains would otherwise be silently skipped by this cron
         // forever. certFilesExist() also treats an already-expired cert as
         // absent, so this covers "never issued" and "expired" alike.
+        // Use 45 days instead of 30 to give more runway for retries.
         const needsCert = !(await this.certFilesExist(hostname));
-        if (needsCert || await this.certExpiresSoon(hostname)) {
+        if (needsCert || await this.certExpiresSoon(hostname, 45)) {
           logger.info(`[AcmeManager] ${needsCert ? 'Requesting missing' : 'Renewing'} certificate for ${hostname}...`);
           try {
             await this.ensureCert(hostname);
@@ -335,14 +357,41 @@ ${trimmedStderr}`);
           } catch (error) {
             logger.error(`[AcmeManager] Failed to ${needsCert ? 'issue' : 'renew'} cert for ${hostname}:`, error.message);
             errorCount++;
+            renewalFailures.push({ hostname, domainId: domainObj.id, error: error.message });
+            await database.recordRenewalFailure(domainObj.id, error.message);
+            await database.createSSLEvent(domainObj.id, 'renewal_failed', error.message.substring(0, 500));
           }
         }
       }
 
-      logger.info(`[AcmeManager] Renewal check complete: ${renewedCount} renewed, ${errorCount} errors`);
+      logger.info(`[AcmeManager] Renewal check complete: ${renewedCount} renewed, ${errorCount} errors, ${skippedBackoff} in backoff`);
+
+      // Notify on any failures
+      if (renewalFailures.length > 0) {
+        try {
+          const notifService = container.has('notifications') ? container.get('notifications') : null;
+          if (notifService) {
+            const list = renewalFailures.map(f => `• ${f.hostname}: ${f.error}`).join('\n');
+            await notifService.send({
+              title: `SSL Renewal Failed (${renewalFailures.length} domain${renewalFailures.length > 1 ? 's' : ''})`,
+              message: `The following certificates could not be renewed:\n${list}`,
+              severity: 'error'
+            }, { reloadConfig: false });
+          }
+        } catch (notifErr) {
+          logger.warn('[AcmeManager] Failed to send renewal failure notification:', notifErr.message);
+        }
+      }
     } catch (error) {
       logger.error('[AcmeManager] Error during renewal check:', error.message);
     }
+  }
+
+  /**
+   * Return the set of hostnames currently being processed (for UI status)
+   */
+  getRunningDomains() {
+    return new Set(this.running);
   }
 
   /**
@@ -781,13 +830,12 @@ ${trimmedStderr}`);
             try {
               const certPath = path.join(this.certDir, domain, 'fullchain.pem');
               const keyPath = path.join(this.certDir, domain, 'privkey.pem');
-              const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
-              await database.updateDomainSSLPaths(domainId, certPath, keyPath, expiresAt);
-              await database.updateDomainSSLStatus(domainId, 'active', certPath, keyPath, expiresAt);
-
-              // Store certificate in database
-              await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
+              const stored = await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
+              if (stored) {
+                await database.createSSLEvent(domainId, 'issued', 'Certificate issued via HTTP-01 (DNS-01 fallback)');
+                await database.recordRenewalSuccess(domainId);
+              }
 
               logger.info(`[AcmeManager] SSL info updated for ${domain}`);
             } catch (dbError) {
@@ -898,16 +946,13 @@ ${trimmedStderr}`);
             const certPath = path.join(this.certDir, originalDomain, 'fullchain.pem');
             const keyPath = path.join(this.certDir, originalDomain, 'privkey.pem');
 
-            // Let's Encrypt certificates are valid for 90 days
-            const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+            const stored = await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
+            if (stored) {
+              await database.createSSLEvent(domainId, 'renewed', 'Certificate renewed via DNS-01');
+              await database.recordRenewalSuccess(domainId);
+            }
 
-            await database.updateDomainSSLPaths(domainId, certPath, keyPath, expiresAt);
-            await database.updateDomainSSLStatus(domainId, 'active', certPath, keyPath, expiresAt);
-
-            // Store certificate in database
-            await certificateManager.storeCertbotCertificateInDB(domainId, certPath, keyPath);
-
-            logger.info(`[AcmeManager] SSL info updated for ${originalDomain} (expires: ${expiresAt})`);
+            logger.info(`[AcmeManager] SSL info updated for ${originalDomain}`);
           } catch (dbError) {
             logger.error(`[AcmeManager] Failed to update SSL info in database:`, dbError.message);
           }

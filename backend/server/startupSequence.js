@@ -6,6 +6,7 @@ import { liveTrafficService }    from '../services/liveTrafficService.js';
 import { ddosProtectionService } from '../services/ddosProtectionService.js';
 import { acmeManager }           from '../services/acmeManager.js';
 import { proxyManager }          from '../services/proxyManager.js';
+import { certificateManager }    from '../services/certificateManager.js';
 import { multiProxySyncService } from '../services/multiProxySyncService.js';
 import { logBatchQueue }         from '../services/logBatchQueue.js';
 import { queueService }          from '../services/queueService.js';
@@ -110,6 +111,12 @@ export async function startupSequence(fastify, config) {
 
   // 4. Proxy manager
   await proxyManager.init(acmeManager);
+  // After any cert is stored/renewed, flush the SNI secure-context cache for that
+  // hostname so the next TLS handshake picks up the new cert without a restart.
+  certificateManager.afterCertStored = (hostname) => {
+    proxyManager.secureContextCache.delete(hostname);
+    fastify.log.info(`[CertManager] SNI context cache flushed for ${hostname}`);
+  };
   step('Proxy Manager', 'OK', 'initialized');
 
   // 4.5. Multi-proxy sync
