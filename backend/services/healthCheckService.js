@@ -23,6 +23,8 @@ import { database } from './database.js';
 import { config   } from '../config/config.js';
 import { logger } from '../utils/logger.js';
 import { clusterCoordinator } from './clusterCoordinator.js';
+import { container } from './container.js';
+import { pool } from '../config/database.js';
 
 // Minimum interval — 5s is safe for most setups, avoids hammering backends
 // while still allowing fast failover detection.
@@ -312,7 +314,7 @@ class HealthCheckService {
     // );
 
     try {
-      const { statusChanged } = await database.upsertDomainHealthStatus(domain.id, status, result.success);
+      const { statusChanged, currentStatus } = await database.upsertDomainHealthStatus(domain.id, status, result.success);
 
       // Only write to health_checks on an actual state transition (UP→DOWN or DOWN→UP).
       // Intermediate failing/succeeding checks that haven't crossed the threshold yet
@@ -325,9 +327,85 @@ class HealthCheckService {
           result.statusCode,
           result.error
         );
+        this._notifyOwner(domain, result.success, result.error).catch(() => {});
       }
     } catch (err) {
       logger.error(`[HealthCheck] DB write failed for domain ${domain.id}:`, err.message);
+    }
+  }
+
+  async _notifyOwner(domain, isUp, error) {
+    if (!container.has('notifications')) return;
+
+    const notifService = container.get('notifications');
+    const event    = isUp ? 'domain_up'   : 'domain_down';
+    const severity = isUp ? 'success'     : 'error';
+    const title    = isUp
+      ? `✅ ${domain.hostname} est de nouveau accessible`
+      : `🔴 ${domain.hostname} est inaccessible`;
+    const message  = isUp
+      ? `Le domaine ${domain.hostname} a été rétabli.`
+      : `Le domaine ${domain.hostname} ne répond plus${error ? ` (${error})` : ''}.`;
+
+    const notification = { title, message, severity, event, metadata: { domain: domain.hostname } };
+
+    // Collect owner user IDs
+    let ownerIds = [];
+    if (domain.user_id) {
+      ownerIds = [domain.user_id];
+    } else if (domain.team_id) {
+      try {
+        const res = await pool.query('SELECT user_id FROM team_members WHERE team_id = $1', [domain.team_id]);
+        ownerIds = res.rows.map(r => r.user_id);
+      } catch { /* non-fatal */ }
+    }
+
+    if (!ownerIds.length) return;
+
+    // Notify each owner according to their preferences
+    const prefCols = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'user_notification_preferences'`
+    ).then(r => new Set(r.rows.map(row => row.column_name))).catch(() => new Set());
+
+    for (const userId of ownerIds) {
+      try {
+        // Create in-app notification (always)
+        await pool.query(
+          `INSERT INTO notifications (user_id, action_type, entity_type, entity_id, entity_name, message)
+           VALUES ($1, $2, 'domain', $3, $4, $5)`,
+          [userId, event, domain.id, domain.hostname, message]
+        );
+
+        // Real-time WebSocket push if user is connected
+        notifService.websocketManager?.sendToUser(String(userId), notification);
+
+        // Webhook (Discord or generic) if configured
+        let prefs = null;
+        if (prefCols.has('webhook_enabled')) {
+          const row = await pool.query(
+            `SELECT webhook_enabled, webhook_url, webhook_secret, domain_down_enabled, domain_up_enabled
+             FROM user_notification_preferences WHERE user_id = $1`,
+            [userId]
+          ).then(r => r.rows[0]).catch(() => null);
+          prefs = row;
+        } else if (prefCols.has('preferences')) {
+          const row = await pool.query(
+            'SELECT preferences FROM user_notification_preferences WHERE user_id = $1',
+            [userId]
+          ).then(r => r.rows[0]).catch(() => null);
+          prefs = row?.preferences || null;
+        }
+
+        if (prefs?.webhook_enabled && prefs?.webhook_url) {
+          const prefKey = isUp ? 'domain_up_enabled' : 'domain_down_enabled';
+          if (prefs[prefKey] !== false) {
+            await notifService.sendWebhookToTarget(prefs.webhook_url, prefs.webhook_secret || '', notification);
+          }
+        }
+      } catch (err) {
+        logger.error(`[HealthCheck] Notification failed for user ${userId}:`, err.message);
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, X, Check, UserPlus, Globe, UserMinus, Users } from 'lucide-react';
+import { Bell, X, Check, UserPlus, Globe, UserMinus, Users, AlertTriangle, CheckCircle } from 'lucide-react';
 import { teamAPI, notificationAPI } from '../../api/client';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -72,28 +72,25 @@ export default function NotificationBell() {
 
   const getNotificationIcon = (actionType) => {
     switch (actionType) {
+      case 'domain_down':   return AlertTriangle;
+      case 'domain_up':     return CheckCircle;
       case 'domain_added':
-      case 'domain_removed':
-        return Globe;
-      case 'member_joined':
-        return UserPlus;
-      case 'member_removed':
-        return UserMinus;
-      default:
-        return Users;
+      case 'domain_removed': return Globe;
+      case 'member_joined': return UserPlus;
+      case 'member_removed': return UserMinus;
+      default:              return Users;
     }
   };
 
   const getNotificationColor = (actionType) => {
     switch (actionType) {
+      case 'domain_down':   return 'text-[#F87171]';
+      case 'domain_up':     return 'text-[#34D399]';
       case 'domain_added':
-      case 'member_joined':
-        return 'text-[#34D399]';
+      case 'member_joined': return 'text-[#34D399]';
       case 'domain_removed':
-      case 'member_removed':
-        return 'text-[#F87171]';
-      default:
-        return 'text-[#C77DFF]';
+      case 'member_removed': return 'text-[#F87171]';
+      default:              return 'text-[#C77DFF]';
     }
   };
 

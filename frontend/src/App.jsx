@@ -28,6 +28,7 @@ const CertificateDetail = lazy(() => import('./pages/CertificateDetail'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Security = lazy(() => import('./pages/Security'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
+const Notifications = lazy(() => import('./pages/Notifications'));
 const Traffic = lazy(() => import('./pages/Traffic'));
 const TrafficMap = lazy(() => import('./pages/TrafficMap'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -296,6 +297,7 @@ function App() {
           <Route path="/account/profile" element={<Profile />} />
           <Route path="/account/security" element={<Security />} />
           <Route path="/account/api-keys" element={<ApiKeys />} />
+          <Route path="/account/notifications" element={<Notifications />} />
         </Route>
 
         {/* Admin Routes - with AdminLayout */}

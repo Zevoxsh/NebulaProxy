@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import { User, Shield, Key } from 'lucide-react';
+import { User, Shield, Key, Bell } from 'lucide-react';
 
 const ITEMS = [
   { id: 'profile', label: 'Profile', icon: User, path: '/account/profile' },
   { id: 'security', label: 'Security', icon: Shield, path: '/account/security' },
   { id: 'api-keys', label: 'API Keys', icon: Key, path: '/account/api-keys' },
+  { id: 'notifications', label: 'Notifications', icon: Bell, path: '/account/notifications' },
 ];
 
 export default function AccountNav({ current }) {
