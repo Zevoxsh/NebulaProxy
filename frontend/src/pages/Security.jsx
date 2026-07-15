@@ -186,18 +186,29 @@ export default function Security() {
   }
 
   return (
-    <div className="page-shell">
-      <div className="page-header">
-        <div className="page-header-inner">
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Security</h1>
-          <p className="text-sm text-zinc-500 mt-1">Two-step verification and passkeys</p>
-          <div className="mt-4">
-            <AccountNav current="security" />
+    <div className="pb-12 animate-fade-in">
+      <div className="relative mb-16">
+        <div className="h-32 rounded-2xl overflow-hidden bg-white/[0.02] border border-white/[0.06] relative">
+          <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
+        </div>
+        <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
+          <div className="w-24 h-24 rounded-full ring-4 ring-admin-bg bg-zinc-800 border border-white/[0.08] flex items-center justify-center">
+            <Lock className="w-8 h-8 text-white/60" strokeWidth={1.5} />
           </div>
         </div>
       </div>
 
-      <div className="page-body">
+      <div className="text-center mt-4">
+        <h1 className="text-2xl font-semibold text-white">Security</h1>
+        <p className="text-sm text-white/40 mt-1">Two-step verification and passkeys</p>
+        <div className="flex items-center justify-center mt-4">
+          <AccountNav current="security" />
+        </div>
+      </div>
+
+      <div className="h-px bg-white/10 my-8" />
+
+      <div>
         {success && (
           <div className="mb-5 flex items-center gap-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-3">
             <Check className="w-4 h-4 text-emerald-400 shrink-0" />
