@@ -139,6 +139,177 @@ export async function logsRoutes(fastify, _options) {
     }
   });
 
+  // Cross-domain activity log (request_logs)
+  fastify.get('/activity', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const userId = request.user.id;
+        const {
+          domainId,
+          method,
+          statusRange,
+          startDate,
+          search,
+          limit = 200,
+          offset = 0
+        } = request.query;
+
+        const userDomains = await database.getDomainsByUserIdWithTeams(userId);
+        const domainIds = userDomains.map(d => d.id);
+
+        if (domainIds.length === 0) {
+          return reply.send({ logs: [], total: 0, domains: [] });
+        }
+
+        const safeLimit  = Math.min(Math.max(parseInt(limit,  10) || 200, 1), 500);
+        const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
+        // Default time window: last 24h
+        const effectiveStart = startDate || new Date(Date.now() - 86400000).toISOString();
+
+        const params = [domainIds];
+        const countParams = [domainIds];
+        let where = 'WHERE rl.domain_id = ANY(?)';
+
+        if (domainId) {
+          where += ' AND rl.domain_id = ?';
+          params.push(parseInt(domainId, 10));
+          countParams.push(parseInt(domainId, 10));
+        }
+
+        if (method) {
+          where += ' AND rl.method = ?';
+          params.push(method.toUpperCase());
+          countParams.push(method.toUpperCase());
+        }
+
+        if (statusRange) {
+          switch (statusRange) {
+            case '2xx': where += ' AND rl.status_code >= 200 AND rl.status_code < 300'; break;
+            case '3xx': where += ' AND rl.status_code >= 300 AND rl.status_code < 400'; break;
+            case '4xx': where += ' AND rl.status_code >= 400 AND rl.status_code < 500'; break;
+            case '5xx': where += ' AND rl.status_code >= 500'; break;
+            case 'errors': where += ' AND rl.status_code >= 400'; break;
+          }
+        }
+
+        where += ' AND rl.timestamp >= ?';
+        params.push(effectiveStart);
+        countParams.push(effectiveStart);
+
+        if (search) {
+          const s = escapeLikePattern(search);
+          where += ' AND (rl.path ILIKE ? OR rl.ip_address ILIKE ?)';
+          params.push(`%${s}%`, `%${s}%`);
+          countParams.push(`%${s}%`, `%${s}%`);
+        }
+
+        const [logs, countRow] = await Promise.all([
+          database.queryAll(
+            `SELECT rl.id, rl.domain_id, rl.hostname, rl.method, rl.path,
+                    rl.status_code, rl.response_time, rl.response_size,
+                    rl.ip_address, rl.country, rl.error_message, rl.timestamp
+             FROM request_logs rl ${where}
+             ORDER BY rl.timestamp DESC LIMIT ? OFFSET ?`,
+            [...params, safeLimit, safeOffset]
+          ),
+          database.queryOne(
+            `SELECT COUNT(*) as total FROM request_logs rl ${where}`,
+            countParams
+          )
+        ]);
+
+        return reply.send({
+          logs,
+          total: Number(countRow?.total || 0),
+          domains: userDomains.map(d => ({ id: d.id, hostname: d.hostname }))
+        });
+      } catch (error) {
+        fastify.log.error({ error }, 'Error getting activity logs');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
+  // Cross-domain health events
+  fastify.get('/health-events', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const userId = request.user.id;
+        const {
+          domainId,
+          status,
+          startDate,
+          transitionsOnly = 'false',
+          limit = 200,
+          offset = 0
+        } = request.query;
+
+        const userDomains = await database.getDomainsByUserIdWithTeams(userId);
+        const domainIds = userDomains.map(d => d.id);
+
+        if (domainIds.length === 0) {
+          return reply.send({ events: [], total: 0 });
+        }
+
+        const safeLimit  = Math.min(Math.max(parseInt(limit,  10) || 200, 1), 500);
+        const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+        const onlyTransitions = transitionsOnly === 'true';
+        const effectiveStart = startDate || new Date(Date.now() - 7 * 86400000).toISOString();
+
+        const innerParams = [domainIds, effectiveStart];
+        let innerWhere = 'WHERE hc.domain_id = ANY(?) AND hc.checked_at >= ?';
+
+        if (domainId) {
+          innerWhere += ' AND hc.domain_id = ?';
+          innerParams.push(parseInt(domainId, 10));
+        }
+        if (status) {
+          innerWhere += ' AND hc.status = ?';
+          innerParams.push(status);
+        }
+
+        const outerWhere = onlyTransitions ? 'WHERE prev_status IS DISTINCT FROM status' : '';
+        const countOuterWhere = onlyTransitions ? 'AND prev_status IS DISTINCT FROM status' : '';
+
+        const [events, countRow] = await Promise.all([
+          database.queryAll(
+            `SELECT * FROM (
+               SELECT hc.id, hc.domain_id, d.hostname, hc.status,
+                      hc.response_time, hc.status_code, hc.error_message, hc.checked_at,
+                      LAG(hc.status) OVER (PARTITION BY hc.domain_id ORDER BY hc.checked_at) AS prev_status
+               FROM health_checks hc
+               JOIN domains d ON hc.domain_id = d.id
+               ${innerWhere}
+             ) ranked ${outerWhere}
+             ORDER BY checked_at DESC LIMIT ? OFFSET ?`,
+            [...innerParams, safeLimit, safeOffset]
+          ),
+          database.queryOne(
+            `SELECT COUNT(*) as total FROM (
+               SELECT hc.status,
+                      LAG(hc.status) OVER (PARTITION BY hc.domain_id ORDER BY hc.checked_at) AS prev_status
+               FROM health_checks hc ${innerWhere}
+             ) ranked WHERE 1=1 ${countOuterWhere}`,
+            innerParams
+          )
+        ]);
+
+        const formatted = events.map(e => ({
+          ...e,
+          isTransition: e.prev_status !== null && e.prev_status !== e.status
+        }));
+
+        return reply.send({ events: formatted, total: Number(countRow?.total || 0) });
+      } catch (error) {
+        fastify.log.error({ error }, 'Error getting health events');
+        return reply.code(500).send({ error: 'Internal Server Error' });
+      }
+    }
+  });
+
   // Export logs
   fastify.get('/export', {
     onRequest: [fastify.authenticate],

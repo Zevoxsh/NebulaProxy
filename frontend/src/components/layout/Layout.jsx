@@ -19,7 +19,8 @@ import {
   User,
   Activity,
   Cable,
-  MapPin
+  MapPin,
+  ScrollText
 } from 'lucide-react';
 import {
   Dialog,
@@ -137,7 +138,8 @@ export default function Layout() {
           items: [
             { path: '/domains', icon: Globe, label: 'Domains' },
             { path: '/traffic', icon: Activity, label: 'Traffic' },
-            { path: '/map', icon: MapPin, label: 'Map' }
+            { path: '/map', icon: MapPin, label: 'Map' },
+            { path: '/activity', icon: ScrollText, label: 'Activity' }
           ]
         }
       : {

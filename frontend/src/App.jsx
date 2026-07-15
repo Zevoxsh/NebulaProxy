@@ -45,6 +45,7 @@ const AdminMonitoring = lazy(() => import('./pages/admin/AdminMonitoring'));
 const AdminSmtp = lazy(() => import('./pages/admin/AdminSmtp'));
 const AdminSmtpProxy = lazy(() => import('./pages/admin/AdminSmtpProxy'));
 const AdminUpdates = lazy(() => import('./pages/admin/AdminUpdates'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const UrlBlockingRules = lazy(() => import('./pages/UrlBlockingRules'));
 const AdminUrlBlockingRules = lazy(() => import('./pages/admin/UrlBlockingRules'));
 const AdminAudit = lazy(() => import('./pages/admin/AdminAudit'));
@@ -63,6 +64,7 @@ const ROUTE_METADATA = [
   { patterns: ['/traffic/connections'], title: 'Connexions actives', description: 'Flux en direct des 60 dernières secondes.' },
   { patterns: ['/traffic/reports'], title: 'Rapports', description: 'Métriques de trafic et performances.' },
   { patterns: ['/map'], title: 'Carte du trafic', description: 'Origine géographique du trafic en direct.' },
+  { patterns: ['/activity'], title: 'Activity Log', description: 'All requests and health events across your domains.' },
   { patterns: ['/domains'], title: 'Domains', description: 'Manage your domains and routing.' },
   { patterns: ['/domains/groups/:groupId'], title: 'Domain Group', description: 'Manage domains in a specific group.' },
   { patterns: ['/domains/:id'], title: 'Domain Details', description: 'View and manage a domain configuration.' },
@@ -262,6 +264,7 @@ function App() {
           <Route path="/traffic/connections" element={<Traffic />} />
           <Route path="/traffic/reports" element={<Traffic />} />
           <Route path="/map" element={<TrafficMap />} />
+          <Route path="/activity" element={<ActivityLog />} />
           {/* Old scattered traffic/analytics pages regrouped under /traffic — kept as redirects so bookmarks/links don't break */}
           <Route path="/analytics" element={<Navigate to="/traffic/reports" replace />} />
           <Route path="/live-traffic" element={<Navigate to="/traffic" replace />} />
