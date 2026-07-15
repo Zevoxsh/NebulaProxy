@@ -61,6 +61,8 @@ export default function AdminDomains() {
     description: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  const [domainToDelete, setDomainToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const { toast } = useToast();
@@ -191,25 +193,20 @@ export default function AdminDomains() {
     }
   };
 
-  const handleDeleteDomain = async (domain) => {
-    const confirmed = window.confirm(`Delete domain "${domain.hostname}"? This action cannot be undone.`);
-    if (!confirmed) return;
-
+  const handleDeleteDomain = async () => {
+    if (!domainToDelete) return;
+    setDeleting(true);
     try {
-      await adminAPI.deleteDomain(domain.id);
-      setDomains(domains.filter(d => d.id !== domain.id));
-      toast({
-        title: 'Domain Deleted',
-        description: `Domain ${domain.hostname} deleted successfully`
-      });
+      await adminAPI.deleteDomain(domainToDelete.id);
+      setDomains(domains.filter(d => d.id !== domainToDelete.id));
+      setDomainToDelete(null);
+      toast({ title: 'Domain Deleted', description: `${domainToDelete.hostname} deleted successfully` });
     } catch (err) {
       const errorMsg = err.response?.data?.message || 'Failed to delete domain';
       setError(errorMsg);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: errorMsg
-      });
+      toast({ variant: 'destructive', title: 'Error', description: errorMsg });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -459,7 +456,7 @@ export default function AdminDomains() {
                           <AdminButton
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDeleteDomain(domain)}
+                            onClick={() => setDomainToDelete(domain)}
                             title="Delete domain"
                             className="text-admin-danger hover:text-admin-danger"
                           >
@@ -747,6 +744,26 @@ export default function AdminDomains() {
               </AdminButton>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!domainToDelete} onOpenChange={(open) => { if (!open && !deleting) setDomainToDelete(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete domain</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{domainToDelete?.hostname}</strong>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <AdminButton type="button" variant="secondary" onClick={() => setDomainToDelete(null)} disabled={deleting}>
+              Cancel
+            </AdminButton>
+            <AdminButton type="button" variant="danger" onClick={handleDeleteDomain} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AdminButton>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

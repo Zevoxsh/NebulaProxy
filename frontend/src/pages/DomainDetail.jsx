@@ -197,6 +197,8 @@ export default function DomainDetail() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState({
     backendUrl: '',
     backendPort: '',
@@ -374,7 +376,6 @@ export default function DomainDetail() {
   };
 
   const clearTraffic = async () => {
-    if (!confirm('Effacer les données de trafic pour ce domaine ?')) return;
     try {
       await domainAPI.clearLiveTraffic(id);
       setTrafficData([]);
@@ -443,12 +444,14 @@ export default function DomainDetail() {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${domain?.hostname}?`)) return;
+    setDeleting(true);
     try {
       await domainAPI.delete(id);
       navigate('/domains');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to delete domain');
+      setDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -627,13 +630,34 @@ export default function DomainDetail() {
                 </div>
                 <p className="text-sm text-white/50 font-light mt-1 truncate">{domain?.backend_url}</p>
               </div>
-              <button
-                onClick={handleDelete}
-                className="w-10 h-10 rounded-lg bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border border-[#EF4444]/20 hover:border-[#EF4444]/40 flex items-center justify-center transition-all duration-500"
-                title="Delete domain"
-              >
-                <Trash2 className="w-4 h-4 text-[#F87171]" strokeWidth={1.5} />
-              </button>
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-10 h-10 rounded-lg bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border border-[#EF4444]/20 hover:border-[#EF4444]/40 flex items-center justify-center transition-all duration-500"
+                  title="Delete domain"
+                >
+                  <Trash2 className="w-4 h-4 text-[#F87171]" strokeWidth={1.5} />
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#F87171]">Delete {domain?.hostname}?</span>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="px-3 py-1.5 rounded-lg bg-[#EF4444]/20 hover:bg-[#EF4444]/30 border border-[#EF4444]/40 text-[#F87171] text-xs font-medium flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {deleting ? <RefreshCw className="w-3 h-3 animate-spin" strokeWidth={1.5} /> : <Trash2 className="w-3 h-3" strokeWidth={1.5} />}
+                    {deleting ? 'Deleting…' : 'Confirm'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                    className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/60 text-xs hover:text-white transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               {activeTab === 'logs' && (
                 <button
                   onClick={() => {
