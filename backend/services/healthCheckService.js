@@ -312,28 +312,20 @@ class HealthCheckService {
     // );
 
     try {
-      const currentHealth   = await database.getDomainHealthStatus(domain.id);
-      const currentStatus   = currentHealth?.current_status; // 'up' | 'down' | 'unknown' | null
+      const { statusChanged } = await database.upsertDomainHealthStatus(domain.id, status, result.success);
 
-      // Skip writing to health_checks when state is stable and unchanged:
-      //   - already confirmed UP  → check succeeds again  (no transition)
-      //   - already confirmed DOWN → check fails again     (no transition)
-      // Just bump last_checked_at so the UI stays current.
-      const stableUp   = result.success   && currentStatus === 'up';
-      const stableDown = !result.success  && currentStatus === 'down';
-      if (stableUp || stableDown) {
-        await database.touchDomainHealthStatus(domain.id);
-        return;
+      // Only write to health_checks on an actual state transition (UP→DOWN or DOWN→UP).
+      // Intermediate failing/succeeding checks that haven't crossed the threshold yet
+      // are silently ignored — just last_checked_at is already updated by the upsert.
+      if (statusChanged) {
+        await database.recordHealthCheck(
+          domain.id,
+          status,
+          result.responseTime,
+          result.statusCode,
+          result.error
+        );
       }
-
-      await database.recordHealthCheck(
-        domain.id,
-        status,
-        result.responseTime,
-        result.statusCode,
-        result.error
-      );
-      await database.upsertDomainHealthStatus(domain.id, status, result.success);
     } catch (err) {
       logger.error(`[HealthCheck] DB write failed for domain ${domain.id}:`, err.message);
     }
