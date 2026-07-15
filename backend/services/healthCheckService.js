@@ -312,6 +312,20 @@ class HealthCheckService {
     // );
 
     try {
+      const currentHealth   = await database.getDomainHealthStatus(domain.id);
+      const currentStatus   = currentHealth?.current_status; // 'up' | 'down' | 'unknown' | null
+
+      // Skip writing to health_checks when state is stable and unchanged:
+      //   - already confirmed UP  → check succeeds again  (no transition)
+      //   - already confirmed DOWN → check fails again     (no transition)
+      // Just bump last_checked_at so the UI stays current.
+      const stableUp   = result.success   && currentStatus === 'up';
+      const stableDown = !result.success  && currentStatus === 'down';
+      if (stableUp || stableDown) {
+        await database.touchDomainHealthStatus(domain.id);
+        return;
+      }
+
       await database.recordHealthCheck(
         domain.id,
         status,

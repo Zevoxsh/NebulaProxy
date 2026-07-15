@@ -11,13 +11,20 @@ getDomainHealthStatus(domainId) {
 
 async upsertDomainHealthStatus(domainId, status, isSuccess) {
   const existing = await this.getDomainHealthStatus(domainId);
-  const newStatus = isSuccess ? 'up' : 'down';
 
   if (existing) {
-    const statusChanged = existing.current_status !== newStatus;
-    // Cap counters at 50 to prevent overflow (100K+ is useless and causes issues)
-    const consecutiveFailures = isSuccess ? 0 : Math.min((existing.consecutive_failures || 0) + 1, 50);
+    const consecutiveFailures  = isSuccess ? 0 : Math.min((existing.consecutive_failures  || 0) + 1, 50);
     const consecutiveSuccesses = isSuccess ? Math.min((existing.consecutive_successes || 0) + 1, 50) : 0;
+
+    // Status only flips at the threshold of 3 consecutive checks in either direction
+    let newStatus = existing.current_status;
+    if (!isSuccess && consecutiveFailures >= 3 && existing.current_status !== 'down') {
+      newStatus = 'down';
+    } else if (isSuccess && consecutiveSuccesses >= 3 && existing.current_status !== 'up') {
+      newStatus = 'up';
+    }
+
+    const statusChanged = existing.current_status !== newStatus;
 
     await this.execute(`
       UPDATE domain_health_status
@@ -27,7 +34,7 @@ async upsertDomainHealthStatus(domainId, status, isSuccess) {
           consecutive_failures = ?,
           consecutive_successes = ?
       WHERE domain_id = ?
-    `, [newStatus, statusChanged ? true : false, consecutiveFailures, consecutiveSuccesses, domainId]);
+    `, [newStatus, statusChanged, consecutiveFailures, consecutiveSuccesses, domainId]);
 
     return {
       statusChanged,
@@ -35,6 +42,8 @@ async upsertDomainHealthStatus(domainId, status, isSuccess) {
       currentStatus: newStatus
     };
   } else {
+    // First-ever check: only mark UP on success, stay 'unknown' on failure until threshold
+    const newStatus = isSuccess ? 'up' : 'unknown';
     await this.execute(`
       INSERT INTO domain_health_status (domain_id, current_status, last_checked_at, consecutive_failures, consecutive_successes)
       VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?)
@@ -46,6 +55,15 @@ async upsertDomainHealthStatus(domainId, status, isSuccess) {
       currentStatus: newStatus
     };
   }
+}
+
+// Update only last_checked_at — used when domain is already confirmed down
+// and check keeps failing (no value in spamming the health_checks table)
+async touchDomainHealthStatus(domainId) {
+  await this.execute(
+    'UPDATE domain_health_status SET last_checked_at = CURRENT_TIMESTAMP WHERE domain_id = ?',
+    [domainId]
+  );
 }
 
 // Mark that a down alert was sent for this domain
