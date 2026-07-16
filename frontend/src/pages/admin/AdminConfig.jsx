@@ -19,6 +19,19 @@ import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 
+// Infra-level keys hidden from the UI — dangerous to change or irrelevant at runtime
+const INFRA_HIDDEN = new Set([
+  'JWT_SECRET', 'JWT_SECRET_PREVIOUS',
+  'NODE_ENV', 'HOST', 'PORT',
+  'FRONTEND_PORT', 'FRONTEND_DIST_PATH', 'FRONTEND_BUILD_ON_START',
+  'VITE_API_BASE_URL',
+  'CSRF_ENABLED', 'DNS_REBINDING_PROTECTION', 'AUTH_DEBUG',
+  'PROXY_ENABLED',
+  'LOG_BACKEND', 'LOG_QUIET', 'LOG_STARTUP_SUMMARY', 'LOG_SUPPRESS_PREFIXES',
+  'LOG_SYSLOG_HOST', 'LOG_SYSLOG_PORT', 'LOG_SYSLOG_PROTOCOL',
+  'LOG_SYSLOG_APP_NAME', 'LOG_SYSLOG_FACILITY',
+]);
+
 export default function AdminConfig() {
   const [configSections, setConfigSections] = useState([]);
   const [configForm, setConfigForm] = useState({});
@@ -189,31 +202,103 @@ export default function AdminConfig() {
   };
 
   const sectionLabelMap = {
-    'Proxy + security': 'Proxy Security',
-    'ACME / Let\'s Encrypt': 'TLS Certificates',
-    'Proxy 502 error page': '502 Error Page Texts'
+    'Proxy + security': 'Proxy & Sécurité',
+    'ACME / Let\'s Encrypt': 'Certificats TLS',
+    'Proxy 502 error page': 'Page d\'erreur 502',
+    'Health checks': 'Health Checks',
+    'Logs': 'Logs',
+    'Live traffic retention (Redis)': 'Trafic temps réel',
+    'Auth': 'Authentification',
+    'Database (PostgreSQL only)': 'Base de données',
+    'LDAP': 'LDAP',
+    'SMTP Email Notifications': 'Email SMTP',
+    'SMTP Proxy Relay': 'Proxy SMTP',
+    'Tunnels': 'Tunnels',
   };
 
   const variableLabelMap = {
-    ALLOWED_ORIGINS: 'Allowed Origins (CORS)',
-    ALLOW_PRIVATE_BACKENDS: 'Allow Private Backends',
-    ALLOW_PRIVATE_BACKEND: 'Allow Private Backends',
-    ACME_EMAIL: 'ACME Contact Email',
-    BAD_GATEWAY_HTML_TITLE: 'Browser tab title',
-    BAD_GATEWAY_BADGE: 'Badge text',
-    BAD_GATEWAY_TITLE: 'Main title',
-    BAD_GATEWAY_SUBTITLE: 'Subtitle',
-    BAD_GATEWAY_MESSAGE: 'Main message',
-    BAD_GATEWAY_DOMAIN_LABEL: 'Domain label',
-    BAD_GATEWAY_PROXY_LABEL: 'Proxy label',
-    BAD_GATEWAY_PROXY_VALUE: 'Proxy name/value',
-    BAD_GATEWAY_CAUSE_LABEL: 'Cause label',
-    BAD_GATEWAY_CAUSE_VALUE: 'Cause value',
-    BAD_GATEWAY_STATUS_LABEL: 'Status label',
-    BAD_GATEWAY_STATUS_VALUE: 'Status value',
-    BAD_GATEWAY_RETRY_BUTTON: 'Retry button text',
-    BAD_GATEWAY_BACK_BUTTON: 'Back button text',
-    BAD_GATEWAY_FOOTER_TEXT: 'Footer text (timestamp added automatically)'
+    // Proxy & security
+    ALLOWED_ORIGINS: 'Origines autorisées (CORS)',
+    ALLOW_PRIVATE_BACKENDS: 'Backends privés autorisés',
+    ALLOW_PRIVATE_BACKEND: 'Backends privés autorisés',
+    ALLOW_INSECURE_BACKENDS: 'Backends HTTP (non-TLS) autorisés',
+    HTTP_PROXY_REQUEST_TIMEOUT_MS: 'Timeout requêtes proxy (ms)',
+    PROXY_CHECK_TOKEN: 'Token de vérification proxy',
+    PROXY_INJECT_CONSOLE_SCRIPT: 'Injecter script console',
+    // Auth
+    AUTH_MODE: 'Mode d\'authentification',
+    // Database
+    DB_TYPE: 'Type de base de données',
+    DB_HOST: 'Hôte',
+    DB_PORT: 'Port',
+    DB_NAME: 'Nom de la base',
+    DB_USER: 'Utilisateur',
+    DB_PASSWORD: 'Mot de passe',
+    // LDAP
+    LDAP_URL: 'URL du serveur LDAP',
+    LDAP_BASE_DN: 'Base DN',
+    LDAP_BIND_DN: 'Bind DN (compte de service)',
+    LDAP_BIND_PASSWORD: 'Mot de passe Bind',
+    LDAP_ADMIN_GROUP: 'Groupe administrateurs',
+    LDAP_USER_GROUP: 'Groupe utilisateurs',
+    LDAP_REQUIRE_GROUP: 'Requérir appartenance au groupe',
+    // Health checks
+    HEALTHCHECK_INTERVAL_SECONDS: 'Intervalle entre checks (secondes)',
+    HEALTHCHECK_FAILURE_THRESHOLD: 'Checks consécutifs en échec → DOWN',
+    HEALTHCHECK_SUCCESS_THRESHOLD: 'Checks consécutifs réussis → UP',
+    HEALTHCHECK_TIMEOUT_MS: 'Timeout par check (ms)',
+    HEALTHCHECK_CONCURRENCY: 'Checks simultanés',
+    HEALTHCHECK_CLEANUP_EVERY: 'Nettoyage historique toutes les N vérifs',
+    // Logs
+    LOG_LEVEL: 'Niveau de log',
+    LOG_RETENTION_DAYS: 'Rétention des logs (jours)',
+    LOG_CLEANUP_INTERVAL_HOURS: 'Intervalle nettoyage logs (heures)',
+    // Live traffic
+    LIVE_TRAFFIC_RETENTION_DAYS: 'Rétention trafic live (jours)',
+    LIVE_TRAFFIC_CLEANUP_INTERVAL_MS: 'Intervalle nettoyage trafic (ms)',
+    // SMTP
+    SMTP_HOST: 'Serveur SMTP',
+    SMTP_PORT: 'Port SMTP',
+    SMTP_SECURE: 'Connexion TLS directe',
+    SMTP_USER: 'Identifiant SMTP',
+    SMTP_PASS: 'Mot de passe SMTP',
+    SMTP_TLS_REJECT_UNAUTHORIZED: 'Rejeter les certificats TLS invalides',
+    SMTP_FROM_NAME: 'Nom de l\'expéditeur',
+    SMTP_FROM_EMAIL: 'Email expéditeur',
+    // SMTP Proxy
+    SMTP_PROXY_ENABLED: 'Proxy SMTP activé',
+    SMTP_PROXY_BIND_ADDRESS: 'Adresse d\'écoute',
+    SMTP_PROXY_BACKEND_HOST: 'Serveur mail backend',
+    SMTP_PROXY_BACKEND_PORT: 'Port backend mail',
+    SMTP_PROXY_PORT: 'Port SMTP (25)',
+    SMTP_PROXY_SUBMISSION_PORT: 'Port soumission (587)',
+    SMTP_PROXY_SMTPS_PORT: 'Port SMTPS (465)',
+    SMTP_PROXY_IDLE_TIMEOUT_MS: 'Timeout inactivité (ms)',
+    SMTP_PROXY_CONNECT_TIMEOUT_MS: 'Timeout connexion (ms)',
+    SMTP_PROXY_LOGGING_ENABLED: 'Activer les logs proxy SMTP',
+    // ACME
+    ACME_EMAIL: 'Email contact Let\'s Encrypt',
+    // Tunnels
+    TUNNEL_PUBLIC_DOMAIN: 'Domaine public des tunnels',
+    TUNNEL_PORT_RANGE_MIN: 'Port minimum',
+    TUNNEL_PORT_RANGE_MAX: 'Port maximum',
+    TUNNEL_ENROLLMENT_CODE_TTL_MINUTES: 'Durée du code d\'enrôlement (min)',
+    // 502 page
+    BAD_GATEWAY_HTML_TITLE: 'Titre de l\'onglet navigateur',
+    BAD_GATEWAY_BADGE: 'Texte du badge',
+    BAD_GATEWAY_TITLE: 'Titre principal',
+    BAD_GATEWAY_SUBTITLE: 'Sous-titre',
+    BAD_GATEWAY_MESSAGE: 'Message principal',
+    BAD_GATEWAY_DOMAIN_LABEL: 'Label "Domaine"',
+    BAD_GATEWAY_PROXY_LABEL: 'Label "Proxy"',
+    BAD_GATEWAY_PROXY_VALUE: 'Valeur "Proxy"',
+    BAD_GATEWAY_CAUSE_LABEL: 'Label "Cause"',
+    BAD_GATEWAY_CAUSE_VALUE: 'Valeur "Cause"',
+    BAD_GATEWAY_STATUS_LABEL: 'Label "Statut"',
+    BAD_GATEWAY_STATUS_VALUE: 'Valeur "Statut"',
+    BAD_GATEWAY_RETRY_BUTTON: 'Bouton Réessayer',
+    BAD_GATEWAY_BACK_BUTTON: 'Bouton Retour',
+    BAD_GATEWAY_FOOTER_TEXT: 'Texte pied de page',
   };
 
   // Check if a section has errors
@@ -226,73 +311,18 @@ export default function AdminConfig() {
     });
   };
 
-  // Keep admin config minimal: hide advanced/internal keys and keys managed elsewhere.
   const filteredSections = useMemo(() => {
-    const proxySecurityAllowed = new Set([
-      'ALLOWED_ORIGINS',
-      'ALLOW_PRIVATE_BACKENDS',
-      'ALLOW_PRIVATE_BACKEND'
-    ]);
-
     return configSections.map(section => ({
       ...section,
       variables: section.variables.filter(variable => {
         const key = variable.key;
-        // Hide full auth mode + ldap surface in admin panel
-        if (key === 'AUTH_MODE' || key.startsWith('LDAP_')) {
-          return false;
-        }
-        // Hide values handled during setup or too low-level for day-to-day admin edits
-        if (
-          key.startsWith('JWT_') ||
-          key === 'NODE_ENV' ||
-          key === 'PORT' ||
-          key === 'HOST' ||
-          key === 'PROXY_ENABLED' ||
-          key === 'FRONTEND_PORT' ||
-          key === 'FRONTEND_DIST_PATH' ||
-          key === 'CSRF_ENABLED' ||
-          key === 'DNS_REBINDING_PROTECTION' ||
-          key.startsWith('FRONTEND_') ||
-          key.startsWith('VITE_')
-        ) {
-          return false;
-        }
-        // Notifications and SMTP relay are managed in dedicated admin pages
-        if (key.startsWith('SMTP_') && !key.startsWith('SMTP_PROXY_')) {
-          return false;
-        }
-        if (key.startsWith('SMTP_PROXY_')) {
-          return false;
-        }
-        if (key.includes('WEBHOOK')) {
-          return false;
-        }
-        // Keep proxy security focused on two essentials only
-        if (
-          key.startsWith('ALLOW_') ||
-          key === 'ALLOWED_ORIGINS' ||
-          key === 'ALLOWED_DOMAINS' ||
-          key === 'PROXY_CHECK_TOKEN'
-        ) {
-          return proxySecurityAllowed.has(key);
-        }
-        // Hide health-check and logging tunables
-        if (
-          key.startsWith('HEALTHCHECK_') ||
-          key.includes('_HEALTH_') ||
-          key.startsWith('LOG_') ||
-          key === 'AUTH_DEBUG'
-        ) {
-          return false;
-        }
-        // Keep only ACME email from ACME block
-        if (key.startsWith('ACME_') && key !== 'ACME_EMAIL') {
-          return false;
-        }
+        if (INFRA_HIDDEN.has(key)) return false;
+        if (key.startsWith('VITE_')) return false;
+        if (key.startsWith('FRONTEND_')) return false;
+        if (key.includes('WEBHOOK')) return false;
         return true;
       })
-    })).filter(section => section.variables.length > 0); // Remove empty sections
+    })).filter(section => section.variables.length > 0);
   }, [configSections]);
 
   // Keyboard navigation for tabs
@@ -345,8 +375,26 @@ export default function AdminConfig() {
   }
 
   const fieldConfig = {
-    ALLOW_PRIVATE_BACKENDS: { type: 'select', options: ['true', 'false'] },
-    ALLOW_PRIVATE_BACKEND: { type: 'select', options: ['true', 'false'] }
+    // Proxy
+    ALLOW_PRIVATE_BACKENDS:           { type: 'select', options: ['false', 'true'] },
+    ALLOW_PRIVATE_BACKEND:            { type: 'select', options: ['false', 'true'] },
+    ALLOW_INSECURE_BACKENDS:          { type: 'select', options: ['false', 'true'] },
+    PROXY_INJECT_CONSOLE_SCRIPT:      { type: 'select', options: ['false', 'true'] },
+    // Auth
+    AUTH_MODE:                        { type: 'select', options: ['local', 'ldap'] },
+    // LDAP
+    LDAP_REQUIRE_GROUP:               { type: 'select', options: ['false', 'true'] },
+    // Health checks
+    HEALTHCHECK_SKIP_TCP:             { type: 'select', options: ['true', 'false'] },
+    HEALTHCHECK_SKIP_UDP:             { type: 'select', options: ['false', 'true'] },
+    // Logs
+    LOG_LEVEL:                        { type: 'select', options: ['warn', 'info', 'debug', 'error'] },
+    // SMTP
+    SMTP_SECURE:                      { type: 'select', options: ['false', 'true'] },
+    SMTP_TLS_REJECT_UNAUTHORIZED:     { type: 'select', options: ['true', 'false'] },
+    // SMTP Proxy
+    SMTP_PROXY_ENABLED:               { type: 'select', options: ['false', 'true'] },
+    SMTP_PROXY_LOGGING_ENABLED:       { type: 'select', options: ['true', 'false'] },
   };
 
   return (
