@@ -1,73 +1,153 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Settings, AlertCircle, CheckCircle, Save, RefreshCw, ChevronLeft, ChevronRight, Type, Download } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import {
+  Lock, Activity, FileText, Globe, Cable, Mail, Server,
+  Database, ShieldCheck, AlertTriangle, Eye, EyeOff, Save,
+  Type, Download, RefreshCw
+} from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { useBrandingStore } from '../../store/brandingStore';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
 import {
-  AdminCard,
-  AdminCardHeader,
-  AdminCardTitle,
-  AdminCardContent,
   AdminButton,
   AdminAlert,
   AdminAlertDescription,
-  AdminAlertTitle
 } from '@/components/admin';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Combobox } from '@/components/ui/combobox';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
 
-// Infra-level keys hidden from the UI — dangerous to change or irrelevant at runtime
-const INFRA_HIDDEN = new Set([
-  'JWT_SECRET', 'JWT_SECRET_PREVIOUS',
-  'NODE_ENV', 'HOST', 'PORT',
-  'FRONTEND_PORT', 'FRONTEND_DIST_PATH', 'FRONTEND_BUILD_ON_START',
-  'VITE_API_BASE_URL',
-  'CSRF_ENABLED', 'DNS_REBINDING_PROTECTION', 'AUTH_DEBUG',
-  'PROXY_ENABLED',
-  'LOG_BACKEND', 'LOG_QUIET', 'LOG_STARTUP_SUMMARY', 'LOG_SUPPRESS_PREFIXES',
-  'LOG_SYSLOG_HOST', 'LOG_SYSLOG_PORT', 'LOG_SYSLOG_PROTOCOL',
-  'LOG_SYSLOG_APP_NAME', 'LOG_SYSLOG_FACILITY',
-]);
+const NAV = [
+  { id: 'auth',      label: 'Authentification', icon: Lock },
+  { id: 'health',    label: 'Health Checks',     icon: Activity },
+  { id: 'logs',      label: 'Logs & Rétention',  icon: FileText },
+  { id: 'proxy',     label: 'Proxy',             icon: Globe },
+  { id: 'tunnels',   label: 'Tunnels',           icon: Cable },
+  { id: 'smtp',      label: 'Email SMTP',        icon: Mail },
+  { id: 'smtpproxy', label: 'Proxy SMTP',        icon: Server },
+  { id: 'database',  label: 'Base de données',   icon: Database },
+  { id: 'tls',       label: 'Certificats TLS',   icon: ShieldCheck },
+  { id: 'error502',  label: 'Page d\'erreur 502', icon: AlertTriangle },
+];
+
+function Row({ label, hint, full = false, children }) {
+  return (
+    <div className={`flex ${full ? 'flex-col gap-2' : 'items-center justify-between gap-6'} px-5 py-3.5`}>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-admin-text leading-none">{label}</p>
+        {hint && <p className="text-xs text-admin-text-muted mt-1 leading-relaxed">{hint}</p>}
+      </div>
+      <div className={full ? 'w-full' : 'shrink-0 w-56'}>{children}</div>
+    </div>
+  );
+}
+
+function Section({ id, icon: Icon, title, subtitle, children }) {
+  return (
+    <div id={`s-${id}`} className="scroll-mt-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-admin-primary/10 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 text-admin-primary" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-admin-text">{title}</h2>
+          {subtitle && <p className="text-xs text-admin-text-muted mt-0.5">{subtitle}</p>}
+        </div>
+      </div>
+      <div className="bg-admin-surface border border-admin-border rounded-xl overflow-hidden divide-y divide-admin-border">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PasswordInput({ value, onChange, placeholder }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="bg-admin-bg border-admin-border text-admin-text pr-9 h-9 text-sm"
+      />
+      <button
+        type="button"
+        onClick={() => setShow(s => !s)}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-admin-text-muted hover:text-admin-text"
+        tabIndex={-1}
+      >
+        {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+function NumInput({ value, onChange, min, max, step, unit }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        min={min}
+        max={max}
+        step={step}
+        className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm"
+      />
+      {unit && <span className="text-xs text-admin-text-muted shrink-0">{unit}</span>}
+    </div>
+  );
+}
 
 export default function AdminConfig() {
-  const [configSections, setConfigSections] = useState([]);
-  const [configForm, setConfigForm] = useState({});
-  const [configSubmitting, setConfigSubmitting] = useState(false);
-  const [configErrors, setConfigErrors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('0');
-  const { toast } = useToast();
-
-  // Branding
+  const [form, setForm]           = useState({});
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+  const [active, setActive]       = useState('auth');
+  const { toast }                 = useToast();
   const { appName: storeAppName, setAppName: setStoreAppName } = useBrandingStore();
   const [brandingName, setBrandingName] = useState(storeAppName);
   const [brandingSaving, setBrandingSaving] = useState(false);
 
   useEffect(() => { setBrandingName(storeAppName); }, [storeAppName]);
 
-  const handleSaveBranding = async () => {
-    if (!brandingName.trim()) return;
+  const set   = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const bool  = (key)        => form[key] === 'true' || form[key] === true;
+  const setb  = (key, val)   => set(key, val ? 'true' : 'false');
+  const str   = (key, fb='') => form[key] ?? fb;
+
+  useEffect(() => { load(); }, []);
+
+  const load = async () => {
     try {
-      setBrandingSaving(true);
-      const res = await adminAPI.updateBranding({ appName: brandingName.trim() });
-      setStoreAppName(res.data.appName);
-      toast({ title: 'Branding updated', description: `App name set to "${res.data.appName}"` });
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Error', description: err.response?.data?.error || 'Failed to save branding' });
+      setLoading(true);
+      setError('');
+      const res = await adminAPI.getConfig();
+      const flat = {};
+      (res.data.sections || []).forEach(s => s.variables.forEach(v => { flat[v.key] = v.value ?? ''; }));
+      setForm(flat);
+    } catch {
+      setError('Impossible de charger la configuration.');
     } finally {
-      setBrandingSaving(false);
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await adminAPI.updateConfig(form);
+      toast({ title: 'Sauvegardé', description: 'Configuration mise à jour.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erreur', description: err.response?.data?.message || 'Échec de la sauvegarde' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const handleExportConfig = async () => {
+  const handleExport = async () => {
     try {
       const res = await adminAPI.exportConfig();
       const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
@@ -77,552 +157,362 @@ export default function AdminConfig() {
       a.download = `nebulaproxy-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Export failed', description: err.response?.data?.message || 'Failed to export configuration' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Erreur', description: 'Export impossible' });
     }
   };
 
-  const fetchConfig = async () => {
+  const handleSaveBranding = async () => {
+    if (!brandingName.trim()) return;
     try {
-      setLoading(true);
-      setError('');
-      const response = await adminAPI.getConfig();
-      setConfigSections(response.data.sections || []);
-      const nextForm = {};
-      (response.data.sections || []).forEach(section => {
-        section.variables.forEach(variable => {
-          nextForm[variable.key] = variable.value ?? '';
-        });
-      });
-      setConfigForm(nextForm);
-      setConfigErrors([]);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load configuration');
+      setBrandingSaving(true);
+      const res = await adminAPI.updateBranding({ appName: brandingName.trim() });
+      setStoreAppName(res.data.appName);
+      toast({ title: 'Branding mis à jour' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Erreur', description: 'Échec du branding' });
     } finally {
-      setLoading(false);
+      setBrandingSaving(false);
     }
   };
 
-  const handleUpdateConfig = async (e) => {
-    e.preventDefault();
-    try {
-      setConfigSubmitting(true);
-      setError('');
-      setConfigErrors([]);
-
-      const validation = await adminAPI.validateConfig(configForm);
-      if (!validation.data.valid) {
-        setConfigErrors(validation.data.errors || []);
-        toast({
-          variant: 'destructive',
-          title: 'Validation Failed',
-          description: `${validation.data.errors.length} error(s) found`
-        });
-        return;
-      }
-
-      const response = await adminAPI.updateConfig(configForm);
-      if (!response.data.success) {
-        setConfigErrors(response.data.errors || ['Failed to save configuration']);
-        toast({
-          variant: 'destructive',
-          title: 'Update Failed',
-          description: 'Failed to save configuration'
-        });
-        return;
-      }
-      toast({
-        title: 'Configuration Updated',
-        description: 'Configuration updated successfully. Server restart may be required for some changes.'
-      });
-    } catch (err) {
-      const errors = err.response?.data?.errors || [];
-      if (errors.length > 0) {
-        setConfigErrors(errors);
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: `${errors.length} error(s) occurred`
-        });
-      } else {
-        const errorMsg = err.response?.data?.message || 'Failed to update configuration';
-        setError(errorMsg);
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: errorMsg
-        });
-      }
-    } finally {
-      setConfigSubmitting(false);
-    }
+  const scrollTo = (id) => {
+    setActive(id);
+    document.getElementById(`s-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleValidateConfig = async () => {
-    try {
-      setError('');
-      setConfigErrors([]);
-      const validation = await adminAPI.validateConfig(configForm);
-      if (!validation.data.valid) {
-        setConfigErrors(validation.data.errors || []);
-        toast({
-          variant: 'destructive',
-          title: 'Validation Failed',
-          description: `${validation.data.errors.length} error(s) found`
-        });
-        return;
-      }
-      toast({
-        title: 'Validation Passed',
-        description: 'Configuration validation passed successfully'
-      });
-    } catch (err) {
-      const errors = err.response?.data?.errors || [];
-      if (errors.length > 0) {
-        setConfigErrors(errors);
-        toast({
-          variant: 'destructive',
-          title: 'Validation Failed',
-          description: `${errors.length} error(s) found`
-        });
-      } else {
-        const errorMsg = err.response?.data?.message || 'Failed to validate configuration';
-        setError(errorMsg);
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: errorMsg
-        });
-      }
-    }
-  };
-
-  const handleConfigChange = (key, value) => {
-    setConfigForm(prev => ({ ...prev, [key]: value }));
-  };
-
-  const sectionLabelMap = {
-    'Proxy + security': 'Proxy & Sécurité',
-    'ACME / Let\'s Encrypt': 'Certificats TLS',
-    'Proxy 502 error page': 'Page d\'erreur 502',
-    'Health checks': 'Health Checks',
-    'Logs': 'Logs',
-    'Live traffic retention (Redis)': 'Trafic temps réel',
-    'Auth': 'Authentification',
-    'Database (PostgreSQL only)': 'Base de données',
-    'LDAP': 'LDAP',
-    'SMTP Email Notifications': 'Email SMTP',
-    'SMTP Proxy Relay': 'Proxy SMTP',
-    'Tunnels': 'Tunnels',
-  };
-
-  const variableLabelMap = {
-    // Proxy & security
-    ALLOWED_ORIGINS: 'Origines autorisées (CORS)',
-    ALLOW_PRIVATE_BACKENDS: 'Backends privés autorisés',
-    ALLOW_PRIVATE_BACKEND: 'Backends privés autorisés',
-    ALLOW_INSECURE_BACKENDS: 'Backends HTTP (non-TLS) autorisés',
-    HTTP_PROXY_REQUEST_TIMEOUT_MS: 'Timeout requêtes proxy (ms)',
-    PROXY_CHECK_TOKEN: 'Token de vérification proxy',
-    PROXY_INJECT_CONSOLE_SCRIPT: 'Injecter script console',
-    // Auth
-    AUTH_MODE: 'Mode d\'authentification',
-    // Database
-    DB_TYPE: 'Type de base de données',
-    DB_HOST: 'Hôte',
-    DB_PORT: 'Port',
-    DB_NAME: 'Nom de la base',
-    DB_USER: 'Utilisateur',
-    DB_PASSWORD: 'Mot de passe',
-    // LDAP
-    LDAP_URL: 'URL du serveur LDAP',
-    LDAP_BASE_DN: 'Base DN',
-    LDAP_BIND_DN: 'Bind DN (compte de service)',
-    LDAP_BIND_PASSWORD: 'Mot de passe Bind',
-    LDAP_ADMIN_GROUP: 'Groupe administrateurs',
-    LDAP_USER_GROUP: 'Groupe utilisateurs',
-    LDAP_REQUIRE_GROUP: 'Requérir appartenance au groupe',
-    // Health checks
-    HEALTHCHECK_INTERVAL_SECONDS: 'Intervalle entre checks (secondes)',
-    HEALTHCHECK_FAILURE_THRESHOLD: 'Checks consécutifs en échec → DOWN',
-    HEALTHCHECK_SUCCESS_THRESHOLD: 'Checks consécutifs réussis → UP',
-    HEALTHCHECK_TIMEOUT_MS: 'Timeout par check (ms)',
-    HEALTHCHECK_CONCURRENCY: 'Checks simultanés',
-    HEALTHCHECK_CLEANUP_EVERY: 'Nettoyage historique toutes les N vérifs',
-    // Logs
-    LOG_LEVEL: 'Niveau de log',
-    LOG_RETENTION_DAYS: 'Rétention des logs (jours)',
-    LOG_CLEANUP_INTERVAL_HOURS: 'Intervalle nettoyage logs (heures)',
-    // Live traffic
-    LIVE_TRAFFIC_RETENTION_DAYS: 'Rétention trafic live (jours)',
-    LIVE_TRAFFIC_CLEANUP_INTERVAL_MS: 'Intervalle nettoyage trafic (ms)',
-    // SMTP
-    SMTP_HOST: 'Serveur SMTP',
-    SMTP_PORT: 'Port SMTP',
-    SMTP_SECURE: 'Connexion TLS directe',
-    SMTP_USER: 'Identifiant SMTP',
-    SMTP_PASS: 'Mot de passe SMTP',
-    SMTP_TLS_REJECT_UNAUTHORIZED: 'Rejeter les certificats TLS invalides',
-    SMTP_FROM_NAME: 'Nom de l\'expéditeur',
-    SMTP_FROM_EMAIL: 'Email expéditeur',
-    // SMTP Proxy
-    SMTP_PROXY_ENABLED: 'Proxy SMTP activé',
-    SMTP_PROXY_BIND_ADDRESS: 'Adresse d\'écoute',
-    SMTP_PROXY_BACKEND_HOST: 'Serveur mail backend',
-    SMTP_PROXY_BACKEND_PORT: 'Port backend mail',
-    SMTP_PROXY_PORT: 'Port SMTP (25)',
-    SMTP_PROXY_SUBMISSION_PORT: 'Port soumission (587)',
-    SMTP_PROXY_SMTPS_PORT: 'Port SMTPS (465)',
-    SMTP_PROXY_IDLE_TIMEOUT_MS: 'Timeout inactivité (ms)',
-    SMTP_PROXY_CONNECT_TIMEOUT_MS: 'Timeout connexion (ms)',
-    SMTP_PROXY_LOGGING_ENABLED: 'Activer les logs proxy SMTP',
-    // ACME
-    ACME_EMAIL: 'Email contact Let\'s Encrypt',
-    // Tunnels
-    TUNNEL_PUBLIC_DOMAIN: 'Domaine public des tunnels',
-    TUNNEL_PORT_RANGE_MIN: 'Port minimum',
-    TUNNEL_PORT_RANGE_MAX: 'Port maximum',
-    TUNNEL_ENROLLMENT_CODE_TTL_MINUTES: 'Durée du code d\'enrôlement (min)',
-    // 502 page
-    BAD_GATEWAY_HTML_TITLE: 'Titre de l\'onglet navigateur',
-    BAD_GATEWAY_BADGE: 'Texte du badge',
-    BAD_GATEWAY_TITLE: 'Titre principal',
-    BAD_GATEWAY_SUBTITLE: 'Sous-titre',
-    BAD_GATEWAY_MESSAGE: 'Message principal',
-    BAD_GATEWAY_DOMAIN_LABEL: 'Label "Domaine"',
-    BAD_GATEWAY_PROXY_LABEL: 'Label "Proxy"',
-    BAD_GATEWAY_PROXY_VALUE: 'Valeur "Proxy"',
-    BAD_GATEWAY_CAUSE_LABEL: 'Label "Cause"',
-    BAD_GATEWAY_CAUSE_VALUE: 'Valeur "Cause"',
-    BAD_GATEWAY_STATUS_LABEL: 'Label "Statut"',
-    BAD_GATEWAY_STATUS_VALUE: 'Valeur "Statut"',
-    BAD_GATEWAY_RETRY_BUTTON: 'Bouton Réessayer',
-    BAD_GATEWAY_BACK_BUTTON: 'Bouton Retour',
-    BAD_GATEWAY_FOOTER_TEXT: 'Texte pied de page',
-  };
-
-  // Check if a section has errors
-  const getSectionErrors = (section) => {
-    return configErrors.filter(error => {
-      return section.variables.some(variable =>
-        error.toLowerCase().includes(variable.key.toLowerCase()) ||
-        error.toLowerCase().includes((variable.label || '').toLowerCase())
-      );
-    });
-  };
-
-  const filteredSections = useMemo(() => {
-    return configSections.map(section => ({
-      ...section,
-      variables: section.variables.filter(variable => {
-        const key = variable.key;
-        if (INFRA_HIDDEN.has(key)) return false;
-        if (key.startsWith('VITE_')) return false;
-        if (key.startsWith('FRONTEND_')) return false;
-        if (key.includes('WEBHOOK')) return false;
-        return true;
-      })
-    })).filter(section => section.variables.length > 0);
-  }, [configSections]);
-
-  // Keyboard navigation for tabs
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Ctrl/Cmd + S to save
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        if (!configSubmitting && filteredSections.length > 0) {
-          handleUpdateConfig(e);
-        }
-      }
-
-      // Tab navigation (only when not focused on input)
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'TEXTAREA') {
-        // Arrow keys to navigate tabs
-        const currentIndex = parseInt(activeTab);
-        if (e.key === 'ArrowLeft' && currentIndex > 0) {
-          e.preventDefault();
-          setActiveTab((currentIndex - 1).toString());
-        } else if (e.key === 'ArrowRight' && currentIndex < filteredSections.length - 1) {
-          e.preventDefault();
-          setActiveTab((currentIndex + 1).toString());
-        }
-        // Number keys (1-9) to jump to specific tab
-        else if (e.key >= '1' && e.key <= '9') {
-          const tabIndex = parseInt(e.key) - 1;
-          if (tabIndex < filteredSections.length) {
-            e.preventDefault();
-            setActiveTab(tabIndex.toString());
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, filteredSections.length, configSubmitting]);
+    if (loading) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(e => { if (e.isIntersecting) setActive(e.target.id.replace('s-', '')); });
+      },
+      { rootMargin: '-20% 0px -65% 0px' }
+    );
+    NAV.forEach(({ id }) => {
+      const el = document.getElementById(`s-${id}`);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [loading]);
 
   if (loading) {
     return (
-      <div className="space-y-6" data-admin-theme>
-        <div className="mb-6">
-          <Skeleton className="h-8 w-48 bg-admin-border mb-2" />
-          <Skeleton className="h-4 w-96 bg-admin-border" />
+      <div className="space-y-4" data-admin-theme>
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-9 w-48 bg-admin-border" />
+          <Skeleton className="h-9 w-32 bg-admin-border" />
         </div>
-        <Skeleton className="h-96 bg-admin-border" />
+        <div className="flex gap-6">
+          <Skeleton className="w-52 h-[480px] bg-admin-border shrink-0 rounded-xl" />
+          <div className="flex-1 space-y-6">
+            {[1,2,3].map(i => <Skeleton key={i} className="h-48 bg-admin-border rounded-xl" />)}
+          </div>
+        </div>
       </div>
     );
   }
 
-  const fieldConfig = {
-    // Proxy
-    ALLOW_PRIVATE_BACKENDS:           { type: 'select', options: ['false', 'true'] },
-    ALLOW_PRIVATE_BACKEND:            { type: 'select', options: ['false', 'true'] },
-    ALLOW_INSECURE_BACKENDS:          { type: 'select', options: ['false', 'true'] },
-    PROXY_INJECT_CONSOLE_SCRIPT:      { type: 'select', options: ['false', 'true'] },
-    // Auth
-    AUTH_MODE:                        { type: 'select', options: ['local', 'ldap'] },
-    // LDAP
-    LDAP_REQUIRE_GROUP:               { type: 'select', options: ['false', 'true'] },
-    // Health checks
-    HEALTHCHECK_SKIP_TCP:             { type: 'select', options: ['true', 'false'] },
-    HEALTHCHECK_SKIP_UDP:             { type: 'select', options: ['false', 'true'] },
-    // Logs
-    LOG_LEVEL:                        { type: 'select', options: ['warn', 'info', 'debug', 'error'] },
-    // SMTP
-    SMTP_SECURE:                      { type: 'select', options: ['false', 'true'] },
-    SMTP_TLS_REJECT_UNAUTHORIZED:     { type: 'select', options: ['true', 'false'] },
-    // SMTP Proxy
-    SMTP_PROXY_ENABLED:               { type: 'select', options: ['false', 'true'] },
-    SMTP_PROXY_LOGGING_ENABLED:       { type: 'select', options: ['true', 'false'] },
-  };
-
   return (
     <div data-admin-theme className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-admin-text mb-2">System Configuration</h1>
-          <p className="text-admin-text-muted">Essential runtime settings only</p>
+          <h1 className="text-3xl font-semibold text-admin-text">Configuration</h1>
+          <p className="text-admin-text-muted mt-1 text-sm">Paramètres runtime stockés dans Redis</p>
         </div>
         <div className="flex items-center gap-2">
-          <AdminButton variant="secondary" onClick={handleExportConfig} title="Télécharger la config actuelle (importable dans le setup wizard)">
+          <AdminButton variant="secondary" onClick={handleExport} title="Exporter la config en JSON">
             <Download className="w-4 h-4 mr-2" />
-            Exporter config
+            Exporter
           </AdminButton>
-          <AdminButton variant="secondary" onClick={fetchConfig}>
+          <AdminButton variant="secondary" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-2" />
-            Reload
+            Recharger
+          </AdminButton>
+          <AdminButton onClick={handleSave} disabled={saving}>
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Sauvegarde…' : 'Sauvegarder'}
           </AdminButton>
         </div>
       </div>
 
-      {/* Error Message */}
       {error && (
         <AdminAlert variant="danger">
-          <AlertCircle className="h-4 w-4" />
           <AdminAlertDescription>{error}</AdminAlertDescription>
         </AdminAlert>
       )}
 
-      {/* Config Errors */}
-      {configErrors.length > 0 && (
-        <AdminAlert variant="danger">
-          <AlertCircle className="h-4 w-4" />
-          <div>
-            <AdminAlertTitle>Configuration errors:</AdminAlertTitle>
-            <AdminAlertDescription>
-              <ul className="list-disc list-inside space-y-1 mt-2">
-                {configErrors.map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
-            </AdminAlertDescription>
-          </div>
-        </AdminAlert>
-      )}
-
-      {/* Branding */}
-      <AdminCard>
-        <AdminCardHeader>
-          <AdminCardTitle className="flex items-center gap-2">
-            <Type className="w-5 h-5" />
-            Branding
-          </AdminCardTitle>
-          <p className="text-xs text-admin-text-muted mt-1">Customize the application name displayed everywhere (login page, sidebar, page titles).</p>
-        </AdminCardHeader>
-        <AdminCardContent className="pt-4">
-          <div className="flex items-end gap-3 max-w-md">
-            <div className="flex-1 space-y-2">
-              <Label className="text-admin-text">Application name</Label>
-              <Input
+      <div className="flex gap-6 items-start">
+        {/* ── Left nav ─────────────────────────────────────────── */}
+        <nav className="w-52 shrink-0 sticky top-6 bg-admin-surface border border-admin-border rounded-xl overflow-hidden">
+          {/* Branding inline */}
+          <div className="px-4 py-3 border-b border-admin-border">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Type className="w-3 h-3 text-admin-text-subtle" />
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-admin-text-subtle">Branding</p>
+            </div>
+            <div className="flex gap-1.5">
+              <input
                 value={brandingName}
                 onChange={e => setBrandingName(e.target.value)}
-                className="bg-admin-bg border-admin-border text-admin-text"
+                className="flex-1 min-w-0 text-xs bg-admin-bg border border-admin-border text-admin-text rounded-md px-2 py-1.5 outline-none focus:border-admin-primary"
                 placeholder="NebulaProxy"
                 maxLength={64}
               />
+              <button
+                type="button"
+                onClick={handleSaveBranding}
+                disabled={brandingSaving || !brandingName.trim()}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-admin-primary/10 text-admin-primary hover:bg-admin-primary/20 disabled:opacity-40 shrink-0 font-medium"
+              >
+                OK
+              </button>
             </div>
-            <AdminButton onClick={handleSaveBranding} disabled={brandingSaving || !brandingName.trim()}>
-              <Save className="w-4 h-4 mr-2" />
-              {brandingSaving ? 'Saving…' : 'Save'}
-            </AdminButton>
           </div>
-        </AdminCardContent>
-      </AdminCard>
+          {/* Nav items */}
+          <div className="py-1.5">
+            {NAV.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => scrollTo(id)}
+                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+                  active === id
+                    ? 'text-admin-primary bg-admin-primary/10 font-medium'
+                    : 'text-admin-text-muted hover:text-admin-text hover:bg-admin-border/40'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
 
-      {/* Configuration Form */}
-      <form onSubmit={handleUpdateConfig}>
-        {filteredSections.length > 0 && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="flex items-center justify-between mb-4">
-              <TabsList className="bg-admin-surface2 border border-admin-border">
-                {filteredSections.map((section, index) => {
-                  const sectionErrors = getSectionErrors(section);
-                  const hasErrors = sectionErrors.length > 0;
+        {/* ── Content ──────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0 space-y-8">
 
-                  return (
-                    <TabsTrigger
-                      key={section.name}
-                      value={index.toString()}
-                      className="data-[state=active]:bg-black data-[state=active]:text-admin-text data-[state=active]:border data-[state=active]:border-admin-border text-admin-text-muted relative"
-                    >
-                      {sectionLabelMap[section.name] || section.name}
-                      <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-admin-bg">
-                        {section.variables.length}
-                      </span>
-                      {hasErrors && (
-                        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-admin-danger animate-pulse" />
-                      )}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-
-              {/* Keyboard Hint */}
-              <div className="flex items-center gap-3 text-xs text-admin-text-muted">
-                <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-admin-surface2 border border-admin-border rounded font-mono">←</kbd>
-                  <kbd className="px-1.5 py-0.5 bg-admin-surface2 border border-admin-border rounded font-mono">→</kbd>
-                  Navigate
-                </span>
-                <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-admin-surface2 border border-admin-border rounded font-mono">Ctrl+S</kbd>
-                  Save
-                </span>
-                <span>Section {parseInt(activeTab) + 1} of {filteredSections.length}</span>
+          {/* AUTHENTIFICATION */}
+          <Section id="auth" icon={Lock} title="Authentification" subtitle="Mode de connexion des utilisateurs">
+            <Row label="Mode" hint="local = comptes internes · ldap = annuaire Active Directory / OpenLDAP">
+              <div className="flex rounded-lg border border-admin-border overflow-hidden text-sm">
+                {['local', 'ldap'].map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => set('AUTH_MODE', mode)}
+                    className={`flex-1 py-1.5 transition-colors font-medium ${form['AUTH_MODE'] === mode ? 'bg-admin-primary text-white' : 'text-admin-text-muted hover:bg-admin-border/40'}`}
+                  >
+                    {mode}
+                  </button>
+                ))}
               </div>
-            </div>
+            </Row>
+            {form['AUTH_MODE'] === 'ldap' && <>
+              <Row label="URL serveur LDAP">
+                <Input value={str('LDAP_URL')} onChange={e => set('LDAP_URL', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="ldap://192.168.1.1:389" />
+              </Row>
+              <Row label="Base DN">
+                <Input value={str('LDAP_BASE_DN')} onChange={e => set('LDAP_BASE_DN', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="dc=example,dc=com" />
+              </Row>
+              <Row label="Bind DN (compte de service)">
+                <Input value={str('LDAP_BIND_DN')} onChange={e => set('LDAP_BIND_DN', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="cn=svc,dc=example,dc=com" />
+              </Row>
+              <Row label="Mot de passe Bind">
+                <PasswordInput value={str('LDAP_BIND_PASSWORD')} onChange={v => set('LDAP_BIND_PASSWORD', v)} />
+              </Row>
+              <Row label="Groupe admins" hint="DN complet du groupe administrateurs">
+                <Input value={str('LDAP_ADMIN_GROUP')} onChange={e => set('LDAP_ADMIN_GROUP', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+              </Row>
+              <Row label="Groupe utilisateurs" hint="DN complet du groupe utilisateurs standard">
+                <Input value={str('LDAP_USER_GROUP')} onChange={e => set('LDAP_USER_GROUP', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+              </Row>
+              <Row label="Requérir appartenance au groupe" hint="Bloque les utilisateurs hors groupe">
+                <Switch checked={bool('LDAP_REQUIRE_GROUP')} onCheckedChange={v => setb('LDAP_REQUIRE_GROUP', v)} />
+              </Row>
+            </>}
+          </Section>
 
-            {filteredSections.map((section, sectionIndex) => {
-              const sectionErrors = getSectionErrors(section);
+          {/* HEALTH CHECKS */}
+          <Section id="health" icon={Activity} title="Health Checks" subtitle="Fréquence et seuils de détection des pannes">
+            <Row label="Intervalle" hint="Durée entre deux vérifications">
+              <NumInput value={str('HEALTHCHECK_INTERVAL_SECONDS')} onChange={v => set('HEALTHCHECK_INTERVAL_SECONDS', v)} min="5" unit="sec" />
+            </Row>
+            <Row label="Seuil DOWN" hint="Checks consécutifs en échec avant de marquer le domaine DOWN">
+              <NumInput value={str('HEALTHCHECK_FAILURE_THRESHOLD')} onChange={v => set('HEALTHCHECK_FAILURE_THRESHOLD', v)} min="1" unit="checks" />
+            </Row>
+            <Row label="Seuil UP" hint="Checks consécutifs réussis avant de marquer le domaine UP">
+              <NumInput value={str('HEALTHCHECK_SUCCESS_THRESHOLD')} onChange={v => set('HEALTHCHECK_SUCCESS_THRESHOLD', v)} min="1" unit="checks" />
+            </Row>
+            <Row label="Timeout" hint="Délai maximum par vérification">
+              <NumInput value={str('HEALTHCHECK_TIMEOUT_MS')} onChange={v => set('HEALTHCHECK_TIMEOUT_MS', v)} min="1000" step="500" unit="ms" />
+            </Row>
+            <Row label="Concurrence" hint="Vérifications simultanées maximum">
+              <Input type="number" min="1" max="100" value={str('HEALTHCHECK_CONCURRENCY')} onChange={e => set('HEALTHCHECK_CONCURRENCY', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+          </Section>
 
-              return (
-                <TabsContent key={section.name} value={sectionIndex.toString()} className="mt-6">
-                  <AdminCard>
-                    <AdminCardHeader>
-                      <div>
-                        <AdminCardTitle className="flex items-center gap-2">
-                          <Settings className="w-5 h-5" />
-                          {sectionLabelMap[section.name] || section.name}
-                        </AdminCardTitle>
-                        <p className="text-xs text-admin-text-muted mt-1">
-                          {section.variables.length} configuration variable{section.variables.length !== 1 ? 's' : ''}
-                          {sectionErrors.length > 0 && (
-                            <span className="text-admin-danger ml-2">
-                              • {sectionErrors.length} error{sectionErrors.length !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </AdminCardHeader>
-                    <AdminCardContent className="pt-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {section.variables.map((variable) => {
-                          const key = variable.key;
-                          const value = configForm[key] ?? '';
-                          const isSecret = /PASSWORD|SECRET|TOKEN/.test(key);
-                          const config = fieldConfig[key];
-
-                          return (
-                            <div key={key} className="space-y-2">
-                              <Label className="text-admin-text">
-                                {variableLabelMap[key] || variable.label || key}
-                                {variable.required && <span className="text-admin-danger ml-1">*</span>}
-                              </Label>
-                              {config?.type === 'select' ? (
-                                <Combobox
-                                  value={value}
-                                  onValueChange={(val) => handleConfigChange(key, val)}
-                                  options={(config.options || []).map((opt) => ({ value: opt, label: opt }))}
-                                  placeholder="Select value"
-                                  searchPlaceholder="Search value..."
-                                  emptyText="No option found."
-                                  triggerClassName="h-10 bg-admin-bg border-admin-border text-admin-text"
-                                />
-                              ) : (
-                                <Input
-                                  type={isSecret ? 'password' : 'text'}
-                                  value={value}
-                                  onChange={(e) => handleConfigChange(key, e.target.value)}
-                                  className="bg-admin-bg border-admin-border text-admin-text"
-                                  placeholder={variable.placeholder}
-                                  required={variable.required}
-                                />
-                              )}
-                              {variable.description && (
-                                <p className="text-xs text-admin-text-muted">{variable.description}</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </AdminCardContent>
-                  </AdminCard>
-                </TabsContent>
-              );
-            })}
-          </Tabs>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex items-center justify-between bg-admin-surface border border-admin-border rounded-lg p-4 mt-6">
-          <div className="flex items-center gap-3">
-            <AdminButton type="submit" disabled={configSubmitting}>
-              <Save className="w-4 h-4 mr-2" />
-              {configSubmitting ? 'Saving...' : 'Save Configuration'}
-            </AdminButton>
-            <AdminButton type="button" variant="secondary" onClick={handleValidateConfig}>
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Validate
-            </AdminButton>
-          </div>
-
-          {/* Quick navigation */}
-          {filteredSections.length > 1 && (
-            <div className="flex items-center gap-2">
-              <AdminButton
-                type="button"
-                variant="secondary"
-                onClick={() => setActiveTab(Math.max(0, parseInt(activeTab) - 1).toString())}
-                disabled={parseInt(activeTab) === 0}
+          {/* LOGS */}
+          <Section id="logs" icon={FileText} title="Logs & Rétention" subtitle="Conservation et niveau de verbosité des journaux">
+            <Row label="Niveau de log">
+              <select
+                value={str('LOG_LEVEL', 'warn')}
+                onChange={e => set('LOG_LEVEL', e.target.value)}
+                className="w-full h-9 text-sm bg-admin-bg border border-admin-border text-admin-text rounded-md px-3 outline-none focus:border-admin-primary"
               >
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Previous
-              </AdminButton>
-              <AdminButton
-                type="button"
-                variant="secondary"
-                onClick={() => setActiveTab(Math.min(filteredSections.length - 1, parseInt(activeTab) + 1).toString())}
-                disabled={parseInt(activeTab) === filteredSections.length - 1}
-              >
-                Next
-                <ChevronRight className="w-4 h-4 ml-2" />
-              </AdminButton>
-            </div>
-          )}
+                {['warn','info','debug','error'].map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </Row>
+            <Row label="Rétention logs de requêtes" hint="Les logs plus anciens sont supprimés automatiquement">
+              <NumInput value={str('LOG_RETENTION_DAYS')} onChange={v => set('LOG_RETENTION_DAYS', v)} min="1" unit="jours" />
+            </Row>
+            <Row label="Rétention trafic live" hint="Données Redis du trafic temps réel">
+              <NumInput value={str('LIVE_TRAFFIC_RETENTION_DAYS')} onChange={v => set('LIVE_TRAFFIC_RETENTION_DAYS', v)} min="1" unit="jours" />
+            </Row>
+            <Row label="Intervalle nettoyage" hint="Fréquence de la purge automatique">
+              <NumInput value={str('LOG_CLEANUP_INTERVAL_HOURS')} onChange={v => set('LOG_CLEANUP_INTERVAL_HOURS', v)} min="1" unit="heures" />
+            </Row>
+          </Section>
+
+          {/* PROXY */}
+          <Section id="proxy" icon={Globe} title="Proxy" subtitle="Comportement du proxy HTTP/HTTPS">
+            <Row label="Autoriser les backends HTTP" hint="Permet de proxifier vers des serveurs sans HTTPS">
+              <Switch checked={bool('ALLOW_INSECURE_BACKENDS')} onCheckedChange={v => setb('ALLOW_INSECURE_BACKENDS', v)} />
+            </Row>
+            <Row label="Autoriser les backends privés" hint="Adresses IP locales (192.168.x, 10.x, 172.16.x)">
+              <Switch checked={bool('ALLOW_PRIVATE_BACKENDS')} onCheckedChange={v => setb('ALLOW_PRIVATE_BACKENDS', v)} />
+            </Row>
+            <Row label="Timeout requêtes" hint="Délai maximum avant d'abandonner une requête proxifiée">
+              <NumInput value={str('HTTP_PROXY_REQUEST_TIMEOUT_MS')} onChange={v => set('HTTP_PROXY_REQUEST_TIMEOUT_MS', v)} min="1000" step="1000" unit="ms" />
+            </Row>
+            <Row label="Origines CORS autorisées" hint="URLs séparées par des virgules" full>
+              <Input value={str('ALLOWED_ORIGINS')} onChange={e => set('ALLOWED_ORIGINS', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="https://proxy.example.com" />
+            </Row>
+          </Section>
+
+          {/* TUNNELS */}
+          <Section id="tunnels" icon={Cable} title="Tunnels" subtitle="Configuration des tunnels TCP/UDP sortants">
+            <Row label="Domaine public">
+              <Input value={str('TUNNEL_PUBLIC_DOMAIN')} onChange={e => set('TUNNEL_PUBLIC_DOMAIN', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="paxcia.net" />
+            </Row>
+            <Row label="Plage de ports" hint="Ports assignés aux tunnels (min – max)">
+              <div className="flex items-center gap-2">
+                <Input type="number" value={str('TUNNEL_PORT_RANGE_MIN')} onChange={e => set('TUNNEL_PORT_RANGE_MIN', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="20000" />
+                <span className="text-admin-text-muted text-xs">–</span>
+                <Input type="number" value={str('TUNNEL_PORT_RANGE_MAX')} onChange={e => set('TUNNEL_PORT_RANGE_MAX', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="29999" />
+              </div>
+            </Row>
+            <Row label="Durée du code d'enrôlement" hint="Durée de validité du code pour connecter un nouveau tunnel">
+              <NumInput value={str('TUNNEL_ENROLLMENT_CODE_TTL_MINUTES')} onChange={v => set('TUNNEL_ENROLLMENT_CODE_TTL_MINUTES', v)} min="1" unit="min" />
+            </Row>
+          </Section>
+
+          {/* SMTP */}
+          <Section id="smtp" icon={Mail} title="Email SMTP" subtitle="Envoi de notifications et alertes par email">
+            <Row label="Serveur SMTP">
+              <Input value={str('SMTP_HOST')} onChange={e => set('SMTP_HOST', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="smtp.gmail.com" />
+            </Row>
+            <Row label="Port">
+              <Input type="number" value={str('SMTP_PORT')} onChange={e => set('SMTP_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="TLS direct (SMTPS)" hint="Activer si le port est 465">
+              <Switch checked={bool('SMTP_SECURE')} onCheckedChange={v => setb('SMTP_SECURE', v)} />
+            </Row>
+            <Row label="Identifiant">
+              <Input value={str('SMTP_USER')} onChange={e => set('SMTP_USER', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Mot de passe">
+              <PasswordInput value={str('SMTP_PASS')} onChange={v => set('SMTP_PASS', v)} />
+            </Row>
+            <Row label="Nom de l'expéditeur">
+              <Input value={str('SMTP_FROM_NAME')} onChange={e => set('SMTP_FROM_NAME', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="NebulaProxy" />
+            </Row>
+            <Row label="Email expéditeur">
+              <Input type="email" value={str('SMTP_FROM_EMAIL')} onChange={e => set('SMTP_FROM_EMAIL', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="noreply@example.com" />
+            </Row>
+            <Row label="Vérifier les certificats TLS" hint="Désactiver uniquement pour les serveurs auto-signés">
+              <Switch checked={bool('SMTP_TLS_REJECT_UNAUTHORIZED')} onCheckedChange={v => setb('SMTP_TLS_REJECT_UNAUTHORIZED', v)} />
+            </Row>
+          </Section>
+
+          {/* SMTP PROXY */}
+          <Section id="smtpproxy" icon={Server} title="Proxy SMTP" subtitle="Relais TCP transparent pour le trafic email entrant">
+            <Row label="Activé">
+              <Switch checked={bool('SMTP_PROXY_ENABLED')} onCheckedChange={v => setb('SMTP_PROXY_ENABLED', v)} />
+            </Row>
+            <Row label="Serveur mail backend">
+              <Input value={str('SMTP_PROXY_BACKEND_HOST')} onChange={e => set('SMTP_PROXY_BACKEND_HOST', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="mail.example.com" />
+            </Row>
+            <Row label="Port backend">
+              <Input type="number" value={str('SMTP_PROXY_BACKEND_PORT')} onChange={e => set('SMTP_PROXY_BACKEND_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Adresse d'écoute">
+              <Input value={str('SMTP_PROXY_BIND_ADDRESS')} onChange={e => set('SMTP_PROXY_BIND_ADDRESS', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="0.0.0.0" />
+            </Row>
+            <Row label="Ports d'écoute" hint="SMTP (25) · Soumission (587) · SMTPS (465)">
+              <div className="flex items-center gap-2">
+                <Input type="number" value={str('SMTP_PROXY_PORT')} onChange={e => set('SMTP_PROXY_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="25" />
+                <Input type="number" value={str('SMTP_PROXY_SUBMISSION_PORT')} onChange={e => set('SMTP_PROXY_SUBMISSION_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="587" />
+                <Input type="number" value={str('SMTP_PROXY_SMTPS_PORT')} onChange={e => set('SMTP_PROXY_SMTPS_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="465" />
+              </div>
+            </Row>
+            <Row label="Logs du proxy SMTP">
+              <Switch checked={bool('SMTP_PROXY_LOGGING_ENABLED')} onCheckedChange={v => setb('SMTP_PROXY_LOGGING_ENABLED', v)} />
+            </Row>
+          </Section>
+
+          {/* DATABASE */}
+          <Section id="database" icon={Database} title="Base de données" subtitle="Connexion PostgreSQL — redémarrage requis après modification">
+            <Row label="Type">
+              <Input value={str('DB_TYPE')} onChange={e => set('DB_TYPE', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Hôte">
+              <Input value={str('DB_HOST')} onChange={e => set('DB_HOST', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Port">
+              <Input type="number" value={str('DB_PORT')} onChange={e => set('DB_PORT', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Nom de la base">
+              <Input value={str('DB_NAME')} onChange={e => set('DB_NAME', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Utilisateur">
+              <Input value={str('DB_USER')} onChange={e => set('DB_USER', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+            </Row>
+            <Row label="Mot de passe">
+              <PasswordInput value={str('DB_PASSWORD')} onChange={v => set('DB_PASSWORD', v)} />
+            </Row>
+          </Section>
+
+          {/* TLS */}
+          <Section id="tls" icon={ShieldCheck} title="Certificats TLS" subtitle="Renouvellement automatique via Let's Encrypt / ACME">
+            <Row label="Email de contact" hint="Utilisé par Let's Encrypt pour les alertes d'expiration">
+              <Input type="email" value={str('ACME_EMAIL')} onChange={e => set('ACME_EMAIL', e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" placeholder="admin@example.com" />
+            </Row>
+          </Section>
+
+          {/* 502 */}
+          <Section id="error502" icon={AlertTriangle} title="Page d'erreur 502" subtitle="Textes affichés quand un backend est inaccessible">
+            {[
+              ['BAD_GATEWAY_HTML_TITLE',  'Titre de l\'onglet navigateur'],
+              ['BAD_GATEWAY_BADGE',       'Texte du badge'],
+              ['BAD_GATEWAY_TITLE',       'Titre principal'],
+              ['BAD_GATEWAY_SUBTITLE',    'Sous-titre'],
+              ['BAD_GATEWAY_MESSAGE',     'Message principal'],
+              ['BAD_GATEWAY_CAUSE_VALUE', 'Cause affichée'],
+              ['BAD_GATEWAY_STATUS_VALUE','Statut HTTP affiché'],
+              ['BAD_GATEWAY_RETRY_BUTTON','Bouton « Réessayer »'],
+              ['BAD_GATEWAY_BACK_BUTTON', 'Bouton « Retour »'],
+              ['BAD_GATEWAY_FOOTER_TEXT', 'Pied de page'],
+            ].map(([key, label]) => (
+              <Row key={key} label={label}>
+                <Input value={str(key)} onChange={e => set(key, e.target.value)} className="bg-admin-bg border-admin-border text-admin-text h-9 text-sm" />
+              </Row>
+            ))}
+          </Section>
+
         </div>
-      </form>
+      </div>
     </div>
   );
 }
