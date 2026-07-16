@@ -1,6 +1,6 @@
 {
   "name": "nebula-proxy-backend",
-  "version": "1.0.0",
+  "version": "3.239",
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",

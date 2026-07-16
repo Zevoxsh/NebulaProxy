@@ -254,7 +254,6 @@ function App() {
         />
         <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="/admin/pin-reset" element={<AdminPinReset />} />
-                <Route path="/admin/ldap" element={<AdminLdap />} />
         <Route path="/status" element={<StatusPage />} />
         {/* Client Routes - with regular Layout */}
         <Route
@@ -334,6 +333,7 @@ function App() {
           <Route path="/admin/url-blocking" element={<AdminUrlBlockingRules />} />
           <Route path="/admin/audit" element={<AdminAudit />} />
           <Route path="/admin/traffic" element={<AdminTraffic />} />
+          <Route path="/admin/ldap" element={<AdminLdap />} />
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
         <Route

@@ -61,6 +61,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useBrandingStore } from '../../store/brandingStore';
+import { APP_VERSION } from '../../version';
 
 export function AdminLayout() {
   const location = useLocation();
@@ -363,6 +364,11 @@ export function AdminLayout() {
                 <div className="flex items-center justify-between">
                   <span className="text-admin-text-subtle">Uptime</span>
                   <span className="text-admin-text font-semibold">{systemStats.uptime}</span>
+                </div>
+                <Separator className="bg-admin-border my-1" />
+                <div className="flex items-center justify-between">
+                  <span className="text-admin-text-subtle">Version</span>
+                  <span className="text-admin-text font-mono font-semibold">v{APP_VERSION}</span>
                 </div>
               </div>
             </div>

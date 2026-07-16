@@ -1,6 +1,6 @@
 {
   "name": "nebula-proxy",
-  "version": "3.0.0",
+  "version": "3.239",
   "description": "Enterprise-grade Reverse Proxy Control Panel with Active Directory Integration",
   "private": true,
   "type": "module",

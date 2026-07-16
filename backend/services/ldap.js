@@ -350,6 +350,78 @@ class LDAPService {
     });
   }
 
+  async syncAllUsers() {
+    return new Promise((resolve, reject) => {
+      const client = this.createClient();
+
+      client.on('error', (err) => {
+        reject(new Error(err.message || 'Connection error'));
+      });
+
+      client.bind(this.config.bindDN, this.config.bindPassword, (err) => {
+        if (err) {
+          client.destroy();
+          return reject(new Error('Bind failed: ' + err.message));
+        }
+
+        // Compatible AD + OpenLDAP
+        const filter = '(|(objectClass=user)(objectClass=inetOrgPerson))';
+        const opts = {
+          filter,
+          scope: 'sub',
+          attributes: ['sAMAccountName', 'uid', 'cn', 'displayName', 'mail', 'memberOf', 'distinguishedName'],
+        };
+
+        client.search(this.config.baseDN, opts, (err, res) => {
+          if (err) {
+            client.unbind();
+            return reject(new Error('Search failed: ' + err.message));
+          }
+
+          const users = [];
+
+          res.on('searchEntry', (entry) => {
+            const obj = entry.pojo.attributes.reduce((acc, attr) => {
+              acc[attr.type] = attr.values.length === 1 ? attr.values[0] : attr.values;
+              return acc;
+            }, {});
+
+            const username = obj.sAMAccountName || obj.uid || obj.cn;
+            if (!username || typeof username !== 'string') return;
+
+            const groups = Array.isArray(obj.memberOf)
+              ? obj.memberOf
+              : obj.memberOf ? [obj.memberOf] : [];
+
+            const isAdmin = this.config.adminGroup && groups.some(g => g === this.config.adminGroup);
+            const isUser = this.config.userGroup && groups.some(g => g === this.config.userGroup);
+
+            if (this.config.requireGroup && this.config.adminGroup && this.config.userGroup) {
+              if (!isAdmin && !isUser) return;
+            }
+
+            users.push({
+              username,
+              displayName: obj.displayName || obj.cn || username,
+              email: obj.mail || '',
+              role: isAdmin ? 'admin' : 'user',
+            });
+          });
+
+          res.on('error', (err) => {
+            client.unbind();
+            reject(new Error('Search error: ' + err.message));
+          });
+
+          res.on('end', () => {
+            client.unbind();
+            resolve(users);
+          });
+        });
+      });
+    });
+  }
+
   async verifyConnection() {
     return new Promise((resolve, reject) => {
       const client = this.createClient();

@@ -55,6 +55,7 @@ import {
 import { AdminButton } from '@/components/admin';
 import NotificationBell from '../features/NotificationBell';
 import { useBrandingStore } from '../../store/brandingStore';
+import { APP_VERSION } from '../../version';
 
 export default function Layout() {
   const location = useLocation();
@@ -294,6 +295,12 @@ export default function Layout() {
           ))}
         </nav>
       </ScrollArea>
+
+      {!collapsed && (
+        <div className="px-4 pb-4">
+          <p className="text-center text-[10px] text-admin-text-subtle font-mono">v{APP_VERSION}</p>
+        </div>
+      )}
     </div>
   );
 

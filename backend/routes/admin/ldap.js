@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { pool } from '../../config/database.js';
 import { config } from '../../config/config.js';
+import { ldapAuth } from '../../services/ldap.js';
 import ldap from 'ldapjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -145,6 +146,62 @@ export async function adminLdapRoutes(fastify, _options) {
       reply.send({ success: true, message: 'Connexion LDAP réussie.' });
     } catch (err) {
       reply.code(400).send({ success: false, error: err.message || 'Connexion échouée' });
+    }
+  });
+
+  // POST sync all LDAP users into the local DB
+  fastify.post('/ldap/sync', {
+    preHandler: fastify.authorize(['admin']),
+  }, async (request, reply) => {
+    if (config.auth.mode !== 'ldap') {
+      return reply.code(400).send({ error: 'Le mode LDAP n\'est pas activé. Activez le mode LDAP et redémarrez le backend avant de synchroniser.' });
+    }
+
+    try {
+      const ldapUsers = await ldapAuth.syncAllUsers();
+
+      let created = 0;
+      let updated = 0;
+      const errors = [];
+
+      for (const ldapUser of ldapUsers) {
+        try {
+          const existing = await pool.query(
+            'SELECT id FROM users WHERE LOWER(username) = LOWER($1)',
+            [ldapUser.username]
+          );
+
+          if (existing.rows.length > 0) {
+            await pool.query(
+              `UPDATE users SET display_name = $1, email = $2, role = $3, updated_at = NOW() WHERE id = $4`,
+              [ldapUser.displayName, ldapUser.email || null, ldapUser.role, existing.rows[0].id]
+            );
+            updated++;
+          } else {
+            const maxDomains = ldapUser.role === 'admin' ? 999 : 5;
+            const maxProxies = ldapUser.role === 'admin' ? 999 : 5;
+            await pool.query(
+              `INSERT INTO users (username, display_name, email, role, max_domains, max_proxies, is_active, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())`,
+              [ldapUser.username, ldapUser.displayName, ldapUser.email || null, ldapUser.role, maxDomains, maxProxies]
+            );
+            created++;
+          }
+        } catch (err) {
+          errors.push(`${ldapUser.username}: ${err.message}`);
+        }
+      }
+
+      reply.send({
+        success: true,
+        total: ldapUsers.length,
+        created,
+        updated,
+        errors,
+      });
+    } catch (err) {
+      fastify.log.error({ err }, 'LDAP sync failed');
+      reply.code(500).send({ error: err.message || 'Synchronisation échouée' });
     }
   });
 

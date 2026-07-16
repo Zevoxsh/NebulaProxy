@@ -104,6 +104,7 @@ export const adminAPI = {
   getLdapConfig: () => api.get('/admin/config/ldap'),
   saveLdapConfig: (data) => api.put('/admin/config/ldap', data),
   testLdapConnection: (data) => api.post('/admin/config/ldap/test', data),
+  syncLdapUsers: () => api.post('/admin/ldap/sync'),
   getUsersForTransfer: () => api.get('/admin/ldap/users-for-transfer'),
   transferDomains: (fromId, toUserId) => api.post(`/admin/users/${fromId}/transfer-domains`, { toUserId }),
 

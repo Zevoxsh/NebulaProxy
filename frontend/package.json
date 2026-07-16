@@ -1,6 +1,6 @@
 {
   "name": "nebula-proxy-frontend",
-  "version": "1.0.0",
+  "version": "3.239",
   "type": "module",
   "scripts": {
     "dev": "vite",

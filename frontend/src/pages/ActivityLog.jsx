@@ -10,14 +10,12 @@ import { useToast } from '@/hooks/use-toast';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function timeAgo(ts) {
+function fmtDateTime(ts) {
   if (!ts) return '—';
-  const diff = Date.now() - new Date(ts).getTime();
-  if (diff < 5000)  return 'just now';
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+  const d = new Date(ts);
+  const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${date} ${time}`;
 }
 
 function fmtMs(ms) {
@@ -535,8 +533,8 @@ export default function ActivityLog() {
                         <tr key={log.id} className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors ${SEVERITY[sev].row}`}>
                           <td className="px-3 py-2"><SeverityBadge severity={sev} /></td>
                           <td className="px-3 py-2">
-                            <span title={new Date(log.timestamp).toLocaleString()} className="text-xs text-white/50 font-mono whitespace-nowrap cursor-default">
-                              {timeAgo(log.timestamp)}
+                            <span className="text-xs text-white/50 font-mono whitespace-nowrap">
+                              {fmtDateTime(log.timestamp)}
                             </span>
                           </td>
                           <td className="px-3 py-2">
@@ -574,7 +572,7 @@ export default function ActivityLog() {
                 <table className="w-full min-w-[720px]">
                   <thead className="border-b border-white/[0.08]">
                     <tr>
-                      {['Time', 'Domain', 'Event', 'Resp. Time', 'HTTP Status', 'Error', 'Previous'].map(h => (
+                      {['Time', 'Domain', 'Event', 'Resp. Time', 'Error'].map(h => (
                         <th key={h} className="text-left text-[10px] uppercase tracking-[0.15em] text-white/40 font-medium px-3 py-2.5">{h}</th>
                       ))}
                     </tr>
@@ -587,8 +585,8 @@ export default function ActivityLog() {
                       return (
                         <tr key={ev.id} className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors ${rowBorder}`}>
                           <td className="px-3 py-2">
-                            <span title={new Date(ev.checked_at).toLocaleString()} className="text-xs text-white/50 font-mono whitespace-nowrap cursor-default">
-                              {timeAgo(ev.checked_at)}
+                            <span className="text-xs text-white/50 font-mono whitespace-nowrap">
+                              {fmtDateTime(ev.checked_at)}
                             </span>
                           </td>
                           <td className="px-3 py-2">
@@ -598,15 +596,9 @@ export default function ActivityLog() {
                             <HealthEventBadge status={ev.status} prevStatus={ev.prev_status} isTransition={ev.isTransition} />
                           </td>
                           <td className="px-3 py-2"><RespTimeBadge ms={ev.response_time} /></td>
-                          <td className="px-3 py-2"><StatusBadge code={ev.status_code} /></td>
                           <td className="px-3 py-2 max-w-[200px]">
                             {ev.error_message
                               ? <span className="text-[10px] text-[#F87171] truncate block" title={ev.error_message}>{ev.error_message}</span>
-                              : <span className="text-xs text-white/20">—</span>}
-                          </td>
-                          <td className="px-3 py-2">
-                            {ev.prev_status
-                              ? <span className={`text-xs font-medium ${ev.prev_status === 'failed' ? 'text-[#F87171]' : 'text-[#34D399]'}`}>{ev.prev_status === 'failed' ? 'DOWN' : 'UP'}</span>
                               : <span className="text-xs text-white/20">—</span>}
                           </td>
                         </tr>

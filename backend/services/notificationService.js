@@ -350,20 +350,11 @@ class NotificationService {
 
     const sendLifecycle = async (notificationPayload) => {
       if (!isFastShutdown) {
-        await this.send(notificationPayload);
+        await this.send(notificationPayload, { channels: ['websocket', 'email'] });
         return;
       }
 
-      await this.send({
-        ...notificationPayload,
-        metadata: {
-          ...(notificationPayload.metadata || {}),
-          fast_shutdown: true
-        }
-      }, {
-        channels: ['webhook'],
-        reloadConfig: false
-      });
+      // Fast shutdown: skip all channels (no webhook for lifecycle events)
     };
 
     if (normalizedState === 'started' || normalizedState === 'startup' || normalizedState === 'online') {

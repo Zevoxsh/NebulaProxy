@@ -23,6 +23,7 @@ import * as activeConnections    from '../services/activeConnectionsRegistry.js'
 import { tunnelRelayService }    from '../services/tunnelRelayService.js';
 import { container }             from '../services/container.js';
 import BackupScheduler           from '../services/backupScheduler.js';
+import { createLogCleanupService } from '../services/logCleanupService.js';
 import { clusterCoordinator }    from '../services/clusterCoordinator.js';
 
 /**
@@ -255,6 +256,14 @@ export async function startupSequence(fastify, config) {
     })().catch(error => {
       fastify.log.error({ error }, 'Backup scheduler init failed');
       step('Backup Scheduler', 'WARN', error.message);
+    }),
+    (async () => {
+      const logCleanup = createLogCleanupService(fastify.log);
+      await logCleanup.start();
+      step('Log Cleanup', 'OK', '30d retention, daily 03:00');
+    })().catch(error => {
+      fastify.log.error({ error }, 'Log cleanup init failed');
+      step('Log Cleanup', 'WARN', error.message);
     })
   ]);
 
