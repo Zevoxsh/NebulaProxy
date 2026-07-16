@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, X, Check, UserPlus, Globe, UserMinus, Users, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Bell, X, Check, Globe, UserPlus, UserMinus, Users, AlertTriangle, CheckCircle } from 'lucide-react';
 import { teamAPI, notificationAPI } from '../../api/client';
-import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function NotificationBell() {
@@ -9,9 +8,7 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [count, setCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
-  const navigate = useNavigate();
 
   const fetchAll = async () => {
     try {
@@ -30,16 +27,12 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 30000); // Refresh every 30s
+    const interval = setInterval(fetchAll, 30000);
     return () => clearInterval(interval);
-     
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      fetchAll();
-    }
-     
+    if (isOpen) fetchAll();
   }, [isOpen]);
 
   const handleAcceptInvitation = async (invitationId) => {
@@ -70,29 +63,41 @@ export default function NotificationBell() {
     }
   };
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationAPI.markAllAsRead();
+      setNotifications(notifications.map(n => ({ ...n, read_at: new Date().toISOString() })));
+      setCount(0);
+    } catch (err) {
+      console.error('Failed to mark all as read:', err);
+    }
+  };
+
   const getNotificationIcon = (actionType) => {
     switch (actionType) {
-      case 'domain_down':   return AlertTriangle;
-      case 'domain_up':     return CheckCircle;
+      case 'domain_down':    return AlertTriangle;
+      case 'domain_up':      return CheckCircle;
       case 'domain_added':
       case 'domain_removed': return Globe;
-      case 'member_joined': return UserPlus;
+      case 'member_joined':  return UserPlus;
       case 'member_removed': return UserMinus;
-      default:              return Users;
+      default:               return Users;
     }
   };
 
   const getNotificationColor = (actionType) => {
     switch (actionType) {
-      case 'domain_down':   return 'text-[#F87171]';
-      case 'domain_up':     return 'text-[#34D399]';
+      case 'domain_down':    return 'text-red-400';
+      case 'domain_up':      return 'text-emerald-400';
       case 'domain_added':
-      case 'member_joined': return 'text-[#34D399]';
+      case 'member_joined':  return 'text-emerald-400';
       case 'domain_removed':
-      case 'member_removed': return 'text-[#F87171]';
-      default:              return 'text-[#C77DFF]';
+      case 'member_removed': return 'text-red-400';
+      default:               return 'text-white/50';
     }
   };
+
+  const hasAny = invitations.length > 0 || notifications.length > 0;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -102,7 +107,7 @@ export default function NotificationBell() {
       >
         <Bell className="w-5 h-5" strokeWidth={1.5} />
         {count > 0 && (
-          <span className="absolute top-1 right-1 w-4 h-4 bg-[#EF4444] text-white text-[9px] font-medium rounded-full flex items-center justify-center">
+          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-medium rounded-full flex items-center justify-center">
             {count > 9 ? '9+' : count}
           </span>
         )}
@@ -111,36 +116,46 @@ export default function NotificationBell() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 w-96 bg-[#161722] border border-white/[0.08] rounded-xl shadow-2xl z-50 animate-scale-in">
-            <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
-              <h3 className="text-sm font-normal text-white">Notifications</h3>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1 text-white/60 hover:text-white hover:bg-white/[0.05] rounded transition-all"
-              >
-                <X className="w-4 h-4" strokeWidth={1.5} />
-              </button>
+          <div className="absolute right-0 top-full mt-2 w-80 bg-[#0f1014] border border-white/[0.08] rounded-xl shadow-2xl z-50 animate-scale-in">
+            <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
+              <h3 className="text-sm font-medium text-white">Notifications</h3>
+              <div className="flex items-center gap-1">
+                {count > 0 && (
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="text-xs text-white/40 hover:text-white/70 px-2 py-1 rounded transition-colors"
+                  >
+                    Tout lire
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 text-white/40 hover:text-white hover:bg-white/[0.05] rounded transition-all"
+                >
+                  <X className="w-4 h-4" strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
 
-            <div className="max-h-96 overflow-y-auto">
+            <div className="max-h-[400px] overflow-y-auto">
               {/* Team Invitations */}
               {invitations.length > 0 && (
-                <div className="border-b border-white/[0.05]">
-                  <div className="p-2 bg-[#9D4EDD]/10">
-                    <p className="text-xs font-medium text-[#C77DFF]">Team Invitations</p>
+                <div className="border-b border-white/[0.06]">
+                  <div className="px-4 py-2 bg-white/[0.02]">
+                    <p className="text-[11px] font-medium text-white/50 uppercase tracking-widest">Invitations</p>
                   </div>
                   {invitations.map(invitation => (
-                    <div key={invitation.id} className="p-4 border-b border-white/[0.05] hover:bg-white/[0.02]">
+                    <div key={invitation.id} className="px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02]">
                       <div className="flex items-start gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-lg bg-[#9D4EDD]/10 flex items-center justify-center flex-shrink-0">
-                          <UserPlus className="w-4 h-4 text-[#C77DFF]" strokeWidth={1.5} />
+                        <div className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center flex-shrink-0">
+                          <UserPlus className="w-3.5 h-3.5 text-white/50" strokeWidth={1.5} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-white/90 mb-1">
-                            <span className="font-medium">{invitation.inviter_username}</span> invited you to join{' '}
-                            <span className="font-medium">{invitation.team_name}</span>
+                          <p className="text-xs text-white/80 leading-relaxed">
+                            <span className="font-medium text-white">{invitation.inviter_username}</span> vous invite dans{' '}
+                            <span className="font-medium text-white">{invitation.team_name}</span>
                           </p>
-                          <p className="text-xs text-white/40">
+                          <p className="text-[11px] text-white/30 mt-1">
                             {formatDistanceToNow(new Date(invitation.created_at), { addSuffix: true })}
                           </p>
                         </div>
@@ -150,13 +165,13 @@ export default function NotificationBell() {
                           onClick={() => handleAcceptInvitation(invitation.id)}
                           className="flex-1 btn-primary text-xs px-3 py-1.5"
                         >
-                          Accept
+                          Accepter
                         </button>
                         <button
                           onClick={() => handleRejectInvitation(invitation.id)}
                           className="flex-1 btn-secondary text-xs px-3 py-1.5"
                         >
-                          Decline
+                          Refuser
                         </button>
                       </div>
                     </div>
@@ -168,38 +183,37 @@ export default function NotificationBell() {
               {notifications.length > 0 && (
                 <>
                   {invitations.length > 0 && (
-                    <div className="p-2 bg-white/[0.02]">
-                      <p className="text-xs font-medium text-white/50">Recent Activity</p>
+                    <div className="px-4 py-2 bg-white/[0.02]">
+                      <p className="text-[11px] font-medium text-white/50 uppercase tracking-widest">Activité</p>
                     </div>
                   )}
                   {notifications.map(notification => {
                     const Icon = getNotificationIcon(notification.action_type);
                     const isUnread = !notification.read_at;
-
                     return (
                       <div
                         key={notification.id}
-                        className={`p-4 border-b border-white/[0.05] hover:bg-white/[0.02] ${isUnread ? 'bg-[#9D4EDD]/5' : ''}`}
+                        className={`px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${
+                          isUnread ? 'bg-white/[0.02]' : ''
+                        }`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-lg bg-white/[0.05] flex items-center justify-center flex-shrink-0 ${getNotificationColor(notification.action_type)}`}>
-                            <Icon className="w-4 h-4" strokeWidth={1.5} />
+                          <div className={`w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center flex-shrink-0 ${getNotificationColor(notification.action_type)}`}>
+                            <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-white/90 leading-relaxed mb-1">{notification.message}</p>
-                            <div className="flex items-center gap-2 text-xs text-white/40">
-                              <span>{notification.team_name}</span>
-                              <span>•</span>
-                              <span>{formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}</span>
-                            </div>
+                            <p className="text-xs text-white/80 leading-relaxed">{notification.message}</p>
+                            <p className="text-[11px] text-white/30 mt-1">
+                              {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                            </p>
                           </div>
                           {isUnread && (
                             <button
                               onClick={() => handleMarkAsRead(notification.id)}
-                              className="p-1 text-white/40 hover:text-[#34D399] hover:bg-[#10B981]/10 rounded transition-all flex-shrink-0"
-                              title="Mark as read"
+                              className="p-1 text-white/30 hover:text-white/70 hover:bg-white/[0.05] rounded transition-all flex-shrink-0"
+                              title="Marquer comme lu"
                             >
-                              <Check className="w-4 h-4" strokeWidth={1.5} />
+                              <Check className="w-3.5 h-3.5" strokeWidth={1.5} />
                             </button>
                           )}
                         </div>
@@ -209,8 +223,11 @@ export default function NotificationBell() {
                 </>
               )}
 
-              {invitations.length === 0 && notifications.length === 0 && (
-                <div className="p-8 text-center text-white/40">No notifications</div>
+              {!hasAny && (
+                <div className="py-12 text-center">
+                  <Bell className="w-6 h-6 text-white/20 mx-auto mb-2" strokeWidth={1.5} />
+                  <p className="text-xs text-white/30">Aucune notification</p>
+                </div>
               )}
             </div>
           </div>
