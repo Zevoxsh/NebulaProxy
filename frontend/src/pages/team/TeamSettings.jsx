@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Upload, Image as ImageIcon, RefreshCw, Bell, Settings as SettingsIcon } from 'lucide-react';
 import { teamAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import { useAuthStore } from '../../store/authStore';
 import { Switch } from '@/components/ui/switch';
 
 export default function TeamSettings({ team, refreshTeam, setError, setSuccess, navigate }) {
+  const { confirm: confirmModal } = useModal();
   const { user } = useAuthStore();
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [teamNotifications, setTeamNotifications] = useState({ notificationsEnabled: false, emailEnabled: false });
@@ -66,7 +68,7 @@ export default function TeamSettings({ team, refreshTeam, setError, setSuccess, 
   };
 
   const handleDeleteLogo = async () => {
-    if (!confirm('Delete team logo?')) return;
+    if (!await confirmModal('Supprimer le logo de l\'équipe ?', { title: 'Supprimer le logo', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       setUploadingLogo(true);
@@ -106,7 +108,7 @@ export default function TeamSettings({ team, refreshTeam, setError, setSuccess, 
   };
 
   const handleDeleteTeam = async () => {
-    if (!confirm('Delete this team? All team domains will become personal domains.')) return;
+    if (!await confirmModal('Supprimer cette équipe ? Tous les domaines deviendront des domaines personnels.', { title: 'Supprimer l\'équipe', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       await teamAPI.delete(team.id);

@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { Plus, AlertCircle, Loader2, Search, Users, X, Copy, ExternalLink, BarChart3, Power, CheckCircle, Link as LinkIcon } from 'lucide-react';
 import { redirectionAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useModal } from '../context/ModalContext';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function Redirections() {
+  const { confirm: confirmModal } = useModal();
   const [redirections, setRedirections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -97,7 +99,7 @@ export default function Redirections() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this redirection?')) return;
+    if (!await confirmModal('Supprimer cette redirection ?', { title: 'Supprimer', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       await redirectionAPI.delete(id);

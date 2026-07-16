@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Clock, GitBranch } from 'lucide-react';
+import { useModal } from '../../context/ModalContext';
 import api from '../../api/client';
 import {
   AdminCard,
@@ -24,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AdminUpdates() {
+  const { confirm: confirmModal } = useModal();
   const [status, setStatus] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -100,7 +102,7 @@ export default function AdminUpdates() {
 
   // Apply update manually
   const handleApplyUpdate = async () => {
-    if (!confirm('Apply update now? This will cause brief downtime (< 30 seconds).')) {
+    if (!await confirmModal('Appliquer la mise à jour maintenant ? Cela causera une courte interruption (< 30 secondes).', { title: 'Appliquer la mise à jour', danger: true, confirmLabel: 'Appliquer' })) {
       return;
     }
 

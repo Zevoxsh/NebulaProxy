@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Users, Edit, Trash2, Power, AlertCircle, UserCheck, Search, UserPlus, Shield } from 'lucide-react';
 import { adminAPI, authAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import { getAvatarUrl } from '../../utils/gravatar';
 import {
   AdminCard,
@@ -39,6 +40,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AdminUsers() {
+  const { confirm: confirmModal } = useModal();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -160,8 +162,7 @@ export default function AdminUsers() {
   };
 
   const handleDeleteUser = async (user) => {
-    const confirmed = window.confirm(`Delete user "${user.username}"? This will remove all domains.`);
-    if (!confirmed) {
+    if (!await confirmModal(`Supprimer l'utilisateur "${user.username}" ? Tous ses domaines seront supprimés.`, { title: 'Supprimer l\'utilisateur', danger: true, confirmLabel: 'Supprimer' })) {
       return;
     }
 

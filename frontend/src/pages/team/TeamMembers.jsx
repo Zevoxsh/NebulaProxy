@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { UserPlus, Crown, Lock, Trash2, X } from 'lucide-react';
 import { teamAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import { useAuthStore } from '../../store/authStore';
 import { getAvatarUrl } from '../../utils/gravatar';
 
 export default function TeamMembers({ team, refreshTeam, setError, setSuccess }) {
+  const { confirm: confirmModal } = useModal();
   const { user } = useAuthStore();
   const [showAddMember, setShowAddMember] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
@@ -88,7 +90,7 @@ export default function TeamMembers({ team, refreshTeam, setError, setSuccess })
   };
 
   const handleRemoveMember = async (memberId) => {
-    if (!confirm('Remove this member from the team?')) return;
+    if (!await confirmModal('Retirer ce membre de l\'équipe ?', { title: 'Retirer le membre', danger: true, confirmLabel: 'Retirer' })) return;
 
     try {
       await teamAPI.removeMember(team.id, memberId);
@@ -129,7 +131,7 @@ export default function TeamMembers({ team, refreshTeam, setError, setSuccess })
   };
 
   const handleCancelInvitation = async (invitationId) => {
-    if (!confirm('Cancel this invitation?')) return;
+    if (!await confirmModal('Annuler cette invitation ?', { title: 'Annuler l\'invitation', confirmLabel: 'Annuler l\'invitation', cancelLabel: 'Garder' })) return;
 
     try {
       await teamAPI.cancelInvitation(team.id, invitationId);

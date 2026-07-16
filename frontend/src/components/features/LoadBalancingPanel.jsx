@@ -5,6 +5,7 @@ import {
   Activity, Shuffle
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 
 const ALGORITHMS = [
   { value: 'round-robin', label: 'Round Robin', description: 'Distribue les requêtes de manière cyclique' },
@@ -16,6 +17,7 @@ const ALGORITHMS = [
 ];
 
 export default function LoadBalancingPanel({ domainId, onUpdate }) {
+  const { confirm: confirmModal } = useModal();
   const [backends, setBackends] = useState([]);
   const [loadBalancingEnabled, setLoadBalancingEnabled] = useState(false);
   const [algorithm, setAlgorithm] = useState('round-robin');
@@ -123,7 +125,7 @@ export default function LoadBalancingPanel({ domainId, onUpdate }) {
   };
 
   const handleDeleteBackend = async (backendId) => {
-    if (!confirm('Are you sure you want to delete this backend?')) return;
+    if (!await confirmModal('Supprimer ce backend ?', { title: 'Supprimer le backend', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       await domainAPI.deleteBackend(domainId, backendId);

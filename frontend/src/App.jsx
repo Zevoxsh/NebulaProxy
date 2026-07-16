@@ -6,6 +6,7 @@ import Layout from './components/layout/Layout';
 import { AdminLayout } from './components/layout/AdminLayout';
 import { Toaster } from './components/ui/toaster';
 import { useBrandingStore } from './store/brandingStore';
+import { ModalProvider } from './context/ModalContext';
 
 // Route-level code splitting — each page becomes its own chunk, fetched only
 // when actually navigated to. Previously all ~40 pages (including every
@@ -233,6 +234,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ModalProvider>
       <RouteMetadata />
       <Toaster />
       <Suspense fallback={
@@ -342,6 +344,7 @@ function App() {
         />
       </Routes>
       </Suspense>
+      </ModalProvider>
     </BrowserRouter>
   );
 }

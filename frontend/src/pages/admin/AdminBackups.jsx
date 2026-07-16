@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useModal } from '../../context/ModalContext';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -362,7 +363,7 @@ function CloudBackupsPanel({ refreshToken }) {
   }, [loadCloudBackups, refreshToken]);
 
   const handleDeleteS3 = async (key) => {
-    if (!window.confirm(`Supprimer ce backup S3 ?\n\n${key}`)) {
+    if (!await confirmModal(`Supprimer ce backup S3 ?\n\n${key}`, { title: 'Supprimer le backup S3', danger: true, confirmLabel: 'Supprimer' })) {
       return;
     }
 
@@ -456,6 +457,7 @@ function CloudBackupsPanel({ refreshToken }) {
 }
 
 export default function AdminBackups() {
+  const { confirm: confirmModal } = useModal();
   const [stats, setStats] = useState(null);
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -635,7 +637,7 @@ export default function AdminBackups() {
   };
 
   const handleRestore = async (filename) => {
-    if (!window.confirm(`Restaurer le backup ${filename} ?\n\nCette action ecrase la base actuelle.`)) {
+    if (!await confirmModal(`Restaurer le backup ${filename} ? Cette action écrase la base actuelle.`, { title: 'Restaurer le backup', danger: true, confirmLabel: 'Restaurer' })) {
       return;
     }
 
@@ -654,7 +656,7 @@ export default function AdminBackups() {
   };
 
   const handleDelete = async (filename) => {
-    if (!window.confirm(`Supprimer le backup ${filename} ?`)) {
+    if (!await confirmModal(`Supprimer le backup ${filename} ?`, { title: 'Supprimer le backup', danger: true, confirmLabel: 'Supprimer' })) {
       return;
     }
 

@@ -3,9 +3,11 @@ import { Key, Plus, Trash2, Copy, Check, AlertCircle, Activity, Loader, X as XIc
 import { apiKeysAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import AccountNav from '../components/features/AccountNav';
+import { useModal } from '../context/ModalContext';
 import { SectionCard, SectionHeader } from '../components/ui/section-card';
 
 export default function ApiKeys() {
+  const { confirm: confirmModal, alert: showAlert } = useModal();
   const { user } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
@@ -65,17 +67,17 @@ export default function ApiKeys() {
 
   const handleCreateKey = async () => {
     try {
-      if (!keyFormData.name || keyFormData.scopes.length === 0) { alert('Name and at least one scope are required.'); return; }
+      if (!keyFormData.name || keyFormData.scopes.length === 0) { await showAlert('Le nom et au moins un scope sont requis.', { title: 'Champs manquants' }); return; }
       const response = await apiKeysAPI.create(keyFormData);
       setNewApiKey(response.data); setShowCreateModal(false); fetchApiKeys();
       setKeyFormData({ name: '', description: '', scopes: [], expiresInDays: 365, rateLimitRpm: 60, rateLimitRph: 3600 });
-    } catch (err) { alert(err.response?.data?.message || 'Failed to create API key'); }
+    } catch (err) { await showAlert(err.response?.data?.message || 'Failed to create API key', { title: 'Erreur', danger: true }); }
   };
 
   const handleDeleteKey = async (keyId) => {
-    if (!confirm('Revoke this API key? This cannot be undone.')) return;
+    if (!await confirmModal('Révoquer cette clé API ? Cette action est irréversible.', { title: 'Révoquer la clé', danger: true, confirmLabel: 'Révoquer' })) return;
     try { await apiKeysAPI.delete(keyId); fetchApiKeys(); if (selectedKey === keyId) { setSelectedKey(null); setUsageStats(null); } }
-    catch { alert('Failed to delete API key'); }
+    catch { await showAlert('Failed to delete API key', { title: 'Erreur', danger: true }); }
   };
 
   const handleCopy = (text) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };

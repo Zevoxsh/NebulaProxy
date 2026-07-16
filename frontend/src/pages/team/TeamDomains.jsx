@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Globe, Shield, Power, Trash2, X } from 'lucide-react';
 import { teamAPI, domainAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import { useAuthStore } from '../../store/authStore';
 
 export default function TeamDomains({ team, refreshTeam, setError, setSuccess }) {
+  const { confirm: confirmModal } = useModal();
   const { user } = useAuthStore();
   const [domains, setDomains] = useState([]);
   const [showAssignDomain, setShowAssignDomain] = useState(false);
@@ -50,7 +52,7 @@ export default function TeamDomains({ team, refreshTeam, setError, setSuccess })
   };
 
   const handleRemoveDomain = async (domainId) => {
-    if (!confirm('Remove domain from team?')) return;
+    if (!await confirmModal('Retirer ce domaine de l\'équipe ?', { title: 'Retirer le domaine', danger: true, confirmLabel: 'Retirer' })) return;
 
     try {
       await teamAPI.removeDomain(team.id, domainId);

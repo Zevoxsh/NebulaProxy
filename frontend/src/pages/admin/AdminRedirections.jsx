@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link2, Edit, Trash2, Power, AlertCircle, Search, TrendingUp, ExternalLink } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import {
   AdminCard,
   AdminCardHeader,
@@ -36,6 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AdminRedirections() {
+  const { confirm: confirmModal } = useModal();
   const [redirections, setRedirections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -106,8 +108,7 @@ export default function AdminRedirections() {
   };
 
   const handleDeleteRedirection = async (redirection) => {
-    const confirmed = window.confirm(`Delete redirection "${redirection.short_code}"?`);
-    if (!confirmed) return;
+    if (!await confirmModal(`Supprimer la redirection "${redirection.short_code}" ?`, { title: 'Supprimer', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       await adminAPI.deleteRedirection(redirection.id);

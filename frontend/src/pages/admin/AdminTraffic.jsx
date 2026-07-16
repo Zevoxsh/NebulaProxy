@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useModal } from '../../context/ModalContext';
 import {
   Radio, RefreshCw, Trash2, Globe, Activity, Wifi, Server,
   MonitorDot, Filter, ChevronDown, Users, BarChart3
@@ -51,6 +52,7 @@ function ProtoBadge({ proto }) {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function AdminTraffic() {
+  const { confirm: confirmModal } = useModal();
   const [connections, setConnections] = useState([]);
   const [stats, setStats]             = useState({ uniqueIps: 0, activeDomains: 0, totalReqs: 0 });
   const [loading, setLoading]         = useState(true);
@@ -90,7 +92,7 @@ export default function AdminTraffic() {
   }, [autoRefresh, fetch]);
 
   const handleClear = async () => {
-    if (!confirm('Effacer toutes les connexions enregistrées ?')) return;
+    if (!await confirmModal('Effacer toutes les connexions enregistrées ?', { title: 'Vider le trafic', danger: true, confirmLabel: 'Effacer' })) return;
     setClearing(true);
     try {
       await adminAPI.clearAdminLiveTraffic();

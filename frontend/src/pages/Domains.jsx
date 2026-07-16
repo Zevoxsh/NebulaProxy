@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, AlertCircle, Loader2, Search, Filter, Users, X, CheckCircle, Shield, RefreshCw, BarChart3, ArrowLeft, Folder, MoreVertical, Edit, Trash2, Settings, Globe } from 'lucide-react';
 import { domainAPI, sslAPI, domainGroupAPI, teamAPI } from '../api/client';
+import { useModal } from '../context/ModalContext';
 import { useAuthStore } from '../store/authStore';
 import DomainForm from '../components/features/DomainForm';
 import GroupBadge from '../components/ui/GroupBadge';
@@ -29,6 +30,7 @@ export default function Domains() {
     { value: 'ssl', label: 'SSL Enabled' },
   ];
 
+  const { confirm: confirmModal, alert: showAlert } = useModal();
   const navigate = useNavigate();
   const { groupId } = useParams();
   const [domains, setDomains] = useState([]);
@@ -325,7 +327,7 @@ export default function Domains() {
     const group = contextMenu.group;
     closeContextMenu();
 
-    if (!confirm(`Are you sure you want to delete the group "${group.name}"? Domains will not be deleted, only ungrouped.`)) {
+    if (!await confirmModal(`Supprimer le groupe "${group.name}" ? Les domaines ne seront pas supprimés, seulement dégroupés.`, { title: 'Supprimer le groupe', danger: true, confirmLabel: 'Supprimer' })) {
       return;
     }
 
@@ -344,7 +346,7 @@ export default function Domains() {
   const handleRemoveDomainFromGroup = async (domainId) => {
     if (!selectedGroup) return;
 
-    if (!confirm('Remove this domain from the group?')) {
+    if (!await confirmModal('Retirer ce domaine du groupe ?', { title: 'Retirer du groupe', confirmLabel: 'Retirer' })) {
       return;
     }
 
@@ -686,7 +688,7 @@ export default function Domains() {
   };
 
   const handleDeleteDomain = async (domain) => {
-    if (!confirm(`Are you sure you want to delete ${domain.hostname}?`)) {
+    if (!await confirmModal(`Supprimer ${domain.hostname} ?`, { title: 'Supprimer le domaine', danger: true, confirmLabel: 'Supprimer' })) {
       return;
     }
 
@@ -824,7 +826,7 @@ export default function Domains() {
       const data = error.response?.data;
       if (data?.reinitiateRequired) {
         handleCloseDNSModal();
-        alert('La session a expiré (redémarrage serveur ou timeout). Relancez le challenge DNS.');
+        showAlert('La session a expiré (redémarrage serveur ou timeout). Relancez le challenge DNS.', { title: 'Session expirée' });
       } else {
         setDnsError(data?.message || 'DNS validation failed');
       }

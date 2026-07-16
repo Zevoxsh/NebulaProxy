@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Shield, Edit, Trash2, Power, AlertCircle, Play } from 'lucide-react';
 import { adminAPI, domainAPI } from '../api/client';
+import { useModal } from '../context/ModalContext';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function UrlBlockingRules() {
+  const { confirm: confirmModal } = useModal();
   const patternTypeOptions = [
     { value: 'exact', label: 'Exact - Exact match' },
     { value: 'prefix', label: 'Prefix - Starts with' },
@@ -239,8 +241,7 @@ export default function UrlBlockingRules() {
   };
 
   const handleDeleteRule = async (rule) => {
-    const confirmed = window.confirm(`Delete blocking rule for pattern "${rule.pattern}"?`);
-    if (!confirmed) return;
+    if (!await confirmModal(`Supprimer la règle de blocage pour le pattern "${rule.pattern}" ?`, { title: 'Supprimer la règle', danger: true, confirmLabel: 'Supprimer' })) return;
 
     try {
       await adminAPI.deleteUrlBlockingRule(rule.id);

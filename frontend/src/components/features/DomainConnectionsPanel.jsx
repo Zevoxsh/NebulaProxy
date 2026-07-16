@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cable, PowerOff, ArrowDown, ArrowUp } from 'lucide-react';
 import { domainAPI } from '../../api/client';
+import { useModal } from '../../context/ModalContext';
 import { FlagImg } from '../../utils/flagCache';
 
 const PROTOCOL_STYLE = {
@@ -87,6 +88,7 @@ function ConnectionRow({ conn, now, onKick, kicking }) {
 // the Joueurs tab (login identity, Minecraft-only). Polls like
 // DomainPlayersPanel/DomainHealthPanel so it stays current while open.
 export default function DomainConnectionsPanel({ domainId }) {
+  const { confirm: confirmModal } = useModal();
   const [connections, setConnections] = useState(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -255,7 +257,7 @@ export default function DomainConnectionsPanel({ domainId }) {
   }, [load]);
 
   const handleKick = useCallback(async (connectionId) => {
-    if (!window.confirm('Fermer cette connexion ?')) return;
+    if (!await confirmModal('Fermer cette connexion ?', { title: 'Fermer la connexion', danger: true, confirmLabel: 'Fermer' })) return;
     setKickingId(connectionId);
     // Optimistic: a kick should be near-instant, don't make the user wait
     // for the next 15s poll to see it gone. The following poll reconciles
