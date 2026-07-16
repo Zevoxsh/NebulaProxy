@@ -45,7 +45,6 @@ const AdminConfigProxy = lazy(() => import('./pages/admin/AdminConfigProxy'));
 const AdminConfigTunnels = lazy(() => import('./pages/admin/AdminConfigTunnels'));
 const AdminConfigDatabase = lazy(() => import('./pages/admin/AdminConfigDatabase'));
 const AdminConfigTls = lazy(() => import('./pages/admin/AdminConfigTls'));
-const AdminConfigErrorPage = lazy(() => import('./pages/admin/AdminConfigErrorPage'));
 const AdminTunnelsList = lazy(() => import('./pages/admin/AdminTunnelsList'));
 const AdminTunnelCreate = lazy(() => import('./pages/admin/AdminTunnelCreate'));
 const AdminTunnelDetail = lazy(() => import('./pages/admin/AdminTunnelDetail'));
@@ -337,7 +336,6 @@ function App() {
           <Route path="/admin/config/tunnels" element={<AdminConfigTunnels />} />
           <Route path="/admin/config/database" element={<AdminConfigDatabase />} />
           <Route path="/admin/config/tls" element={<AdminConfigTls />} />
-          <Route path="/admin/config/error-page" element={<AdminConfigErrorPage />} />
           <Route path="/admin/services" element={<AdminServices />} />
           <Route path="/admin/monitoring" element={<AdminMonitoring />} />
           <Route path="/admin/smtp" element={<AdminSmtp />} />

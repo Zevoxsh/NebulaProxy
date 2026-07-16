@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Lock, Activity, FileText, Globe, Cable, Mail, Server,
-  Database, ShieldCheck, AlertTriangle, ChevronRight, Save, Type
+  Database, ShieldCheck, ChevronRight, Save, Type
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { useBrandingStore } from '../../store/brandingStore';
@@ -17,7 +17,6 @@ const SECTIONS = [
   { path: '/admin/config/tunnels',    icon: Cable,         label: 'Tunnels',                desc: 'Domaine public, plage de ports' },
   { path: '/admin/config/database',   icon: Database,      label: 'Base de données',        desc: 'Connexion PostgreSQL' },
   { path: '/admin/config/tls',        icon: ShieldCheck,   label: 'Certificats TLS',        desc: 'Email ACME pour Let\'s Encrypt' },
-  { path: '/admin/config/error-page', icon: AlertTriangle, label: 'Page d\'erreur 502',     desc: 'Textes de la page backend inaccessible' },
   { path: '/admin/ldap',             icon: Lock,          label: 'Authentification / LDAP', desc: 'Mode de connexion et annuaire LDAP' },
   { path: '/admin/smtp',             icon: Mail,          label: 'Email SMTP',              desc: 'Notifications et alertes par email' },
   { path: '/admin/smtp-proxy',       icon: Server,        label: 'Proxy SMTP',             desc: 'Relais TCP pour le trafic email' },
