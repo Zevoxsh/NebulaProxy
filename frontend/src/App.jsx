@@ -54,6 +54,7 @@ const AdminAudit = lazy(() => import('./pages/admin/AdminAudit'));
 const AdminBackups = lazy(() => import('./pages/admin/AdminBackups'));
 const AdminTraffic = lazy(() => import('./pages/admin/AdminTraffic'));
 const AdminPinReset = lazy(() => import('./pages/admin/AdminPinReset'));
+const AdminLdap = lazy(() => import('./pages/admin/AdminLdap'));
 const StatusPage = lazy(() => import('./pages/StatusPage'));
 
 const ROUTE_METADATA = [
@@ -253,6 +254,7 @@ function App() {
         />
         <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="/admin/pin-reset" element={<AdminPinReset />} />
+                <Route path="/admin/ldap" element={<AdminLdap />} />
         <Route path="/status" element={<StatusPage />} />
         {/* Client Routes - with regular Layout */}
         <Route

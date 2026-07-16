@@ -6,6 +6,7 @@ import notificationRoutes from './notifications.js';
 import { ddosAdminRoutes } from './ddos.js';
 import { trafficAdminRoutes } from './traffic.js';
 import { backupRoutes } from './backups.js';
+import { adminLdapRoutes } from './ldap.js';
 
 export async function adminRoutes(fastify, _options) {
   await fastify.register(adminUserRoutes);
@@ -15,4 +16,5 @@ export async function adminRoutes(fastify, _options) {
   await fastify.register(ddosAdminRoutes,    { prefix: '/ddos' });
   await fastify.register(trafficAdminRoutes, { prefix: '/traffic' });
   await fastify.register(backupRoutes,       { prefix: '/backups' });
+  await fastify.register(adminLdapRoutes);
 }

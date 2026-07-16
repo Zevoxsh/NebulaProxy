@@ -24,7 +24,8 @@ import {
   User,
   Database,
   Radio,
-  Cable
+  Cable,
+  KeyRound
 } from 'lucide-react';
 import {
   Sheet,
@@ -219,6 +220,7 @@ export function AdminLayout() {
       title: 'System',
       items: [
         { path: '/admin/config', icon: Settings, label: 'Configuration' },
+        { path: '/admin/ldap', icon: KeyRound, label: 'LDAP / Auth' },
         { path: '/admin/services', icon: Server, label: 'Services' },
         { path: '/admin/smtp', icon: Mail, label: 'SMTP Setup' },
         { path: '/admin/smtp-proxy', icon: Mail, label: 'SMTP Proxy' },

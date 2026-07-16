@@ -100,6 +100,13 @@ export const adminAPI = {
   getRegistrationConfig: () => api.get('/admin/registration-config'),
   updateRegistrationConfig: (data) => api.put('/admin/registration-config', data),
 
+  // LDAP configuration
+  getLdapConfig: () => api.get('/admin/config/ldap'),
+  saveLdapConfig: (data) => api.put('/admin/config/ldap', data),
+  testLdapConnection: (data) => api.post('/admin/config/ldap/test', data),
+  getUsersForTransfer: () => api.get('/admin/ldap/users-for-transfer'),
+  transferDomains: (fromId, toUserId) => api.post(`/admin/users/${fromId}/transfer-domains`, { toUserId }),
+
   // URL Blocking Rules
   getUrlBlockingRules: (domainId) => api.get(`/url-blocking/domains/${domainId}/rules`),
   createUrlBlockingRule: (domainId, data) => api.post(`/url-blocking/domains/${domainId}/rules`, data),
