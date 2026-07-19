@@ -3,7 +3,6 @@ import cron from 'node-cron';
 import { pool } from '../config/database.js';
 import { databaseBackupService } from './databaseBackupService.js';
 import { s3BackupService } from './s3BackupService.js';
-import { container } from './container.js';
 
 const LOCAL_BACKUP_LIMIT = 3;
 
@@ -175,11 +174,8 @@ class BackupScheduler {
       // Clean old local backups
       await this.cleanOldBackups();
 
-      await this.sendNotification('success', filename);
-
     } catch (error) {
       this.logger.error('Local backup failed:', error);
-      await this.sendNotification('error', null, error.message);
     }
   }
 
@@ -204,10 +200,8 @@ class BackupScheduler {
         this.logger.info(`Removed ${deleted} old backup(s) from S3`);
       }
 
-      await this.sendNotification('success', `${filename} (S3)`);
     } catch (error) {
       this.logger.error('S3 backup failed:', error);
-      await this.sendNotification('error', null, error.message);
     }
   }
 
@@ -222,41 +216,6 @@ class BackupScheduler {
     }
   }
 
-  async sendNotification(status, filename = null, errorMessage = null) {
-    try {
-      // Get notification config
-      const result = await pool.query(
-        'SELECT value FROM system_config WHERE key = $1',
-        ['notification_config']
-      );
-
-      if (result.rows.length === 0) {
-        return;
-      }
-
-      const config = JSON.parse(result.rows[0].value);
-
-      if (!config.alerts.failed_backup_enabled && status === 'error') {
-        return;
-      }
-
-      const message = status === 'success'
-        ? `Automatic backup created successfully: ${filename}`
-        : `Automatic backup failed: ${errorMessage}`;
-
-      // Send via notification service (will be implemented)
-      if (container.has('notifications')) {
-        await container.get('notifications').send({
-          title: status === 'success' ? 'Backup Success' : 'Backup Failed',
-          message,
-          severity: status === 'success' ? 'success' : 'error',
-          event: 'backup'
-        });
-      }
-    } catch (error) {
-      this.logger.error('Failed to send backup notification:', error);
-    }
-  }
 }
 
 export default BackupScheduler;
