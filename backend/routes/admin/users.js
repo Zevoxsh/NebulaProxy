@@ -533,6 +533,9 @@ export async function adminUserRoutes(fastify, _options) {
           teamId: {
             type: ['integer', 'null'],
             minimum: 1
+          },
+          healthCheckEnabled: {
+            type: 'boolean'
           }
         },
         additionalProperties: false
@@ -552,7 +555,8 @@ export async function adminUserRoutes(fastify, _options) {
         sslEnabled,
         isActive,
         ownerId,
-        teamId
+        teamId,
+        healthCheckEnabled
       } = request.body;
 
       const challengeType = request.body.challengeType ?? request.body.acmeChallengeType;
@@ -742,7 +746,8 @@ export async function adminUserRoutes(fastify, _options) {
         isActive,
         userId: ownerId,
         teamId,
-        ...(externalPortUpdateSet ? { externalPort: externalPortUpdate } : {})
+        ...(externalPortUpdateSet ? { externalPort: externalPortUpdate } : {}),
+        ...(healthCheckEnabled !== undefined ? { healthCheckEnabled } : {})
       };
 
       if (challengeType) {

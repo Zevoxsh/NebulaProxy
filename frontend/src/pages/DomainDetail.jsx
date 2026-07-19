@@ -204,7 +204,8 @@ export default function DomainDetail() {
     backendPort: '',
     description: '',
     sslEnabled: false,
-    isActive: true
+    isActive: true,
+    healthCheckEnabled: true
   });
 
   // Live traffic state
@@ -413,7 +414,8 @@ export default function DomainDetail() {
         backendPort: backendPort,
         description: domainData.description || '',
         sslEnabled: domainData.ssl_enabled || false,
-        isActive: domainData.is_active !== undefined ? domainData.is_active : true
+        isActive: domainData.is_active !== undefined ? domainData.is_active : true,
+        healthCheckEnabled: domainData.health_check_enabled !== false
       });
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load domain');
@@ -556,7 +558,8 @@ export default function DomainDetail() {
         backendUrl: fullBackendUrl,
         backendPort: formData.backendPort ? String(formData.backendPort) : undefined,
         description: formData.description,
-        sslEnabled: Boolean(formData.sslEnabled)
+        sslEnabled: Boolean(formData.sslEnabled),
+        healthCheckEnabled: Boolean(formData.healthCheckEnabled)
       });
 
       if (domain && formData.isActive !== domain.is_active) {
@@ -931,6 +934,27 @@ export default function DomainDetail() {
                       <Switch
                         checked={formData.isActive}
                         onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+                      />
+                    </div>
+
+                    {/* Health Check Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.04] border border-white/[0.12] hover:border-white/[0.18] transition-all">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center">
+                          <Activity className="w-4 h-4 text-[#22D3EE]" strokeWidth={1.5} />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-white cursor-pointer block">
+                            Vérification up/down
+                          </label>
+                          <p className="text-xs text-white/50 mt-0.5">
+                            Surveille la disponibilité du backend et envoie des alertes en cas de panne
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={formData.healthCheckEnabled}
+                        onCheckedChange={(checked) => setFormData({ ...formData, healthCheckEnabled: checked })}
                       />
                     </div>
                   </div>

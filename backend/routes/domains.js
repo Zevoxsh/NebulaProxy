@@ -360,6 +360,9 @@ export async function domainRoutes(fastify, _options) {
           minecraftEdition: {
             type: 'string',
             enum: ['java', 'bedrock']
+          },
+          healthCheckEnabled: {
+            type: 'boolean'
           }
         },
         additionalProperties: false
@@ -367,7 +370,7 @@ export async function domainRoutes(fastify, _options) {
     }
   }, async (request, reply) => {
     try {
-      const { hostname, backendUrl, backendPort, description, proxyType = 'http', sslEnabled, externalPort, minecraftEdition = 'java' } = request.body;
+      const { hostname, backendUrl, backendPort, description, proxyType = 'http', sslEnabled, externalPort, minecraftEdition = 'java', healthCheckEnabled } = request.body;
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
 
@@ -490,7 +493,8 @@ export async function domainRoutes(fastify, _options) {
         externalPort: resolvedExternalPort,
         sslEnabled: sslEnabled || false,
         acmeChallengeType: challengeType,
-        minecraftEdition: proxyType === 'minecraft' ? minecraftEdition : undefined
+        minecraftEdition: proxyType === 'minecraft' ? minecraftEdition : undefined,
+        healthCheckEnabled: healthCheckEnabled !== undefined ? healthCheckEnabled : true
       });
 
       await database.createAuditLog({
@@ -599,6 +603,9 @@ export async function domainRoutes(fastify, _options) {
           },
           sslEnabled: {
             type: 'boolean'
+          },
+          healthCheckEnabled: {
+            type: 'boolean'
           }
         },
         additionalProperties: false
@@ -607,7 +614,7 @@ export async function domainRoutes(fastify, _options) {
   }, async (request, reply) => {
     try {
       const domainId = parseInt(request.params.id, 10);
-      const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding } = request.body;
+      const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding, healthCheckEnabled } = request.body;
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
 
@@ -749,7 +756,8 @@ export async function domainRoutes(fastify, _options) {
         proxyType,
         sslEnabled,
         ...(externalPortUpdateSet ? { externalPort: externalPortUpdate } : {}),
-        ...(bungeecordForwarding !== undefined ? { bungeecordForwarding } : {})
+        ...(bungeecordForwarding !== undefined ? { bungeecordForwarding } : {}),
+        ...(healthCheckEnabled !== undefined ? { healthCheckEnabled } : {})
       });
 
       await database.createAuditLog({

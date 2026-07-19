@@ -59,7 +59,8 @@ async createDomain(domainData) {
     proxyType = 'http', sslEnabled,
     externalPort: requestedExternalPort = null,
     acmeChallengeType = 'http-01',
-    minecraftEdition = 'java'
+    minecraftEdition = 'java',
+    healthCheckEnabled = true
   } = domainData;
 
   // Generate external port for TCP/UDP and Minecraft Bedrock
@@ -72,8 +73,8 @@ async createDomain(domainData) {
 
   const sslStatus = sslEnabled ? 'pending' : 'disabled';
   const result = await this.execute(`
-    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, ssl_enabled, ssl_status, acme_challenge_type, minecraft_edition)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, ssl_enabled, ssl_status, acme_challenge_type, minecraft_edition, health_check_enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING id
   `, [
     userId,
@@ -86,7 +87,8 @@ async createDomain(domainData) {
     sslEnabled ? true : false,
     sslStatus,
     acmeChallengeType,
-    proxyType === 'minecraft' ? minecraftEdition : null
+    proxyType === 'minecraft' ? minecraftEdition : null,
+    healthCheckEnabled !== false
   ]);
   return this.getDomainById(result.rows[0].id);
 }
@@ -113,8 +115,9 @@ async generateExternalPort() {
 }
 
 async updateDomain(domainId, updates) {
-  const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding } = updates;
+  const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding, healthCheckEnabled } = updates;
   const hasExternalPort = Object.prototype.hasOwnProperty.call(updates, 'externalPort');
+  const hasHealthCheckEnabled = Object.prototype.hasOwnProperty.call(updates, 'healthCheckEnabled');
 
   let sslStatus = null;
   if (sslEnabled !== undefined && sslEnabled !== null) {
@@ -133,6 +136,7 @@ async updateDomain(domainId, updates) {
       ssl_enabled = COALESCE(?, ssl_enabled),
       ssl_status = COALESCE(?, ssl_status),
       bungeecord_forwarding = COALESCE(?, bungeecord_forwarding),
+      health_check_enabled = CASE WHEN ? THEN ? ELSE health_check_enabled END,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
@@ -146,6 +150,8 @@ async updateDomain(domainId, updates) {
     sslEnabled !== undefined && sslEnabled !== null ? sslEnabled : null,
     sslStatus,
     bungeecordForwarding !== undefined && bungeecordForwarding !== null ? bungeecordForwarding : null,
+    hasHealthCheckEnabled,
+    healthCheckEnabled ?? null,
     domainId
   ]);
   return this.getDomainById(domainId);
@@ -163,7 +169,8 @@ async updateDomainAdmin(domainId, updates) {
     userId,
     teamId,
     acmeChallengeType,
-    isActive
+    isActive,
+    healthCheckEnabled
   } = updates;
 
   const hasExternalPort = Object.prototype.hasOwnProperty.call(updates, 'externalPort');
@@ -171,6 +178,7 @@ async updateDomainAdmin(domainId, updates) {
   const hasUserId = Object.prototype.hasOwnProperty.call(updates, 'userId');
   const hasChallengeType = Object.prototype.hasOwnProperty.call(updates, 'acmeChallengeType');
   const hasIsActive = Object.prototype.hasOwnProperty.call(updates, 'isActive');
+  const hasHealthCheckEnabled = Object.prototype.hasOwnProperty.call(updates, 'healthCheckEnabled');
 
   let sslStatus = null;
   if (sslEnabled !== undefined && sslEnabled !== null) {
@@ -192,6 +200,7 @@ async updateDomainAdmin(domainId, updates) {
       ssl_status = COALESCE(?, ssl_status),
       acme_challenge_type = CASE WHEN ? THEN ? ELSE acme_challenge_type END,
       is_active = CASE WHEN ? THEN ? ELSE is_active END,
+      health_check_enabled = CASE WHEN ? THEN ? ELSE health_check_enabled END,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
@@ -212,6 +221,8 @@ async updateDomainAdmin(domainId, updates) {
     acmeChallengeType ?? null,
     hasIsActive,
     isActive !== undefined && isActive !== null ? isActive : null,
+    hasHealthCheckEnabled,
+    healthCheckEnabled ?? null,
     domainId
   ]);
 

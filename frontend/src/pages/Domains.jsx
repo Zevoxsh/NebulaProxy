@@ -483,7 +483,8 @@ export default function Domains() {
         description: formData.description || undefined,
         proxyType: formData.proxyType,
         sslEnabled: Boolean(formData.sslEnabled),
-        challengeType: formData.challengeType
+        challengeType: formData.challengeType,
+        healthCheckEnabled: Boolean(formData.healthCheckEnabled)
       };
       if (formData.proxyType === 'tcp' || formData.proxyType === 'udp' || formData.proxyType === 'minecraft') {
         let protocol;
@@ -599,7 +600,8 @@ export default function Domains() {
         backendPort: formData.backendPort || undefined,
         description: formData.description || undefined,
         proxyType: formData.proxyType,
-        sslEnabled: Boolean(formData.sslEnabled)
+        sslEnabled: Boolean(formData.sslEnabled),
+        healthCheckEnabled: Boolean(formData.healthCheckEnabled)
       };
       if (formData.proxyType === 'tcp' || formData.proxyType === 'udp' || formData.proxyType === 'minecraft') {
         let protocol;

@@ -215,6 +215,10 @@ class HealthCheckService {
       return;
     }
 
+    // Domain owners can opt a domain out of up/down monitoring entirely —
+    // no probes, no health_checks rows, no up/down notifications for it.
+    domains = domains?.filter((domain) => domain.health_check_enabled !== false);
+
     if (!domains?.length) return;
 
     const concurrency  = config.healthChecks.concurrency || 10;

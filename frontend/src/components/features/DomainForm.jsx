@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info } from 'lucide-react';
+import { X, AlertCircle, Globe, Zap, Radio, Gamepad2, Plus, Trash2, Layers, Server, Info, Activity } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
@@ -75,6 +75,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     challengeType: 'http-01',
     fullChain: '',
     privateKey: '',
+    healthCheckEnabled: true,
     // Load Balancing
     loadBalancingEnabled: false,
     loadBalancingAlgorithm: 'round-robin',
@@ -118,7 +119,8 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
         sslEnabled: domain.ssl_enabled || false,
         challengeType: domain.acme_challenge_type || 'http-01',
         loadBalancingEnabled: domain.load_balancing_enabled || false,
-        loadBalancingAlgorithm: domain.load_balancing_algorithm || 'round-robin'
+        loadBalancingAlgorithm: domain.load_balancing_algorithm || 'round-robin',
+        healthCheckEnabled: domain.health_check_enabled !== false
       }));
 
       // Load existing backends for this domain
@@ -674,6 +676,30 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               disabled={isLoading}
               className="input-futuristic"
             />
+          </div>
+
+          {/* Health Check Toggle */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.08]">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-[#22D3EE] flex-shrink-0" strokeWidth={1.5} />
+                <div>
+                  <label htmlFor="healthCheckEnabled" className="text-xs font-medium text-white cursor-pointer block">
+                    Vérification up/down
+                  </label>
+                  <p className="text-xs text-white/40 mt-0.5">
+                    Surveille la disponibilité du backend et envoie des alertes en cas de panne
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="healthCheckEnabled"
+                name="healthCheckEnabled"
+                checked={formData.healthCheckEnabled}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, healthCheckEnabled: checked }))}
+                disabled={isLoading}
+              />
+            </div>
           </div>
 
           {/* SSL/TLS Toggle */}
