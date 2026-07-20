@@ -320,21 +320,27 @@ class HealthCheckService {
     try {
       const { statusChanged, currentStatus } = await database.upsertDomainHealthStatus(domain.id, status, result.success);
 
-      // Only write to health_checks on an actual state transition (UP→DOWN or DOWN→UP).
-      // Intermediate failing/succeeding checks that haven't crossed the threshold yet
-      // are silently ignored — just last_checked_at is already updated by the upsert.
+      // Record every check (not just transitions) — /status and /monitoring
+      // read the last 10 rows here for uptime%, latency and "last checked",
+      // so a transition-only log makes those go stale/misleading between
+      // transitions. cleanOldHealthChecks() already prunes this to the last
+      // 10 rows per domain, so this stays bounded regardless of interval.
+      await database.recordHealthCheck(
+        domain.id,
+        status,
+        result.responseTime,
+        result.statusCode,
+        result.error
+      );
+
+      // Notifications only fire on an actual state transition (UP→DOWN or DOWN→UP) —
+      // intermediate failing/succeeding checks that haven't crossed the threshold yet
+      // don't page anyone.
       if (statusChanged) {
-        await database.recordHealthCheck(
-          domain.id,
-          status,
-          result.responseTime,
-          result.statusCode,
-          result.error
-        );
         this._notifyOwner(domain, result.success, result.error).catch(() => {});
       }
     } catch (err) {
-      logger.error(`[HealthCheck] DB write failed for domain ${domain.id}:`, err.message);
+      logger.error({ error: err }, `[HealthCheck] DB write failed for domain ${domain.id}:`);
     }
   }
 
