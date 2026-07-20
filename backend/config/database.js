@@ -102,7 +102,7 @@ export const getPgPool = () => {
     pgPool = new Pool(dbConfig.postgresql);
 
     pgPool.on('error', (err) => {
-      logger.error('[DB] Unexpected PostgreSQL pool error:', err);
+      logger.error({ error: err }, '[DB] Unexpected PostgreSQL pool error:');
     });
 
     pgPool.on('connect', () => {

@@ -2,11 +2,20 @@
 import nodemailer from 'nodemailer';
 import { pool } from '../config/database.js';
 
+// Discord enforces ~5 requests / 2s per webhook URL. When several domains
+// sharing one backend flip status in the same health-check cycle, one POST
+// per domain fires back-to-back on the same webhook — this spaces them out
+// so a burst doesn't get some of its requests silently 429'd and dropped.
+const WEBHOOK_MIN_GAP_MS = 450;
+
 class NotificationService {
   constructor(logger, websocketManager) {
     this.logger = logger;
     this.websocketManager = websocketManager;
     this.config = null;
+    // Per-URL send queue: chains sends to the same webhook so they're spaced
+    // out instead of firing concurrently and tripping Discord's rate limit.
+    this._webhookQueues = new Map();
   }
 
   async initialize() {
@@ -25,7 +34,7 @@ class NotificationService {
         this.config = JSON.parse(result.rows[0].value);
       }
     } catch (error) {
-      this.logger.error('Failed to load notification config:', error);
+      this.logger.error({ error }, 'Failed to load notification config:');
     }
   }
 
@@ -121,12 +130,28 @@ class NotificationService {
   }
 
   async sendWebhookToTarget(url, secret, notification, options = {}) {
+    if (!url) return;
+
+    // Chain this send after whatever's already queued for this URL, so a
+    // burst of simultaneous notifications (e.g. several domains sharing one
+    // backend flipping at once) gets spaced out instead of firing all at
+    // once and tripping Discord's per-webhook rate limit.
+    const previous = this._webhookQueues.get(url) || Promise.resolve();
+    const send = previous
+      .catch(() => {}) // a prior failure shouldn't block this one
+      .then(() => this._deliverWebhook(url, secret, notification, options))
+      .then(async (result) => {
+        await new Promise((resolve) => setTimeout(resolve, WEBHOOK_MIN_GAP_MS));
+        return result;
+      });
+
+    this._webhookQueues.set(url, send);
+    return send;
+  }
+
+  async _deliverWebhook(url, secret, notification, options = {}, attempt = 0) {
     try {
       const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 10000;
-      if (!url) {
-        return;
-      }
-
       const payload = this.buildWebhookPayload(notification, url);
       const headers = {
         'Content-Type': 'application/json',
@@ -150,13 +175,24 @@ class NotificationService {
         signal: AbortSignal.timeout(timeoutMs)
       });
 
+      if (response.status === 429 && attempt === 0) {
+        const retryAfterSec = parseFloat(response.headers.get('retry-after'));
+        let retryAfterMs = Number.isFinite(retryAfterSec) ? retryAfterSec * 1000 : null;
+        if (retryAfterMs == null) {
+          retryAfterMs = await response.json().then((b) => (b?.retry_after ? b.retry_after * 1000 : 1000)).catch(() => 1000);
+        }
+        this.logger.warn(`Webhook rate-limited, retrying in ${Math.round(retryAfterMs)}ms`);
+        await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+        return this._deliverWebhook(url, secret, notification, options, attempt + 1);
+      }
+
       if (!response.ok) {
         throw new Error(`Webhook returned ${response.status}`);
       }
 
       this.logger.info('Webhook notification sent');
     } catch (error) {
-      this.logger.error('Failed to send webhook notification:', error);
+      this.logger.error({ error }, 'Failed to send webhook notification:');
     }
   }
 
@@ -244,7 +280,7 @@ class NotificationService {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      this.logger.error('Failed to send WebSocket notification:', error);
+      this.logger.error({ error }, 'Failed to send WebSocket notification:');
     }
   }
 
@@ -298,7 +334,7 @@ class NotificationService {
 
       this.logger.info('Email notification sent');
     } catch (error) {
-      this.logger.error('Failed to send email notification:', error);
+      this.logger.error({ error }, 'Failed to send email notification:');
     }
   }
 

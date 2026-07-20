@@ -59,7 +59,7 @@ class BackupScheduler {
 
       this.logger.info('Backup scheduler initialized');
     } catch (error) {
-      this.logger.error('Failed to initialize backup scheduler:', error);
+      this.logger.error({ error }, 'Failed to initialize backup scheduler:');
     }
   }
 
@@ -128,7 +128,7 @@ class BackupScheduler {
         this.logger.info(`Startup cleanup: removed ${local.deleted} local backup(s), keeping ${LOCAL_BACKUP_LIMIT}`);
       }
     } catch (error) {
-      this.logger.error('Failed immediate local backup cleanup:', error);
+      this.logger.error({ error }, 'Failed immediate local backup cleanup:');
     }
 
     try {
@@ -140,7 +140,7 @@ class BackupScheduler {
         }
       }
     } catch (error) {
-      this.logger.error('Failed immediate S3 backup cleanup:', error);
+      this.logger.error({ error }, 'Failed immediate S3 backup cleanup:');
     }
   }
 
@@ -175,7 +175,7 @@ class BackupScheduler {
       await this.cleanOldBackups();
 
     } catch (error) {
-      this.logger.error('Local backup failed:', error);
+      this.logger.error({ error }, 'Local backup failed:');
     }
   }
 
@@ -201,7 +201,7 @@ class BackupScheduler {
       }
 
     } catch (error) {
-      this.logger.error('S3 backup failed:', error);
+      this.logger.error({ error }, 'S3 backup failed:');
     }
   }
 
@@ -212,7 +212,7 @@ class BackupScheduler {
         this.logger.info(`Removed ${deleted} old local backup(s), keeping ${LOCAL_BACKUP_LIMIT}`);
       }
     } catch (error) {
-      this.logger.error('Failed to clean old backups:', error);
+      this.logger.error({ error }, 'Failed to clean old backups:');
     }
   }
 

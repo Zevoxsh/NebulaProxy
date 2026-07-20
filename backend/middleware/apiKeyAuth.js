@@ -193,7 +193,7 @@ export async function apiKeyAuthMiddleware(request, reply) {
 
     // Continue to route handler
   } catch (error) {
-    logger.error('[API Key Auth] Authentication error:', error);
+    logger.error({ error }, '[API Key Auth] Authentication error:');
     return reply.status(500).send({
       error: 'Internal Server Error',
       message: 'Authentication failed due to server error.'

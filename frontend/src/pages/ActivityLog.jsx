@@ -565,7 +565,7 @@ export default function ActivityLog() {
               <div className="p-12 text-center">
                 <CheckCircle className="w-10 h-10 text-white/20 mx-auto mb-3" strokeWidth={1.5} />
                 <p className="text-sm font-light text-white/50">Aucun événement de disponibilité sur cette période</p>
-                <p className="text-xs text-white/30 mt-1">Les health checks doivent être activés sur vos domaines</p>
+                <p className="text-xs text-white/30 mt-1">Un événement n'apparaît ici que lors d'un changement de statut (up ↔ down) — un domaine down depuis plus longtemps que la période sélectionnée n'y figurera pas</p>
               </div>
             ) : (
               <div className="overflow-x-auto">

@@ -85,7 +85,7 @@ class ConfigManager {
         this.config = this.getDefaultConfig();
       }
     } catch (error) {
-      logger.error('Failed to load config from Redis:', error);
+      logger.error({ error }, 'Failed to load config from Redis:');
       this.config = this.getDefaultConfig();
     }
   }
@@ -134,7 +134,7 @@ class ConfigManager {
 
       return true;
     } catch (error) {
-      logger.error('Failed to save config to Redis:', error);
+      logger.error({ error }, 'Failed to save config to Redis:');
       throw error;
     }
   }

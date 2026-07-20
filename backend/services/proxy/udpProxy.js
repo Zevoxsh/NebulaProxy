@@ -100,7 +100,7 @@ _startUdpProxy(domain) {
       responseHeaders: {},
       errorMessage: upstreamEntry.metrics.errorMessage
     }).catch((err) => {
-      logger.error('[ProxyManager] Failed to write UDP log:', err);
+      logger.error({ error: err }, '[ProxyManager] Failed to write UDP log:');
     });
 
     try {

@@ -110,7 +110,7 @@ class WebSocketManager {
           const data = JSON.parse(message);
           this.handleMessage(ws, data);
         } catch (error) {
-          this.logger.error('Failed to parse WebSocket message:', error);
+          this.logger.error({ error }, 'Failed to parse WebSocket message:');
         }
       });
 
@@ -120,7 +120,7 @@ class WebSocketManager {
       });
 
       ws.on('error', (error) => {
-        this.logger.error('WebSocket error:', error);
+        this.logger.error({ error }, 'WebSocket error:');
         this._cleanup(ws);
       });
 

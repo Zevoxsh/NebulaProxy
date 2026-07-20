@@ -71,7 +71,7 @@ class UrlFilterService {
       // No matching rules - default allow
       return { blocked: false, rule: null, response: null };
     } catch (error) {
-      logger.error('Error checking URL filter:', error);
+      logger.error({ error }, 'Error checking URL filter:');
       // On error, default to allow to prevent service disruption
       return { blocked: false, rule: null, response: null };
     }
@@ -179,7 +179,7 @@ class UrlFilterService {
 
       return result;
     } catch (error) {
-      logger.error(`Invalid regex pattern: ${pattern}`, error);
+      logger.error({ error }, `Invalid regex pattern: ${pattern}`);
       return false;
     }
   }
@@ -239,7 +239,7 @@ class UrlFilterService {
         }
         return cached.rules;
       }
-      logger.error('Error fetching URL blocking rules:', error);
+      logger.error({ error }, 'Error fetching URL blocking rules:');
       return [];
     } finally {
       this.pendingQueries.delete(cacheKey);
@@ -353,7 +353,7 @@ class UrlFilterService {
 
       return { blocked: false, rule: null, response: null };
     } catch (error) {
-      logger.error('Error checking network access rules:', error);
+      logger.error({ error }, 'Error checking network access rules:');
       return { blocked: false, rule: null, response: null };
     }
   }

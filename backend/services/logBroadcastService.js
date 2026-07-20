@@ -76,7 +76,7 @@ class LogBroadcastService {
         this.processBatch();
       }
     } catch (error) {
-      logger.error('Error broadcasting traffic log:', error);
+      logger.error({ error }, 'Error broadcasting traffic log:');
     }
   }
 
@@ -101,7 +101,7 @@ class LogBroadcastService {
         }
       }
     } catch (error) {
-      logger.error('Error processing message batch:', error);
+      logger.error({ error }, 'Error processing message batch:');
     } finally {
       this.isProcessing = false;
     }
@@ -142,7 +142,7 @@ class LogBroadcastService {
         this.processBatch();
       }
     } catch (error) {
-      logger.error('Error broadcasting proxy log:', error);
+      logger.error({ error }, 'Error broadcasting proxy log:');
     }
   }
 

@@ -102,7 +102,7 @@ class RetryWorker {
       await this.performMaintenance();
 
     } catch (error) {
-      logger.error('[RetryWorker] Error processing queue:', error);
+      logger.error({ error }, '[RetryWorker] Error processing queue:');
     } finally {
       this.isRunning = false;
     }
@@ -242,7 +242,7 @@ class RetryWorker {
       }
 
     } catch (error) {
-      logger.error('[RetryWorker] Maintenance error:', error);
+      logger.error({ error }, '[RetryWorker] Maintenance error:');
     }
   }
 
@@ -274,7 +274,7 @@ class RetryWorker {
 
       }
     } catch (error) {
-      logger.error('[RetryWorker] DLQ threshold check failed:', error);
+      logger.error({ error }, '[RetryWorker] DLQ threshold check failed:');
     }
   }
 
@@ -321,7 +321,7 @@ class RetryWorker {
       }
 
     } catch (error) {
-      logger.error('[RetryWorker] Failed to send DLQ alert:', error);
+      logger.error({ error }, '[RetryWorker] Failed to send DLQ alert:');
     }
   }
 }

@@ -190,7 +190,7 @@ async _startSharedMinecraftServer() {
               responseHeaders: {},
               errorMessage
             }).catch(err => {
-              logger.error('[MinecraftProxy] Failed to write log:', err);
+              logger.error({ error: err }, '[MinecraftProxy] Failed to write log:');
             });
           });
         }

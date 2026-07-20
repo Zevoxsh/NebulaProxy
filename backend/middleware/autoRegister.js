@@ -44,7 +44,7 @@ export async function autoRegisterUser(ldapUser) {
     logger.info(`User ${ldapUser.username} auto-registered (role: ${ldapUser.role})`);
     return dbUser;
   } catch (error) {
-    logger.error('Error in autoRegisterUser:', error);
+    logger.error({ error }, 'Error in autoRegisterUser:');
     throw error;
   }
 }

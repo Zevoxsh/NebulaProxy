@@ -56,7 +56,7 @@ class CertificateManager {
       logger.info(`[CertManager] ✗ Aucun certificat disponible pour: ${hostname}`);
       return null;
     } catch (error) {
-      logger.error(`[CertManager] Erreur chargement certificat ${hostname}:`, error);
+      logger.error({ error }, `[CertManager] Erreur chargement certificat ${hostname}:`);
       return null;
     }
   }
@@ -100,7 +100,7 @@ class CertificateManager {
 
       return true;
     } catch (error) {
-      logger.error(`[CertManager] Erreur stockage certificat certbot:`, error);
+      logger.error({ error }, `[CertManager] Erreur stockage certificat certbot:`);
       return false;
     }
   }
@@ -140,7 +140,7 @@ class CertificateManager {
 
       return true;
     } catch (error) {
-      logger.error(`[CertManager] Erreur stockage certificat manuel:`, error);
+      logger.error({ error }, `[CertManager] Erreur stockage certificat manuel:`);
       throw error;
     }
   }
@@ -170,7 +170,7 @@ class CertificateManager {
 
       return { issuer, issuedAt, expiresAt };
     } catch (error) {
-      logger.error('[CertManager] Erreur parsing certificat:', error);
+      logger.error({ error }, '[CertManager] Erreur parsing certificat:');
       return {
         issuer: 'Unknown',
         issuedAt: new Date().toISOString(),
