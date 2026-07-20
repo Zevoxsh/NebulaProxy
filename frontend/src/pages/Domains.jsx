@@ -1,12 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, AlertCircle, Loader2, Search, Filter, Users, X, CheckCircle, Shield, RefreshCw, BarChart3, ArrowLeft, Folder, MoreVertical, Edit, Trash2, Settings, Globe } from 'lucide-react';
-import { domainAPI, sslAPI, domainGroupAPI, teamAPI } from '../api/client';
+import { domainAPI, sslAPI, domainGroupAPI, teamAPI, monitoringAPI } from '../api/client';
 import { useModal } from '../context/ModalContext';
 import { useAuthStore } from '../store/authStore';
 import DomainForm from '../components/features/DomainForm';
 import GroupBadge from '../components/ui/GroupBadge';
 import { Combobox } from '../components/ui/combobox';
+
+const HEALTH_COLORS = {
+  healthy:  '#34D399',
+  degraded: '#FBBF24',
+  down:     '#F87171',
+};
+
+// Small up/down indicator bar shown in front of a domain's hostname —
+// same colors as the Discord/panel notifications (green up, red down).
+function DomainStatusBar({ status }) {
+  if (!status) return null;
+  const color = HEALTH_COLORS[status] || '#6B7280';
+  const label = status === 'down' ? 'Down' : status === 'degraded' ? 'Degraded' : status === 'healthy' ? 'Up' : 'Unknown';
+  return (
+    <span
+      className="inline-block w-1 h-4 rounded-full flex-shrink-0"
+      style={{ backgroundColor: color }}
+      title={label}
+    />
+  );
+}
 
 export default function Domains() {
   const ownershipOptions = [
@@ -34,6 +55,7 @@ export default function Domains() {
   const navigate = useNavigate();
   const { groupId } = useParams();
   const [domains, setDomains] = useState([]);
+  const [healthByDomainId, setHealthByDomainId] = useState({});
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,7 +126,23 @@ export default function Domains() {
     fetchDomains();
     fetchGroups();
     fetchTeams();
+    fetchHealth();
+    const healthInterval = setInterval(fetchHealth, 30_000);
+    return () => clearInterval(healthInterval);
   }, []);
+
+  const fetchHealth = async () => {
+    try {
+      const response = await monitoringAPI.getServices();
+      const map = {};
+      for (const service of response.data.services || []) {
+        map[service.id] = service.status; // 'healthy' | 'degraded' | 'down'
+      }
+      setHealthByDomainId(map);
+    } catch {
+      // non-critical — status bars just stay hidden if this fails
+    }
+  };
 
   // Load group from URL if groupId is present
   useEffect(() => {
@@ -1131,11 +1169,14 @@ export default function Domains() {
                           className="border-b border-white/[0.05] last:border-0 hover:bg-white/[0.02] transition-all cursor-pointer"
                         >
                           <td className="px-3 py-2">
-                            <div>
-                              <p className="text-xs font-normal text-white">{domain.hostname}</p>
-                              {(domain.proxy_type === 'tcp' || domain.proxy_type === 'udp' || domain.proxy_type === 'minecraft') && domain.external_port && (
-                                <p className="text-xs text-[#C77DFF] font-light mt-0.5">Port: {domain.external_port}</p>
-                              )}
+                            <div className="flex items-center gap-2">
+                              <DomainStatusBar status={healthByDomainId[domain.id]} />
+                              <div>
+                                <p className="text-xs font-normal text-white">{domain.hostname}</p>
+                                {(domain.proxy_type === 'tcp' || domain.proxy_type === 'udp' || domain.proxy_type === 'minecraft') && domain.external_port && (
+                                  <p className="text-xs text-[#C77DFF] font-light mt-0.5">Port: {domain.external_port}</p>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-3 py-2">
@@ -1246,7 +1287,10 @@ export default function Domains() {
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <p className="text-xs font-normal text-white mb-1">{domain.hostname}</p>
+                          <p className="text-xs font-normal text-white mb-1 flex items-center gap-2">
+                            <DomainStatusBar status={healthByDomainId[domain.id]} />
+                            {domain.hostname}
+                          </p>
                           <div className="flex items-center gap-2 flex-wrap mb-2">
                             {domain.ownership_type === 'team' && domain.team_name ? (
                               <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#9D4EDD]/15 text-[#C77DFF] rounded-full text-xs font-medium tracking-wide border border-[#9D4EDD]/30">
@@ -1457,6 +1501,7 @@ export default function Domains() {
                       <td className="px-4 py-3">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
+                            <DomainStatusBar status={healthByDomainId[domain.id]} />
                             <p className="text-sm font-medium text-white">{domain.hostname}</p>
                             {domain.ownership_type === 'team' && domain.team_name && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#9D4EDD]/15 text-[#C77DFF] rounded-full text-[9px] font-medium border border-[#9D4EDD]/30">
@@ -1562,7 +1607,10 @@ export default function Domains() {
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
-                      <p className="text-xs font-normal text-white mb-1">{domain.hostname}</p>
+                      <p className="text-xs font-normal text-white mb-1 flex items-center gap-2">
+                        <DomainStatusBar status={healthByDomainId[domain.id]} />
+                        {domain.hostname}
+                      </p>
                       <div className="flex items-center gap-2 flex-wrap mb-2">
                         {domain.ownership_type === 'team' && domain.team_name ? (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#9D4EDD]/15 text-[#C77DFF] rounded-full text-xs font-medium tracking-wide border border-[#9D4EDD]/30">
