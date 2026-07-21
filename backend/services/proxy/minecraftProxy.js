@@ -388,7 +388,16 @@ async _startSharedMinecraftServer() {
           // ── PROXY Protocol v1 ─────────────────────────────────────────
           if (domain.proxy_protocol) {
             const clientPort = clientSocket.remotePort || 0;
-            const serverAddr = targetSocket.localAddress || '0.0.0.0';
+            // NOTE: must normalize like clientIp above — the shared MC server
+            // listens dual-stack ('::'), so the outbound socket to the backend
+            // can report its local address as an IPv4-mapped IPv6 literal
+            // (e.g. "::ffff:10.0.0.5") depending on which family Node/the OS
+            // picked for that particular connection. Left un-normalized, the
+            // PROXY line's address format stops matching its declared family
+            // intermittently, which strict PROXY protocol parsers (Velocity/
+            // BungeeCord) reject outright — the backend just drops the
+            // connection with no log line, and the client sees a timeout.
+            const serverAddr = this._normalizeIp(targetSocket.localAddress) || '0.0.0.0';
             const serverPort = targetSocket.localPort || backendPort;
             const family = clientIp.includes(':') ? 'TCP6' : 'TCP4';
             targetSocket.write(
