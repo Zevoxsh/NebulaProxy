@@ -215,10 +215,6 @@ class HealthCheckService {
       return;
     }
 
-    // Domain owners can opt a domain out of up/down monitoring entirely —
-    // no probes, no health_checks rows, no up/down notifications for it.
-    domains = domains?.filter((domain) => domain.health_check_enabled !== false);
-
     if (!domains?.length) return;
 
     const concurrency  = config.healthChecks.concurrency || 10;
@@ -335,8 +331,9 @@ class HealthCheckService {
 
       // Notifications only fire on an actual state transition (UP→DOWN or DOWN→UP) —
       // intermediate failing/succeeding checks that haven't crossed the threshold yet
-      // don't page anyone.
-      if (statusChanged) {
+      // don't page anyone. health_check_enabled only gates notifications: the
+      // domain still gets probed and its status/history stays live either way.
+      if (statusChanged && domain.health_check_enabled !== false) {
         this._notifyOwner(domain, result.success, result.error).catch(() => {});
       }
     } catch (err) {
