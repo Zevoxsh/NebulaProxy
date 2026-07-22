@@ -7,6 +7,7 @@ import { AdminLayout } from './components/layout/AdminLayout';
 import { Toaster } from './components/ui/toaster';
 import { useBrandingStore } from './store/brandingStore';
 import { ModalProvider } from './context/ModalContext';
+import BackendUnreachableOverlay from './components/BackendUnreachableOverlay';
 
 // Route-level code splitting — each page becomes its own chunk, fetched only
 // when actually navigated to. Previously all ~40 pages (including every
@@ -21,6 +22,7 @@ const DomainDetail = lazy(() => import('./pages/DomainDetail'));
 const Tunnels = lazy(() => import('./pages/Tunnels'));
 const TunnelCreate = lazy(() => import('./pages/TunnelCreate'));
 const TunnelDetail = lazy(() => import('./pages/TunnelDetail'));
+const OutgoingProxy = lazy(() => import('./pages/OutgoingProxy'));
 const Redirections = lazy(() => import('./pages/Redirections'));
 const Teams = lazy(() => import('./pages/Teams'));
 const TeamDetail = lazy(() => import('./pages/TeamDetail'));
@@ -48,6 +50,7 @@ const AdminConfigTls = lazy(() => import('./pages/admin/AdminConfigTls'));
 const AdminTunnelsList = lazy(() => import('./pages/admin/AdminTunnelsList'));
 const AdminTunnelCreate = lazy(() => import('./pages/admin/AdminTunnelCreate'));
 const AdminTunnelDetail = lazy(() => import('./pages/admin/AdminTunnelDetail'));
+const AdminOutgoingProxySettings = lazy(() => import('./pages/admin/AdminOutgoingProxySettings'));
 const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
 const AdminMonitoring = lazy(() => import('./pages/admin/AdminMonitoring'));
 const AdminSmtp = lazy(() => import('./pages/admin/AdminSmtp'));
@@ -98,6 +101,8 @@ const ROUTE_METADATA = [
   { patterns: ['/admin/redirections'], title: 'Admin Redirections', description: 'Manage all redirections across the platform.' },
   { patterns: ['/tunnels', '/tunnels/new', '/tunnels/:id', '/tunnels/:id/ports', '/tunnels/:id/access', '/tunnels/:id/install'], title: 'Tunnels', description: 'Create tunnels, enroll agents, and manage port bindings.' },
   { patterns: ['/admin/tunnels', '/admin/tunnels/new', '/admin/tunnels/:id', '/admin/tunnels/:id/ports', '/admin/tunnels/:id/access', '/admin/tunnels/:id/install'], title: 'Admin Tunnels', description: 'Manage tunnel agents, bindings, and quick connect codes.' },
+  { patterns: ['/outgoing-proxy'], title: 'Proxy sortant', description: 'Create SOCKS5 credentials to route your own tools\' traffic through this server.' },
+  { patterns: ['/admin/outgoing-proxy'], title: 'Admin Proxy sortant', description: 'Configure the outgoing SOCKS5 proxy and manage all users\' credentials.' },
   { patterns: ['/admin/stats'], title: 'Admin Analytics', description: 'View platform analytics and usage stats.' },
   { patterns: ['/admin/config'], title: 'Admin Configuration', description: 'Configure global system settings.' },
   { patterns: ['/admin/services'], title: 'Admin Services', description: 'Manage backend and infrastructure services.' },
@@ -204,44 +209,65 @@ function App() {
 
   // Check authentication on mount (skip for login/register pages to avoid infinite loop)
   useEffect(() => {
-    const verifyAuth = async () => {
-      // Skip auth verification on public pages to prevent redirect loop
-      const publicPaths = ['/login', '/register', '/reset-password', '/admin/pin-reset', '/status'];
-      const currentPath = window.location.pathname;
+    let cancelled = false;
 
-      if (publicPaths.includes(currentPath)) {
-        setAuthChecked(true);
-        return;
-      }
+    // Skip auth verification on public pages to prevent redirect loop
+    const publicPaths = ['/login', '/register', '/reset-password', '/admin/pin-reset', '/status'];
+    const currentPath = window.location.pathname;
 
+    if (publicPaths.includes(currentPath)) {
+      setAuthChecked(true);
+      return undefined;
+    }
+
+    const attempt = async () => {
       try {
         const response = await authAPI.verify();
+        if (cancelled) return;
         if (response.data?.user) {
           setUser(response.data.user);
         }
-      } catch (error) {
-        // Not authenticated or error, clear auth state
-        logout();
-      } finally {
         setAuthChecked(true);
+      } catch (error) {
+        if (cancelled) return;
+
+        if (error.response) {
+          // The server actually answered (401, etc.) — genuinely not authenticated.
+          logout();
+          setAuthChecked(true);
+        } else {
+          // No response at all — backend unreachable (e.g. mid-restart on an
+          // F5). This used to fall into the same catch-all as a real 401 and
+          // log the user out just for refreshing at the wrong moment. The
+          // BackendUnreachableOverlay (driven by the same failed request via
+          // the axios interceptor) is already covering the screen — just
+          // retry quietly until the backend answers instead of bouncing to
+          // /login.
+          setTimeout(attempt, 2000);
+        }
       }
     };
 
-    verifyAuth();
+    attempt();
+    return () => { cancelled = true; };
   }, [setUser, logout]);
 
   // Show loading while checking auth
   if (!authChecked) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0B0C0F] via-[#12131A] to-[#0B0C0F]">
-        <div className="text-slate-400">Loading...</div>
-      </div>
+      <>
+        <BackendUnreachableOverlay />
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0B0C0F] via-[#12131A] to-[#0B0C0F]">
+          <div className="text-slate-400">Loading...</div>
+        </div>
+      </>
     );
   }
 
   return (
     <BrowserRouter>
       <ModalProvider>
+      <BackendUnreachableOverlay />
       <RouteMetadata />
       <Toaster />
       <Suspense fallback={
@@ -296,6 +322,7 @@ function App() {
           <Route path="/tunnels/:id/ports" element={<TunnelDetail />} />
           <Route path="/tunnels/:id/access" element={<TunnelDetail />} />
           <Route path="/tunnels/:id/install" element={<TunnelDetail />} />
+          <Route path="/outgoing-proxy" element={<OutgoingProxy />} />
           <Route path="/redirections" element={<Redirections />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId/*" element={<TeamDetail />} />
@@ -328,6 +355,7 @@ function App() {
           <Route path="/admin/tunnels/:id/ports" element={<AdminTunnelDetail />} />
           <Route path="/admin/tunnels/:id/access" element={<AdminTunnelDetail />} />
           <Route path="/admin/tunnels/:id/install" element={<AdminTunnelDetail />} />
+          <Route path="/admin/outgoing-proxy" element={<AdminOutgoingProxySettings />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/config" element={<AdminConfig />} />
           <Route path="/admin/config/health" element={<AdminConfigHealth />} />

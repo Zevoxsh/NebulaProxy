@@ -321,6 +321,24 @@ export const config = {
     get fromEmail() { return getConfig('SMTP_FROM_EMAIL', ''); }
   },
 
+  // Outgoing SOCKS5 proxy (forward proxy for egress traffic)
+  socks5Proxy: {
+    get enabled() { return getConfig('SOCKS5_PROXY_ENABLED', 'false') === 'true'; },
+    get bindAddress() { return getConfig('SOCKS5_PROXY_BIND_ADDRESS', '0.0.0.0'); },
+    get port() { return parseInt(getConfig('SOCKS5_PROXY_PORT', '1080'), 10); },
+    // Hostname shown to users for connecting (e.g. a DNS-only subdomain
+    // pointed at this server's real IP — proxied/orange-clouded domains
+    // like Cloudflare don't forward arbitrary TCP ports). Falls back to the
+    // request's own Host header when unset, just display info either way.
+    get publicHost() { return String(getConfig('SOCKS5_PROXY_PUBLIC_HOST', '') || '').trim(); },
+    get maxThrottleBps() { return parseInt(getConfig('SOCKS5_PROXY_MAX_THROTTLE_BPS', '10485760'), 10); },
+    get defaultThrottleBps() { return parseInt(getConfig('SOCKS5_PROXY_DEFAULT_THROTTLE_BPS', '2097152'), 10); },
+    get maxConnectionsPerCredential() { return parseInt(getConfig('SOCKS5_PROXY_MAX_CONNECTIONS_PER_CREDENTIAL', '10'), 10); },
+    get maxCredentialsPerUser() { return parseInt(getConfig('SOCKS5_PROXY_MAX_CREDENTIALS_PER_USER', '5'), 10); },
+    get idleTimeoutMs() { return parseInt(getConfig('SOCKS5_PROXY_IDLE_TIMEOUT_MS', '300000'), 10); },
+    get connectTimeoutMs() { return parseInt(getConfig('SOCKS5_PROXY_CONNECT_TIMEOUT_MS', '10000'), 10); }
+  },
+
   // SMTP Proxy (TCP relay with PROXY Protocol v2)
   smtpProxy: {
     get enabled() { return getConfig('SMTP_PROXY_ENABLED', 'false') === 'true'; },

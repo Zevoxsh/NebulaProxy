@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { useConnectivityStore } from '../store/connectivityStore';
 import { toast } from '../hooks/use-toast';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -24,7 +25,15 @@ function showNetworkError(title, description) {
 
 // Response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Any successful round-trip proves the backend is reachable again —
+    // clear the flag immediately rather than waiting for the overlay's own
+    // poll tick.
+    if (useConnectivityStore.getState().backendUnreachable) {
+      useConnectivityStore.getState().setBackendUnreachable(false);
+    }
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
 
@@ -49,14 +58,14 @@ api.interceptors.response.use(
     } else if (status >= 500) {
       showNetworkError('Erreur serveur', 'Le serveur a retourné une erreur. Réessayez dans quelques instants.');
     } else if (!error.response) {
-      // Network error or timeout
-      const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
-      showNetworkError(
-        isTimeout ? 'Délai dépassé' : 'Erreur réseau',
-        isTimeout
-          ? 'La requête a pris trop de temps. Vérifiez votre connexion.'
-          : 'Impossible de joindre le serveur. Vérifiez votre connexion.'
-      );
+      // No response at all — backend unreachable (restart, network blip,
+      // timeout). Drives the app-wide BackendUnreachableOverlay instead of a
+      // red toast per failed request: a container restart triggers many
+      // in-flight/polling requests failing at once, which used to spam this
+      // toast repeatedly and — for the initial auth check specifically —
+      // looked identical to a real 401, logging the user out on an F5 during
+      // a restart. See App.jsx's verifyAuth for the other half of that fix.
+      useConnectivityStore.getState().setBackendUnreachable(true);
     }
 
     return Promise.reject(error);

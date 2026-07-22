@@ -12,6 +12,7 @@ import { logBatchQueue }         from '../services/logBatchQueue.js';
 import { queueService }          from '../services/queueService.js';
 import { retryWorker }           from '../services/retryWorker.js';
 import { smtpProxyService }      from '../services/smtpProxyService.js';
+import { socks5ProxyService }    from '../services/socks5ProxyService.js';
 import updateService             from '../services/updateService.js';
 import { healthCheckService }    from '../services/healthCheckService.js';
 import WebSocketManager          from '../services/websocketManager.js';
@@ -168,7 +169,7 @@ export async function startupSequence(fastify, config) {
     step('Retry Worker', 'SKIP', 'disabled');
   }
 
-  // 6.6. SMTP proxy + Update service in parallel (independent)
+  // 6.6. SMTP proxy + SOCKS5 proxy + Update service in parallel (independent)
   await Promise.allSettled([
     smtpProxyService.start()
       .then(() => {
@@ -183,6 +184,15 @@ export async function startupSequence(fastify, config) {
       .catch(error => {
         fastify.log.error({ error }, 'SMTP proxy start failed');
         step('SMTP Proxy', 'WARN', error.message);
+      }),
+    socks5ProxyService.start()
+      .then(() => {
+        const stats = socks5ProxyService.getStats();
+        step('SOCKS5 Proxy', stats.isRunning ? 'OK' : 'SKIP', stats.isRunning ? `${stats.bindAddress}:${stats.port}` : 'disabled');
+      })
+      .catch(error => {
+        fastify.log.error({ error }, 'SOCKS5 proxy start failed');
+        step('SOCKS5 Proxy', 'WARN', error.message);
       }),
     updateService.init(fastify)
       .then(() => step('Update Service', 'OK', 'initialized'))

@@ -25,6 +25,7 @@ import {
   Database,
   Radio,
   Cable,
+  Network,
   KeyRound
 } from 'lucide-react';
 import {
@@ -213,6 +214,7 @@ export function AdminLayout() {
         { path: '/admin/teams', icon: Shield, label: 'Teams' },
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
         { path: '/admin/tunnels', icon: Cable, label: 'Tunnels' },
+        { path: '/admin/outgoing-proxy', icon: Network, label: 'Proxy sortant' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
         { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }
       ]

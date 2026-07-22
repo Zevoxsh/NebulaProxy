@@ -63,6 +63,19 @@ services:
       INFO: 1
       NETWORKS: 1
       VOLUMES: 1
+      # POST + CONTAINERS alone aren't enough for this proxy — restart/start/stop
+      # are gated by their own explicit flags (default 0), separately from the
+      # generic POST permission. Without these the admin panel's container
+      # restart/start/stop actions fail with a 403 from the socket-proxy itself.
+      ALLOW_RESTARTS: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+    # Backend (network_mode: host) reaches this over localhost for its admin
+    # "Services" restart/start/stop actions — same pattern as socket-proxy-ro's
+    # 127.0.0.1:2375 publish below, on a separate port since ro already owns
+    # 2375. Bound to loopback only, never exposed beyond this host.
+    ports:
+      - "127.0.0.1:2376:2375"
     networks:
       - nebula-net
     deploy:
@@ -170,13 +183,25 @@ services:
       - GIT_DIR=/repo/.git
       - REPO_PATH=/repo
       - COMPOSE_PROJECT_NAME=nebulaproxy
+      # Own container name, so dockerService can detect a self-restart
+      # request and answer the HTTP call before triggering it — `docker
+      # restart` blocks until the container has actually stopped and started
+      # again, so if we awaited that normally for our own container the
+      # response could never be flushed (the process making the call is
+      # inside the container being killed).
+      - CONTAINER_NAME=nebulaproxy-backend
       - REDIS_HOST=127.0.0.1
       - REDIS_PORT=6379
       - DB_HOST=127.0.0.1
       - DB_PORT=5432
       - DB_USER=nebulaproxy
       - DB_NAME=nebulaproxy
+      # 2375 = socket-proxy-ro (read-only, listing/inspect). Mutating actions
+      # (restart/start/stop from the admin "Services" page) need write
+      # access, so those go through dockerService.js's separate rw client
+      # on 2376 = socket-proxy-rw (ALLOW_RESTARTS/START/STOP enabled there).
       - DOCKER_HOST=tcp://127.0.0.1:2375
+      - DOCKER_HOST_RW=tcp://127.0.0.1:2376
       - PUBLIC_IP=${PUBLIC_IP:-}
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - LOG_LEVEL=warn

@@ -9,6 +9,7 @@ import { logger } from '../utils/logger.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { DomainRepository } from '../repositories/domainRepository.js';
 import { TunnelRepository } from '../repositories/tunnelRepository.js';
+import { Socks5Repository } from '../repositories/socks5Repository.js';
 import { SslRepository } from '../repositories/sslRepository.js';
 import { TeamRepository } from '../repositories/teamRepository.js';
 import { AuditLogRepository } from '../repositories/auditLogRepository.js';
@@ -261,6 +262,7 @@ const _repositories = [
   UserRepository,
   DomainRepository,
   TunnelRepository,
+  Socks5Repository,
   SslRepository,
   TeamRepository,
   AuditLogRepository,

@@ -18,3 +18,4 @@ export { smtpProxyAPI } from './smtpProxyAPI';
 export { statusAPI } from './statusAPI';
 export { notificationAPI } from './notificationAPI';
 export { tunnelsAPI } from './tunnelsAPI';
+export { socks5ProxyAPI } from './socks5ProxyAPI';

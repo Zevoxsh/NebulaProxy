@@ -117,13 +117,18 @@ class ConfigManager {
   // Save configuration to Redis
   async saveToRedis(newConfig) {
     try {
-      // Validate config before saving
-      const errors = this.validateConfig(newConfig);
+      // Admin settings sub-pages (Tunnels, SOCKS5 proxy, Health checks, ...)
+      // only ever send the handful of keys they own, not a full config
+      // snapshot — validate the *merged* result so required fields already
+      // present from setup (JWT_SECRET, DB_PASSWORD, ...) aren't flagged as
+      // missing just because this particular save didn't resend them.
+      const merged = { ...this.config, ...newConfig };
+      const errors = this.validateConfig(merged);
       if (errors.length > 0) {
         throw new Error(`Configuration validation failed: ${errors.join(', ')}`);
       }
 
-      this.config = { ...this.config, ...newConfig };
+      this.config = merged;
 
       await this.redis.set(CONFIG_KEY, JSON.stringify(this.config));
 

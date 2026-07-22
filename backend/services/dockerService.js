@@ -50,6 +50,14 @@ function execCommand(command, args = [], options = {}) {
  * @param {string} name - Container name or ID
  * @returns {string} Sanitized name
  */
+// docker CLI defaults to $DOCKER_HOST (socket-proxy-ro: listing/inspect only,
+// no POST). Mutating calls need the write-capable proxy instead — falls back
+// to DOCKER_HOST if DOCKER_HOST_RW isn't set so this doesn't hard-fail in
+// environments that only ever configured one proxy.
+function writeProxyEnv() {
+  return { ...process.env, DOCKER_HOST: process.env.DOCKER_HOST_RW || process.env.DOCKER_HOST };
+}
+
 function sanitizeContainerName(name) {
   if (!name || typeof name !== 'string') {
     throw new Error('Container name must be a non-empty string');
@@ -132,7 +140,7 @@ export class DockerService {
   async startContainer(containerName) {
     try {
       const safeName = sanitizeContainerName(containerName);
-      await execCommand('docker', ['start', safeName]);
+      await execCommand('docker', ['start', safeName], { env: writeProxyEnv() });
       return { success: true, message: `Container ${containerName} started` };
     } catch (error) {
       throw new Error(`Failed to start container: ${error.message}`);
@@ -145,7 +153,7 @@ export class DockerService {
   async stopContainer(containerName) {
     try {
       const safeName = sanitizeContainerName(containerName);
-      await execCommand('docker', ['stop', safeName]);
+      await execCommand('docker', ['stop', safeName], { env: writeProxyEnv() });
       return { success: true, message: `Container ${containerName} stopped` };
     } catch (error) {
       throw new Error(`Failed to stop container: ${error.message}`);
@@ -158,7 +166,7 @@ export class DockerService {
   async restartContainer(containerName) {
     try {
       const safeName = sanitizeContainerName(containerName);
-      await execCommand('docker', ['restart', safeName]);
+      await execCommand('docker', ['restart', safeName], { env: writeProxyEnv() });
       return { success: true, message: `Container ${containerName} restarted` };
     } catch (error) {
       throw new Error(`Failed to restart container: ${error.message}`);

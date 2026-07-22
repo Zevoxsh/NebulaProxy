@@ -19,6 +19,7 @@ import {
   User,
   Activity,
   Cable,
+  Network,
   MapPin,
   ScrollText
 } from 'lucide-react';
@@ -148,6 +149,7 @@ export default function Layout() {
           items: [
             { path: '/domains', icon: Globe, label: 'Domains' },
             { path: '/tunnels', icon: Cable, label: 'Tunnels' },
+            { path: '/outgoing-proxy', icon: Network, label: 'Proxy sortant' },
             { path: '/redirections', icon: LinkIcon, label: 'Redirections' },
             { path: '/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
             { path: '/teams', icon: Users, label: 'Teams' },

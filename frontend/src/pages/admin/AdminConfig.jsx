@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Lock, Activity, FileText, Globe, Cable, Mail, Server,
-  Database, ShieldCheck, ChevronRight, Save, Type
+  Database, ShieldCheck, ChevronRight, Save, Type, Network
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { useBrandingStore } from '../../store/brandingStore';
@@ -20,6 +20,7 @@ const SECTIONS = [
   { path: '/admin/ldap',             icon: Lock,          label: 'Authentification / LDAP', desc: 'Mode de connexion et annuaire LDAP' },
   { path: '/admin/smtp',             icon: Mail,          label: 'Email SMTP',              desc: 'Notifications et alertes par email' },
   { path: '/admin/smtp-proxy',       icon: Server,        label: 'Proxy SMTP',             desc: 'Relais TCP pour le trafic email' },
+  { path: '/admin/outgoing-proxy',   icon: Network,       label: 'Proxy sortant (SOCKS5)', desc: 'Activation, port, limites de bande passante' },
 ];
 
 export default function AdminConfig() {

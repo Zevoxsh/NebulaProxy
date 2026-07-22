@@ -476,6 +476,24 @@ export async function adminSystemRoutes(fastify, _options) {
   }, async (request, reply) => {
     try {
       const { name } = request.params;
+
+      if (name === process.env.CONTAINER_NAME) {
+        // Restarting our own container: `docker restart` blocks until the
+        // container has fully stopped and started again, and this very
+        // process lives inside it — awaiting that normally means the
+        // container gets killed before the HTTP response ever reaches the
+        // client, which always looked like a failure even though the
+        // restart itself succeeded. Reply first, trigger the restart after
+        // a short delay so the response has time to flush.
+        reply.send({ success: true, message: `Container ${name} restart scheduled` });
+        setTimeout(() => {
+          dockerService.restartContainer(name).catch((error) => {
+            fastify.log.error({ error }, 'Self-restart failed');
+          });
+        }, 500);
+        return;
+      }
+
       const result = await dockerService.restartContainer(name);
       reply.send(result);
     } catch (error) {

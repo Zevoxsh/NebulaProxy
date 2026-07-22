@@ -181,7 +181,11 @@ export async function adminConfigRoutes(fastify, _options) {
   }, async (request, reply) => {
     try {
       const cfg = request.body || {};
-      const errors = configManager.validateConfig(cfg);
+      // Same reasoning as ConfigManager.saveToRedis: validate against the
+      // config merged with what's already stored, since narrow settings
+      // sub-pages only submit their own keys, not a full snapshot.
+      await configManager.init();
+      const errors = configManager.validateConfig({ ...configManager.getAll(), ...cfg });
       if (errors.length > 0) {
         return reply.code(400).send({ success: false, errors });
       }
