@@ -84,6 +84,11 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   });
   const [error, setError] = useState('');
   const [_loadingBackends, setLoadingBackends] = useState(false);
+  // Raw text of the "External Listen Port" field — kept separate from
+  // formData.externalPort/externalPortEnd so the user can type a range like
+  // "50000-50100" in one go without the input snapping back mid-edit while
+  // the dash is momentarily unparsed.
+  const [portRangeInput, setPortRangeInput] = useState('');
 
   useEffect(() => {
     if (domain) {
@@ -124,6 +129,11 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
         loadBalancingAlgorithm: domain.load_balancing_algorithm || 'round-robin',
         healthCheckEnabled: domain.health_check_enabled !== false
       }));
+      setPortRangeInput(
+        domain.external_port_end && domain.external_port_end > domain.external_port
+          ? `${domain.external_port}-${domain.external_port_end}`
+          : (domain.external_port ? String(domain.external_port) : '')
+      );
 
       // Load existing backends for this domain
       loadExistingBackends(domain.id);
@@ -170,6 +180,33 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     }
   }, [formData.proxyType, formData.backendPort]);
 
+  // Keep the range-text field in sync whenever we (re-)enter TCP/UDP mode,
+  // e.g. after switching away from Minecraft or loading an existing domain.
+  useEffect(() => {
+    if (formData.proxyType === 'tcp' || formData.proxyType === 'udp') {
+      setPortRangeInput(
+        formData.externalPortEnd
+          ? `${formData.externalPort}-${formData.externalPortEnd}`
+          : (formData.externalPort || '')
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.proxyType]);
+
+  // Parses "50000" or "50000-50100" typed into the single External Listen
+  // Port field for TCP/UDP domains. Kept separate from formData so the input
+  // doesn't snap back mid-edit while the trailing "-" is momentarily unparsed.
+  const handlePortRangeChange = (e) => {
+    const raw = e.target.value;
+    setPortRangeInput(raw);
+    const parts = raw.split('-').map(p => p.trim()).filter(Boolean);
+    setFormData(prev => ({
+      ...prev,
+      externalPort: parts[0] || '',
+      externalPortEnd: parts.length >= 2 ? parts[1] : ''
+    }));
+  };
+
   const selectMcVariant = (variant) => {
     setMcVariant(variant);
     if (variant === 'java') {
@@ -196,7 +233,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     if ((formData.proxyType === 'tcp' || formData.proxyType === 'udp' || formData.proxyType === 'minecraft') && user?.role === 'admin' && formData.externalPort) {
       const portNumber = Number(formData.externalPort);
       if (!Number.isInteger(portNumber)) {
-        setError('External port must be a valid number');
+        setError((formData.proxyType === 'tcp' || formData.proxyType === 'udp')
+          ? 'External Listen Port must be a number, or a range like 50000-50100'
+          : 'External port must be a valid number');
         return;
       }
       if (portNumber < 1 || portNumber > 65535) {
@@ -541,6 +580,11 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
             {formData.proxyType === 'minecraft' && formData.minecraftEdition === 'bedrock' && (
               <p className="text-xs text-white/40 mt-1">Port Bedrock / Geyser par défaut : 19132</p>
             )}
+            {(formData.proxyType === 'tcp' || formData.proxyType === 'udp') && formData.externalPortEnd && (
+              <p className="text-xs text-[#F59E0B]/80 mt-1">
+                Ignoré en mode plage de ports : chaque port {formData.externalPort}-{formData.externalPortEnd} est redirigé vers le même numéro de port sur le backend.
+              </p>
+            )}
           </div>
 
           {/* Load Balancing Section */}
@@ -665,14 +709,18 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
             <div className="mb-3">
               <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
                 External Listen Port
-                <Hint text="The public port that clients connect to on this proxy server. Leave empty to use the shared default port. Set a custom port to give this domain its own dedicated port — required when two TCP/UDP domains need different public ports." />
+                <Hint text={
+                  (formData.proxyType === 'tcp' || formData.proxyType === 'udp')
+                    ? "The public port (or port range) clients connect to. Leave empty for a random port. Type a single port (e.g. 50000) for one dedicated port, or a range (e.g. 50000-50100) to open every port in between — each one is forwarded 1:1 by number to the same port on the backend (the Backend Port field is ignored in range mode)."
+                    : "The public port that clients connect to on this proxy server. Leave empty to use the shared default port. Set a custom port to give this domain its own dedicated port — required when two TCP/UDP domains need different public ports."
+                } />
               </label>
               <input
                 type="text"
                 name="externalPort"
-                value={formData.externalPort}
-                onChange={handleChange}
-                placeholder="Leave empty for auto"
+                value={(formData.proxyType === 'tcp' || formData.proxyType === 'udp') ? portRangeInput : formData.externalPort}
+                onChange={(formData.proxyType === 'tcp' || formData.proxyType === 'udp') ? handlePortRangeChange : handleChange}
+                placeholder={(formData.proxyType === 'tcp' || formData.proxyType === 'udp') ? 'e.g. 50000 or 50000-50100 for a range' : 'Leave empty for auto'}
                 disabled={isLoading}
                 className="input-futuristic"
               />
@@ -681,31 +729,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                   ? 'Admin only. Port partagé 25565 par défaut. Port custom pour routage dédié.'
                   : formData.proxyType === 'minecraft' && formData.minecraftEdition === 'bedrock'
                   ? 'Admin only. Port UDP Bedrock/Geyser — 19132 par défaut.'
-                  : 'Admin only. Range 1-65535. Leave empty for a random port.'}
-              </p>
-            </div>
-          )}
-
-          {/* External Port Range End (Admin only, TCP/UDP only) */}
-          {(formData.proxyType === 'tcp' || formData.proxyType === 'udp') && user?.role === 'admin' && (
-            <div className="mb-3">
-              <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
-                Port Range End (optional)
-                <Hint text="Set this to open a whole range of external ports instead of a single one, e.g. start=50100 end=50200 opens 50100-50200. Each port in the range is forwarded 1:1 by number to the same port on the backend (the Backend Port field above is ignored in range mode). Useful for game servers, voice chat mods, or protocols that need many ports." />
-              </label>
-              <input
-                type="text"
-                name="externalPortEnd"
-                value={formData.externalPortEnd}
-                onChange={handleChange}
-                placeholder="Leave empty for a single port"
-                disabled={isLoading}
-                className="input-futuristic"
-              />
-              <p className="text-xs text-white/40 mt-1">
-                Admin only. Ouvre {formData.externalPort && formData.externalPortEnd
-                  ? `${formData.externalPort}-${formData.externalPortEnd}`
-                  : 'toute une plage'} en interne et en externe, redirigée 1:1 vers le backend (même numéro de port).
+                  : formData.externalPortEnd
+                  ? `Admin only. Ouvre ${formData.externalPort}-${formData.externalPortEnd} en interne et en externe, redirigée 1:1 vers le backend (même numéro de port, le champ Backend Port est ignoré).`
+                  : 'Admin only. Un seul port (1-65535), ou tape une plage type 50000-50100. Vide = port aléatoire.'}
               </p>
             </div>
           )}
