@@ -52,6 +52,7 @@ export default function AdminDomains() {
     backend_url: '',
     backend_port: '',
     external_port: '',
+    external_port_end: '',
     proxy_type: 'http',
     user_id: '',
     team_id: '',
@@ -106,6 +107,7 @@ export default function AdminDomains() {
       backend_url: domain.backend_url || '',
       backend_port: domain.backend_port || '',
       external_port: domain.external_port || '',
+      external_port_end: domain.external_port_end || '',
       proxy_type: domain.proxy_type || 'http',
       user_id: domain.user_id || '',
       team_id: domain.team_id || '',
@@ -143,6 +145,9 @@ export default function AdminDomains() {
         backendUrl: normalizeBackendUrl(editForm.backend_url, editForm.proxy_type),
         backendPort: editForm.backend_port || undefined,
         externalPort: editForm.external_port ? parseInt(editForm.external_port, 10) : undefined,
+        externalPortEnd: editForm.external_port_end
+          ? parseInt(editForm.external_port_end, 10)
+          : (editingDomain?.external_port_end ? null : undefined),
         proxyType: editForm.proxy_type,
         ownerId: parseInt(editForm.user_id, 10),
         teamId: editForm.team_id ? parseInt(editForm.team_id, 10) : null,
@@ -650,6 +655,24 @@ export default function AdminDomains() {
                       />
                       <p className="text-xs text-admin-text-muted">
                         Port exposed to the internet
+                      </p>
+                    </div>
+                  )}
+
+                  {(editForm.proxy_type === 'tcp' || editForm.proxy_type === 'udp') && (
+                    <div className="space-y-2">
+                      <Label className="text-admin-text">Port Range End (optional)</Label>
+                      <Input
+                        type="number"
+                        value={editForm.external_port_end}
+                        onChange={(e) => setEditForm({ ...editForm, external_port_end: e.target.value })}
+                        className="bg-admin-bg border-admin-border text-admin-text"
+                        placeholder="Leave empty for a single port"
+                        min="1"
+                        max="65535"
+                      />
+                      <p className="text-xs text-admin-text-muted">
+                        Opens {editForm.external_port} to {editForm.external_port_end || '…'}, forwarded 1:1 to the same port on the backend
                       </p>
                     </div>
                   )}

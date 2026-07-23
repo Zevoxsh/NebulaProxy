@@ -12,10 +12,35 @@ export class TcpProxy {
 // ==================== TCP PROXY ====================
 
 /**
- * Start a TCP proxy
- * Simple passthrough: client <-> target
+ * Start a TCP proxy for a domain. Opens one listening socket per port in
+ * [external_port, external_port_end] (a single port when external_port_end
+ * isn't set). In range mode, each external port forwards 1:1 by port number
+ * to the same port on the backend host.
  */
   _startTcpProxy(domain) {
+    const startPort = domain.external_port;
+    const endPort = domain.external_port_end || domain.external_port;
+    const isRangeMode = endPort > startPort;
+
+    const servers = [];
+    for (let port = startPort; port <= endPort; port++) {
+      servers.push(this._startTcpProxyListener(domain, port, isRangeMode));
+    }
+
+    this.proxies.set(domain.id, {
+      type: 'tcp',
+      servers,
+      meta: domain
+    });
+
+    return servers;
+  }
+
+/**
+ * Start a single TCP listener on `listenPort` for `domain`.
+ * Simple passthrough: client <-> target
+ */
+  _startTcpProxyListener(domain, listenPort, isRangeMode) {
     const server = net.createServer(async (clientSocket) => {
       let isClosing = false;
       let targetSocket = null;
@@ -68,7 +93,9 @@ export class TcpProxy {
       try {
         const target = await this._selectBackendForDomain(domain, clientIp, 'tcp');
         backendHost = target.hostname;
-        backendPort = target.port;
+        // Range mode: forward 1:1 by port number instead of the domain's
+        // configured backend port.
+        backendPort = isRangeMode ? listenPort : target.port;
         tcpBackendId = target.backendId || null;
         if (tcpBackendId) { const lb = getLb(); if (lb) lb.incrementConnections(tcpBackendId); }
         logger.debug(`[DEBUG:TCP] domain=${domain.id} client=${clientIp} backend selected ${backendHost}:${backendPort} in ${Date.now() - backendSelStart}ms t+${Date.now() - startTime}ms`);
@@ -268,28 +295,22 @@ export class TcpProxy {
     });
 
     server.on('error', (err) => {
-      logger.error(`[TCP Proxy ${domain.id}] Server error:`, err.message);
+      logger.error(`[TCP Proxy ${domain.id}] Server error on port ${listenPort}:`, err.message);
     });
 
     if (this.TCP_MAX_CONNECTIONS > 0) {
       server.maxConnections = this.TCP_MAX_CONNECTIONS;
     }
 
-    const listenArgs = [domain.external_port, '::'];
+    const listenArgs = [listenPort, '::'];
     if (this.TCP_BACKLOG > 0) {
       listenArgs.push(this.TCP_BACKLOG);
     }
     listenArgs.push(() => {
-      logger.info(`[TCP Proxy ${domain.id}] Listening on [::]:${domain.external_port}`);
+      logger.info(`[TCP Proxy ${domain.id}] Listening on [::]:${listenPort}`);
     });
     server.listen(...listenArgs);
 
-  this.proxies.set(domain.id, {
-    type: 'tcp',
-    server,
-    meta: domain
-  });
-
-  return server;
-}
+    return server;
+  }
 }

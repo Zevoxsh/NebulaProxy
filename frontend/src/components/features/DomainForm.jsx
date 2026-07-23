@@ -68,6 +68,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
     backendUrl: '',
     backendPort: '',
     externalPort: '',
+    externalPortEnd: '',
     description: '',
     proxyType: 'http',
     minecraftEdition: 'java',
@@ -113,6 +114,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
         backendUrl: backendUrl,
         backendPort: backendPort,
         externalPort: domain.external_port ? String(domain.external_port) : '',
+        externalPortEnd: domain.external_port_end ? String(domain.external_port_end) : '',
         description: domain.description || '',
         proxyType: domain.proxy_type || 'http',
         minecraftEdition: domain.minecraft_edition || 'java',
@@ -171,9 +173,9 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
   const selectMcVariant = (variant) => {
     setMcVariant(variant);
     if (variant === 'java') {
-      setFormData(prev => ({ ...prev, proxyType: 'minecraft', minecraftEdition: 'java', backendPort: prev.backendPort || '25565', externalPort: '' }));
+      setFormData(prev => ({ ...prev, proxyType: 'minecraft', minecraftEdition: 'java', backendPort: prev.backendPort || '25565', externalPort: '', externalPortEnd: '' }));
     } else {
-      setFormData(prev => ({ ...prev, proxyType: 'minecraft', minecraftEdition: 'bedrock', backendPort: prev.backendPort || '19132', externalPort: prev.externalPort || '19132' }));
+      setFormData(prev => ({ ...prev, proxyType: 'minecraft', minecraftEdition: 'bedrock', backendPort: prev.backendPort || '19132', externalPort: prev.externalPort || '19132', externalPortEnd: '' }));
     }
   };
 
@@ -199,6 +201,26 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
       }
       if (portNumber < 1 || portNumber > 65535) {
         setError('External port must be between 1 and 65535');
+        return;
+      }
+    }
+
+    if ((formData.proxyType === 'tcp' || formData.proxyType === 'udp') && user?.role === 'admin' && formData.externalPortEnd) {
+      const endPortNumber = Number(formData.externalPortEnd);
+      if (!Number.isInteger(endPortNumber)) {
+        setError('Range end port must be a valid number');
+        return;
+      }
+      if (endPortNumber < 1 || endPortNumber > 65535) {
+        setError('Range end port must be between 1 and 65535');
+        return;
+      }
+      if (!formData.externalPort) {
+        setError('Set a start port (External Listen Port) before defining a range end');
+        return;
+      }
+      if (endPortNumber < Number(formData.externalPort)) {
+        setError('Range end port must be greater than or equal to the start port');
         return;
       }
     }
@@ -664,6 +686,30 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
             </div>
           )}
 
+          {/* External Port Range End (Admin only, TCP/UDP only) */}
+          {(formData.proxyType === 'tcp' || formData.proxyType === 'udp') && user?.role === 'admin' && (
+            <div className="mb-3">
+              <label className="text-xs text-white/50 font-medium mb-2 flex items-center uppercase tracking-widest">
+                Port Range End (optional)
+                <Hint text="Set this to open a whole range of external ports instead of a single one, e.g. start=50100 end=50200 opens 50100-50200. Each port in the range is forwarded 1:1 by number to the same port on the backend (the Backend Port field above is ignored in range mode). Useful for game servers, voice chat mods, or protocols that need many ports." />
+              </label>
+              <input
+                type="text"
+                name="externalPortEnd"
+                value={formData.externalPortEnd}
+                onChange={handleChange}
+                placeholder="Leave empty for a single port"
+                disabled={isLoading}
+                className="input-futuristic"
+              />
+              <p className="text-xs text-white/40 mt-1">
+                Admin only. Ouvre {formData.externalPort && formData.externalPortEnd
+                  ? `${formData.externalPort}-${formData.externalPortEnd}`
+                  : 'toute une plage'} en interne et en externe, redirigée 1:1 vers le backend (même numéro de port).
+              </p>
+            </div>
+          )}
+
           {/* Description */}
           <div className="mb-3">
             <label className="text-xs text-white/50 font-medium mb-2 block uppercase tracking-widest">Description</label>
@@ -842,14 +888,14 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
           {formData.proxyType === 'tcp' && mcVariant === null && (
             <div className="mb-3 p-3 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/20">
               <p className="text-xs text-white/70 leading-relaxed">
-                <strong className="text-white">TCP Proxy :</strong> Port auto alloué (1-65535). Les admins peuvent définir un port custom.
+                <strong className="text-white">TCP Proxy :</strong> Port auto alloué (1-65535). Les admins peuvent définir un port custom ou une plage de ports (ex : 50100-50200), ouverte en interne comme en externe et redirigée 1:1 vers le backend.
               </p>
             </div>
           )}
           {formData.proxyType === 'udp' && mcVariant === null && (
             <div className="mb-3 p-3 rounded-lg bg-[#9D4EDD]/10 border border-[#9D4EDD]/20">
               <p className="text-xs text-white/70 leading-relaxed">
-                <strong className="text-white">UDP Proxy :</strong> Port auto alloué (1-65535). Les admins peuvent définir un port custom.
+                <strong className="text-white">UDP Proxy :</strong> Port auto alloué (1-65535). Les admins peuvent définir un port custom ou une plage de ports (ex : 50100-50200), ouverte en interne comme en externe et redirigée 1:1 vers le backend.
               </p>
             </div>
           )}

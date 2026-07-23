@@ -2,7 +2,7 @@
 import { database } from '../../services/database.js';
 import { proxyManager } from '../../services/proxyManager.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../../utils/security.js';
-import { allocateAvailablePort, validateExternalPort } from '../../services/portAllocator.js';
+import { allocateAvailablePort, validateExternalPort, validateExternalPortRange } from '../../services/portAllocator.js';
 import validator from 'validator';
 import crypto from 'crypto';
 import { config } from '../../config/config.js';
@@ -504,6 +504,11 @@ export async function adminUserRoutes(fastify, _options) {
             minimum: 1,
             maximum: 65535
           },
+          externalPortEnd: {
+            type: ['integer', 'null'],
+            minimum: 1,
+            maximum: 65535
+          },
           description: {
             type: 'string',
             maxLength: 500
@@ -552,12 +557,14 @@ export async function adminUserRoutes(fastify, _options) {
         description,
         proxyType,
         externalPort,
+        externalPortEnd,
         sslEnabled,
         isActive,
         ownerId,
         teamId,
         healthCheckEnabled
       } = request.body;
+      const hasExternalPortEnd = Object.prototype.hasOwnProperty.call(request.body, 'externalPortEnd');
 
       const challengeType = request.body.challengeType ?? request.body.acmeChallengeType;
 
@@ -702,6 +709,8 @@ export async function adminUserRoutes(fastify, _options) {
 
       let externalPortUpdateSet = false;
       let externalPortUpdate = undefined;
+      let externalPortEndUpdateSet = false;
+      let externalPortEndUpdate = undefined;
 
       if (nextProxyType === 'http') {
         if (externalPort !== undefined && externalPort !== null) {
@@ -710,9 +719,19 @@ export async function adminUserRoutes(fastify, _options) {
             message: 'External port is only supported for TCP/UDP proxies'
           });
         }
+        if (hasExternalPortEnd && externalPortEnd !== null) {
+          return reply.code(400).send({
+            error: 'Invalid configuration',
+            message: 'Port range (externalPortEnd) is only supported for TCP/UDP proxies'
+          });
+        }
         if (domain.external_port) {
           externalPortUpdateSet = true;
           externalPortUpdate = null;
+        }
+        if (domain.external_port_end) {
+          externalPortEndUpdateSet = true;
+          externalPortEndUpdate = null;
         }
       } else if (nextProxyType === 'tcp' || nextProxyType === 'udp') {
         if (externalPort !== undefined) {
@@ -720,19 +739,42 @@ export async function adminUserRoutes(fastify, _options) {
             externalPortUpdate = await allocateAvailablePort(nextProxyType);
             externalPortUpdateSet = true;
           } else {
-            if (externalPort !== domain.external_port) {
-              try {
-                await validateExternalPort(externalPort, nextProxyType);
-              } catch (e) {
-                return reply.code(e.code).send({ error: e.code === 409 ? 'Port unavailable' : 'Invalid external port', message: e.message });
-              }
-            }
             externalPortUpdate = externalPort;
             externalPortUpdateSet = true;
           }
         } else if (!domain.external_port) {
           externalPortUpdate = await allocateAvailablePort(nextProxyType);
           externalPortUpdateSet = true;
+        }
+
+        // Resolve the final start/end state so a range change (or a plain
+        // start-port change dropping back to single-port mode) is validated
+        // exactly once against what will actually be persisted.
+        const resolvedStart = externalPortUpdateSet ? externalPortUpdate : domain.external_port;
+        const resolvedEnd = hasExternalPortEnd
+          ? externalPortEnd
+          : ((externalPort !== undefined) ? null : domain.external_port_end);
+
+        if (resolvedEnd !== null && resolvedEnd !== undefined) {
+          const rangeChanged = resolvedStart !== domain.external_port || resolvedEnd !== domain.external_port_end;
+          if (rangeChanged) {
+            try {
+              await validateExternalPortRange(resolvedStart, resolvedEnd, nextProxyType, { excludeDomainId: domainId });
+            } catch (e) {
+              return reply.code(e.code).send({ error: e.code === 409 ? 'Port range unavailable' : 'Invalid external port range', message: e.message });
+            }
+          }
+        } else if (externalPort !== undefined && externalPort !== null && externalPort !== domain.external_port) {
+          try {
+            await validateExternalPort(externalPort, nextProxyType);
+          } catch (e) {
+            return reply.code(e.code).send({ error: e.code === 409 ? 'Port unavailable' : 'Invalid external port', message: e.message });
+          }
+        }
+
+        if (hasExternalPortEnd || (externalPort !== undefined)) {
+          externalPortEndUpdate = resolvedEnd;
+          externalPortEndUpdateSet = true;
         }
       }
 
@@ -747,6 +789,7 @@ export async function adminUserRoutes(fastify, _options) {
         userId: ownerId,
         teamId,
         ...(externalPortUpdateSet ? { externalPort: externalPortUpdate } : {}),
+        ...(externalPortEndUpdateSet ? { externalPortEnd: externalPortEndUpdate } : {}),
         ...(healthCheckEnabled !== undefined ? { healthCheckEnabled } : {})
       };
 

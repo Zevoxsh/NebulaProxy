@@ -12,12 +12,13 @@ import { database } from './database.js';
 import {
   AUTOMATIC_EXTERNAL_PORT_MIN,
   MAX_EXTERNAL_PORT,
+  MAX_PORT_RANGE_SIZE,
   MIN_EXTERNAL_PORT,
   getRandomExternalPortCandidate,
   isReservedExternalPort
 } from '../utils/externalPorts.js';
 
-export { MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT };
+export { MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT, MAX_PORT_RANGE_SIZE };
 
 /**
  * Check whether a port is free on the OS level (not already bound by another process).
@@ -87,5 +88,43 @@ export async function validateExternalPort(port, protocol) {
   const available = await isPortAvailable(port, protocol);
   if (assigned || !available) {
     throw Object.assign(new Error(`Port ${port} is already in use`), { code: 409 });
+  }
+}
+
+/**
+ * Validate a user-supplied external port RANGE [startPort, endPort] for
+ * TCP/UDP port-range forwarding. Throws `{ code, message }` on failure so
+ * callers can directly return the appropriate HTTP error.
+ *
+ * @param {number} startPort
+ * @param {number} endPort
+ * @param {'tcp'|'udp'} protocol
+ * @param {{ excludeDomainId?: number }} [options]
+ */
+export async function validateExternalPortRange(startPort, endPort, protocol, options = {}) {
+  if (endPort < startPort) {
+    throw Object.assign(new Error('Range end port must be greater than or equal to the start port'), { code: 400 });
+  }
+  if (startPort < MIN_EXTERNAL_PORT || endPort > MAX_EXTERNAL_PORT) {
+    throw Object.assign(new Error(`External ports must be between ${MIN_EXTERNAL_PORT} and ${MAX_EXTERNAL_PORT}`), { code: 400 });
+  }
+  const rangeSize = endPort - startPort + 1;
+  if (rangeSize > MAX_PORT_RANGE_SIZE) {
+    throw Object.assign(new Error(`Port range cannot span more than ${MAX_PORT_RANGE_SIZE} ports`), { code: 400 });
+  }
+
+  const overlap = await database.isPortRangeAssigned(startPort, endPort, protocol, options.excludeDomainId ?? null);
+  if (overlap) {
+    throw Object.assign(new Error(`Port range ${startPort}-${endPort} overlaps with an existing ${protocol.toUpperCase()} domain`), { code: 409 });
+  }
+
+  for (let port = startPort; port <= endPort; port++) {
+    if (isReservedExternalPort(port)) {
+      throw Object.assign(new Error(`Port ${port} in the requested range is reserved`), { code: 400 });
+    }
+    const available = await isPortAvailable(port, protocol);
+    if (!available) {
+      throw Object.assign(new Error(`Port ${port} in the requested range is already in use`), { code: 409 });
+    }
   }
 }

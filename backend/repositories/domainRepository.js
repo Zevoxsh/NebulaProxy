@@ -58,6 +58,7 @@ async createDomain(domainData) {
     userId, hostname, backendUrl, backendPort, description,
     proxyType = 'http', sslEnabled,
     externalPort: requestedExternalPort = null,
+    externalPortEnd: requestedExternalPortEnd = null,
     acmeChallengeType = 'http-01',
     minecraftEdition = 'java',
     healthCheckEnabled = true
@@ -71,10 +72,16 @@ async createDomain(domainData) {
     externalPort = requestedExternalPort || await this.generateExternalPort();
   }
 
+  // Port ranges only apply to plain tcp/udp domains, and only make sense
+  // alongside an explicit start port.
+  const externalPortEnd = (needsPort && proxyType !== 'minecraft' && requestedExternalPort)
+    ? (requestedExternalPortEnd || null)
+    : null;
+
   const sslStatus = sslEnabled ? 'pending' : 'disabled';
   const result = await this.execute(`
-    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, ssl_enabled, ssl_status, acme_challenge_type, minecraft_edition, health_check_enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO domains (user_id, hostname, backend_url, backend_port, description, proxy_type, external_port, external_port_end, ssl_enabled, ssl_status, acme_challenge_type, minecraft_edition, health_check_enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING id
   `, [
     userId,
@@ -84,6 +91,7 @@ async createDomain(domainData) {
     description || null,
     proxyType,
     externalPort,
+    externalPortEnd,
     sslEnabled ? true : false,
     sslStatus,
     acmeChallengeType,
@@ -115,8 +123,9 @@ async generateExternalPort() {
 }
 
 async updateDomain(domainId, updates) {
-  const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding, healthCheckEnabled } = updates;
+  const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, externalPortEnd, bungeecordForwarding, healthCheckEnabled } = updates;
   const hasExternalPort = Object.prototype.hasOwnProperty.call(updates, 'externalPort');
+  const hasExternalPortEnd = Object.prototype.hasOwnProperty.call(updates, 'externalPortEnd');
   const hasHealthCheckEnabled = Object.prototype.hasOwnProperty.call(updates, 'healthCheckEnabled');
 
   let sslStatus = null;
@@ -133,6 +142,7 @@ async updateDomain(domainId, updates) {
       description = COALESCE(?, description),
       proxy_type = COALESCE(?, proxy_type),
       external_port = CASE WHEN ? THEN ? ELSE external_port END,
+      external_port_end = CASE WHEN ? THEN ? ELSE external_port_end END,
       ssl_enabled = COALESCE(?, ssl_enabled),
       ssl_status = COALESCE(?, ssl_status),
       bungeecord_forwarding = COALESCE(?, bungeecord_forwarding),
@@ -147,6 +157,8 @@ async updateDomain(domainId, updates) {
     proxyType ?? null,
     hasExternalPort,
     externalPort ?? null,
+    hasExternalPortEnd,
+    externalPortEnd ?? null,
     sslEnabled !== undefined && sslEnabled !== null ? sslEnabled : null,
     sslStatus,
     bungeecordForwarding !== undefined && bungeecordForwarding !== null ? bungeecordForwarding : null,
@@ -166,6 +178,7 @@ async updateDomainAdmin(domainId, updates) {
     proxyType,
     sslEnabled,
     externalPort,
+    externalPortEnd,
     userId,
     teamId,
     acmeChallengeType,
@@ -174,6 +187,7 @@ async updateDomainAdmin(domainId, updates) {
   } = updates;
 
   const hasExternalPort = Object.prototype.hasOwnProperty.call(updates, 'externalPort');
+  const hasExternalPortEnd = Object.prototype.hasOwnProperty.call(updates, 'externalPortEnd');
   const hasTeamId = Object.prototype.hasOwnProperty.call(updates, 'teamId');
   const hasUserId = Object.prototype.hasOwnProperty.call(updates, 'userId');
   const hasChallengeType = Object.prototype.hasOwnProperty.call(updates, 'acmeChallengeType');
@@ -196,6 +210,7 @@ async updateDomainAdmin(domainId, updates) {
       description = COALESCE(?, description),
       proxy_type = COALESCE(?, proxy_type),
       external_port = CASE WHEN ? THEN ? ELSE external_port END,
+      external_port_end = CASE WHEN ? THEN ? ELSE external_port_end END,
       ssl_enabled = COALESCE(?, ssl_enabled),
       ssl_status = COALESCE(?, ssl_status),
       acme_challenge_type = CASE WHEN ? THEN ? ELSE acme_challenge_type END,
@@ -215,6 +230,8 @@ async updateDomainAdmin(domainId, updates) {
     proxyType ?? null,
     hasExternalPort,
     externalPort ?? null,
+    hasExternalPortEnd,
+    externalPortEnd ?? null,
     sslEnabled !== undefined && sslEnabled !== null ? sslEnabled : null,
     sslStatus,
     hasChallengeType,

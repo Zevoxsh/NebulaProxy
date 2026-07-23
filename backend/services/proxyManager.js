@@ -145,35 +145,50 @@ import { logger } from '../utils/logger.js';
     return new Promise((resolve) => {
       try {
         if (entry.type === 'udp') {
-          // Close UDP server
-          try {
-            entry.server.close();
-          } catch (e) {
-            logger.error(`[ProxyManager] Error closing UDP server:`, e.message);
-          }
+          // Close every listening socket in the domain's port range (a
+          // single-element array for non-range domains)
+          for (const listener of (entry.servers || [])) {
+            try {
+              listener.server.close();
+            } catch (e) {
+              logger.error(`[ProxyManager] Error closing UDP server:`, e.message);
+            }
 
-          // Close all upstream sockets
-          if (entry.upstreams) {
-            for (const [clientKey, upstreamEntry] of entry.upstreams) {
-              try {
-                if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
-                upstreamEntry.upstream.close();
-              } catch (e) {
-                logger.error(`[ProxyManager] Error closing upstream for ${clientKey}:`, e.message);
+            // Close all upstream sockets for this listener
+            if (listener.upstreams) {
+              for (const [clientKey, upstreamEntry] of listener.upstreams) {
+                try {
+                  if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
+                  upstreamEntry.upstream.close();
+                } catch (e) {
+                  logger.error(`[ProxyManager] Error closing upstream for ${clientKey}:`, e.message);
+                }
               }
             }
           }
 
           this.proxies.delete(id);
-          logger.info(`[ProxyManager] UDP proxy ${id} stopped`);
+          logger.info(`[ProxyManager] UDP proxy ${id} stopped (${(entry.servers || []).length} port(s))`);
           resolve(true);
         } else if (entry.type === 'tcp') {
-          // Close TCP server
-          entry.server.close(() => {
+          // Close every listening socket in the domain's port range
+          const servers = entry.servers || [];
+          let remaining = servers.length;
+          if (remaining === 0) {
             this.proxies.delete(id);
-            logger.info(`[ProxyManager] TCP proxy ${id} stopped`);
             resolve(true);
-          });
+          } else {
+            for (const server of servers) {
+              server.close(() => {
+                remaining -= 1;
+                if (remaining === 0) {
+                  this.proxies.delete(id);
+                  logger.info(`[ProxyManager] TCP proxy ${id} stopped (${servers.length} port(s))`);
+                  resolve(true);
+                }
+              });
+            }
+          }
 
           // Force close after timeout
           setTimeout(() => {

@@ -58,10 +58,35 @@ _buildProxyV2Header(srcIp, srcPort, dstIp, dstPort) {
 }
 
 /**
- * Start a UDP proxy
- * Multi-client bidirectional forwarding with load balancing
+ * Start a UDP proxy for a domain. Opens one listening socket per port in
+ * [external_port, external_port_end] (a single port when external_port_end
+ * isn't set). In range mode, each external port forwards 1:1 by port number
+ * to the same port on the backend host.
  */
 _startUdpProxy(domain) {
+  const startPort = domain.external_port;
+  const endPort = domain.external_port_end || domain.external_port;
+  const isRangeMode = endPort > startPort;
+
+  const servers = [];
+  for (let port = startPort; port <= endPort; port++) {
+    servers.push(this._startUdpProxyListener(domain, port, isRangeMode));
+  }
+
+  this.proxies.set(domain.id, {
+    type: 'udp',
+    servers,
+    meta: domain
+  });
+
+  return servers;
+}
+
+/**
+ * Start a single UDP listener on `listenPort` for `domain`.
+ * Multi-client bidirectional forwarding with load balancing.
+ */
+_startUdpProxyListener(domain, listenPort, isRangeMode) {
   // udp6 (not udp4) so bind(port, '::') below actually works — a udp4
   // socket bound to the IPv6 wildcard address throws EINVAL. udp6 without
   // ipv6Only accepts both IPv4-mapped and IPv6 traffic, same dual-stack
@@ -113,7 +138,7 @@ _startUdpProxy(domain) {
   };
 
     serverSocket.on('error', (err) => {
-      logger.error(`[UDP Proxy ${domain.id}] Server error:`, err.message);
+      logger.error(`[UDP Proxy ${domain.id}] Server error on port ${listenPort}:`, err.message);
   });
 
   serverSocket.on('message', async (msg, rinfo) => {
@@ -159,7 +184,9 @@ _startUdpProxy(domain) {
       try {
         const target = await this._selectBackendForDomain(domain, clientIp, 'udp');
         backendHost = target.hostname;
-        backendPort = target.port;
+        // Range mode: forward 1:1 by port number instead of the domain's
+        // configured backend port.
+        backendPort = isRangeMode ? listenPort : target.port;
       } catch (err) {
         logger.error(`[UDP Proxy ${domain.id}] Backend selection failed:`, err.message);
         return;
@@ -245,18 +272,12 @@ _startUdpProxy(domain) {
 
   // Get initial backend info for logging
   const defaultTarget = loadBalancer.getBackendTarget(domain, null, 'udp');
-  serverSocket.bind(domain.external_port, '::', () => {
+  serverSocket.bind(listenPort, '::', () => {
     const lbStatus = domain.load_balancing_enabled ? ' (load balanced)' : '';
-    logger.info(`[UDP Proxy ${domain.id}] Listening on [::]:${domain.external_port} -> ${defaultTarget.hostname}:${defaultTarget.port}${lbStatus}`);
+    const initialBackendPort = isRangeMode ? listenPort : defaultTarget.port;
+    logger.info(`[UDP Proxy ${domain.id}] Listening on [::]:${listenPort} -> ${defaultTarget.hostname}:${initialBackendPort}${lbStatus}`);
   });
 
-  this.proxies.set(domain.id, {
-    type: 'udp',
-    server: serverSocket,
-    upstreams,
-    meta: domain
-  });
-
-  return serverSocket;
+  return { server: serverSocket, upstreams };
 }
 }

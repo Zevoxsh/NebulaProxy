@@ -3,6 +3,10 @@ export const MIN_EXTERNAL_PORT = 1;
 export const MAX_EXTERNAL_PORT = 65535;
 export const AUTOMATIC_EXTERNAL_PORT_MIN = 1024;
 
+// Caps how many OS-level listening sockets a single domain can open when
+// using port-range forwarding (e.g. 50100-50200).
+export const MAX_PORT_RANGE_SIZE = 500;
+
 export const RESERVED_EXTERNAL_PORT_RANGES = [
   [1, 1023]
 ];

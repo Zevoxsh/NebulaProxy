@@ -546,6 +546,11 @@ export default function Domains() {
       } else {
         payload.externalPort = Number(formData.externalPort);
       }
+      if (user?.role !== 'admin' || !formData.externalPortEnd || (formData.proxyType !== 'tcp' && formData.proxyType !== 'udp')) {
+        delete payload.externalPortEnd;
+      } else {
+        payload.externalPortEnd = Number(formData.externalPortEnd);
+      }
 
       const response = await domainAPI.create(payload);
       const newDomain = response.data?.domain;
@@ -659,6 +664,14 @@ export default function Domains() {
         delete payload.externalPort;
       } else {
         payload.externalPort = Number(formData.externalPort);
+      }
+      if (user?.role === 'admin' && (formData.proxyType === 'tcp' || formData.proxyType === 'udp') && formData.externalPortEnd) {
+        payload.externalPortEnd = Number(formData.externalPortEnd);
+      } else if (user?.role === 'admin' && editingDomain?.external_port_end) {
+        // Range field was cleared in the form — explicitly clear the stored range.
+        payload.externalPortEnd = null;
+      } else {
+        delete payload.externalPortEnd;
       }
 
       const response = await domainAPI.update(editingDomain.id, payload);
@@ -1174,7 +1187,11 @@ export default function Domains() {
                               <div>
                                 <p className="text-xs font-normal text-white">{domain.hostname}</p>
                                 {(domain.proxy_type === 'tcp' || domain.proxy_type === 'udp' || domain.proxy_type === 'minecraft') && domain.external_port && (
-                                  <p className="text-xs text-[#C77DFF] font-light mt-0.5">Port: {domain.external_port}</p>
+                                  <p className="text-xs text-[#C77DFF] font-light mt-0.5">
+                                    Port: {domain.external_port_end && domain.external_port_end > domain.external_port
+                                      ? `${domain.external_port}-${domain.external_port_end}`
+                                      : domain.external_port}
+                                  </p>
                                 )}
                               </div>
                             </div>
@@ -1511,7 +1528,11 @@ export default function Domains() {
                             )}
                           </div>
                           {(domain.proxy_type === 'tcp' || domain.proxy_type === 'udp' || domain.proxy_type === 'minecraft') && domain.external_port && (
-                            <p className="text-xs text-[#C77DFF] font-light">Port: {domain.external_port}</p>
+                            <p className="text-xs text-[#C77DFF] font-light">
+                              Port: {domain.external_port_end && domain.external_port_end > domain.external_port
+                                ? `${domain.external_port}-${domain.external_port_end}`
+                                : domain.external_port}
+                            </p>
                           )}
                         </div>
                       </td>

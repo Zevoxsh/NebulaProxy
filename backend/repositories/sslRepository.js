@@ -169,6 +169,22 @@ async isPortAssigned(port, protocol) {
   return Number(result?.count || 0) > 0;
 }
 
+// Interval-overlap check: catches conflicts against both existing single
+// ports (external_port_end IS NULL) and existing ranges.
+async isPortRangeAssigned(startPort, endPort, protocol, excludeDomainId = null) {
+  const params = [protocol, endPort, startPort];
+  let query = `
+    SELECT COUNT(*) as count FROM domains
+    WHERE proxy_type = ? AND external_port <= ? AND COALESCE(external_port_end, external_port) >= ?
+  `;
+  if (excludeDomainId) {
+    query += ' AND id != ?';
+    params.push(excludeDomainId);
+  }
+  const result = await this.queryOne(query, params);
+  return Number(result?.count || 0) > 0;
+}
+
 // ===== DNS ACME CHALLENGE METHODS =====
 
 // Store DNS challenge details when initiated

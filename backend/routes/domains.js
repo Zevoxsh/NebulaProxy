@@ -8,7 +8,7 @@ import { multiProxySyncService } from '../services/multiProxySyncService.js';
 import { redisService } from '../services/redis.js';
 import { validateBackendUrlWithDNS, sanitizeHostname } from '../utils/security.js';
 import { PermissionChecker } from '../utils/permissions.js';
-import { allocateAvailablePort, isPortAvailable, validateExternalPort, MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT } from '../services/portAllocator.js';
+import { allocateAvailablePort, isPortAvailable, validateExternalPort, validateExternalPortRange, MIN_EXTERNAL_PORT, MAX_EXTERNAL_PORT } from '../services/portAllocator.js';
 import net from 'net';
 import validator from 'validator';
 import { logger } from '../utils/logger.js';
@@ -338,6 +338,11 @@ export async function domainRoutes(fastify, _options) {
             minimum: 1,
             maximum: 65535
           },
+          externalPortEnd: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 65535
+          },
           description: {
             type: 'string',
             maxLength: 500
@@ -370,11 +375,18 @@ export async function domainRoutes(fastify, _options) {
     }
   }, async (request, reply) => {
     try {
-      const { hostname, backendUrl, backendPort, description, proxyType = 'http', sslEnabled, externalPort, minecraftEdition = 'java', healthCheckEnabled } = request.body;
+      const { hostname, backendUrl, backendPort, description, proxyType = 'http', sslEnabled, externalPort, externalPortEnd, minecraftEdition = 'java', healthCheckEnabled } = request.body;
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
 
       const challengeType = request.body.challengeType || 'http-01';
+
+      if (externalPortEnd !== undefined && externalPortEnd !== null && proxyType !== 'tcp' && proxyType !== 'udp') {
+        return reply.code(400).send({
+          error: 'Invalid configuration',
+          message: 'Port range (externalPortEnd) is only supported for TCP/UDP proxies'
+        });
+      }
 
       if (proxyType === 'http') {
         const hostnameRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
@@ -445,12 +457,23 @@ export async function domainRoutes(fastify, _options) {
           return reply.code(400).send({ error: 'Invalid backend URL', message: portError });
         }
 
+        if (externalPortEnd !== undefined && externalPortEnd !== null && (externalPort === undefined || externalPort === null)) {
+          return reply.code(400).send({
+            error: 'Invalid configuration',
+            message: 'externalPort (range start) is required when externalPortEnd is set'
+          });
+        }
+
         if (externalPort !== undefined && externalPort !== null) {
           if (!isAdmin) {
             return reply.code(403).send({ error: 'Forbidden', message: 'Only admins can choose a custom external port' });
           }
           try {
-            await validateExternalPort(externalPort, proxyType);
+            if (externalPortEnd !== undefined && externalPortEnd !== null) {
+              await validateExternalPortRange(externalPort, externalPortEnd, proxyType);
+            } else {
+              await validateExternalPort(externalPort, proxyType);
+            }
           } catch (e) {
             return reply.code(e.code).send({ error: e.code === 409 ? 'Port unavailable' : 'Invalid external port', message: e.message });
           }
@@ -491,6 +514,7 @@ export async function domainRoutes(fastify, _options) {
         description,
         proxyType,
         externalPort: resolvedExternalPort,
+        externalPortEnd: (proxyType === 'tcp' || proxyType === 'udp') ? (externalPortEnd ?? null) : null,
         sslEnabled: sslEnabled || false,
         acmeChallengeType: challengeType,
         minecraftEdition: proxyType === 'minecraft' ? minecraftEdition : undefined,
@@ -593,6 +617,11 @@ export async function domainRoutes(fastify, _options) {
             minimum: 1,
             maximum: 65535
           },
+          externalPortEnd: {
+            type: ['integer', 'null'],
+            minimum: 1,
+            maximum: 65535
+          },
           description: {
             type: 'string',
             maxLength: 500
@@ -614,7 +643,8 @@ export async function domainRoutes(fastify, _options) {
   }, async (request, reply) => {
     try {
       const domainId = parseInt(request.params.id, 10);
-      const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, bungeecordForwarding, healthCheckEnabled } = request.body;
+      const { hostname, backendUrl, backendPort, description, proxyType, sslEnabled, externalPort, externalPortEnd, bungeecordForwarding, healthCheckEnabled } = request.body;
+      const hasExternalPortEnd = Object.prototype.hasOwnProperty.call(request.body, 'externalPortEnd');
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
 
@@ -656,6 +686,13 @@ export async function domainRoutes(fastify, _options) {
         }
       }
 
+      if (hasExternalPortEnd && externalPortEnd !== null && checkProxyType !== 'tcp' && checkProxyType !== 'udp') {
+        return reply.code(400).send({
+          error: 'Invalid configuration',
+          message: 'Port range (externalPortEnd) is only supported for TCP/UDP proxies'
+        });
+      }
+
       if (externalPort !== undefined && externalPort !== null) {
         if (checkProxyType === 'http') {
           return reply.code(400).send({
@@ -669,7 +706,33 @@ export async function domainRoutes(fastify, _options) {
             message: 'Only admins can choose a custom external port'
           });
         }
-        if (externalPort !== domain.external_port) {
+      }
+
+      if (hasExternalPortEnd && externalPortEnd !== null && !isAdmin) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only admins can choose a custom external port'
+        });
+      }
+
+      // Resolve what the port config will look like after this update, so we
+      // validate the actual final state (single port vs. range) exactly once.
+      const desiredExternalPort = (externalPort !== undefined && externalPort !== null) ? externalPort : domain.external_port;
+      const desiredExternalPortEnd = hasExternalPortEnd
+        ? externalPortEnd
+        : ((externalPort !== undefined && externalPort !== null) ? null : domain.external_port_end);
+
+      if (checkProxyType === 'tcp' || checkProxyType === 'udp') {
+        if (desiredExternalPortEnd !== null && desiredExternalPortEnd !== undefined) {
+          const rangeChanged = desiredExternalPort !== domain.external_port || desiredExternalPortEnd !== domain.external_port_end;
+          if (rangeChanged) {
+            try {
+              await validateExternalPortRange(desiredExternalPort, desiredExternalPortEnd, checkProxyType, { excludeDomainId: domainId });
+            } catch (e) {
+              return reply.code(e.code).send({ error: e.code === 409 ? 'Port range unavailable' : 'Invalid external port range', message: e.message });
+            }
+          }
+        } else if (externalPort !== undefined && externalPort !== null && externalPort !== domain.external_port) {
           try {
             await validateExternalPort(externalPort, checkProxyType);
           } catch (e) {
@@ -732,10 +795,14 @@ export async function domainRoutes(fastify, _options) {
 
       let externalPortUpdate;
       let externalPortUpdateSet = false;
+      let externalPortEndUpdate;
+      let externalPortEndUpdateSet = false;
 
       if (checkProxyType === 'http' && domain.external_port) {
         externalPortUpdate = null;
         externalPortUpdateSet = true;
+        externalPortEndUpdate = null;
+        externalPortEndUpdateSet = true;
       }
 
       if (checkProxyType === 'tcp' || checkProxyType === 'udp') {
@@ -745,6 +812,14 @@ export async function domainRoutes(fastify, _options) {
         } else if (!domain.external_port) {
           externalPortUpdate = await allocateAvailablePort(checkProxyType);
           externalPortUpdateSet = true;
+        }
+
+        // Range end follows the resolved desired state computed above: an
+        // explicit externalPortEnd wins, otherwise changing the start port
+        // alone drops back to single-port mode (clears any prior range).
+        if (hasExternalPortEnd || (externalPort !== undefined && externalPort !== null)) {
+          externalPortEndUpdate = desiredExternalPortEnd;
+          externalPortEndUpdateSet = true;
         }
       }
 
@@ -756,6 +831,7 @@ export async function domainRoutes(fastify, _options) {
         proxyType,
         sslEnabled,
         ...(externalPortUpdateSet ? { externalPort: externalPortUpdate } : {}),
+        ...(externalPortEndUpdateSet ? { externalPortEnd: externalPortEndUpdate } : {}),
         ...(bungeecordForwarding !== undefined ? { bungeecordForwarding } : {}),
         ...(healthCheckEnabled !== undefined ? { healthCheckEnabled } : {})
       });

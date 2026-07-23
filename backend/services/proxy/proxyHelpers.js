@@ -260,11 +260,15 @@ getProxyStatus(domainId) {
     return { running: false };
   }
 
+  const listenPort = entry.meta.external_port_end && entry.meta.external_port_end > entry.meta.external_port
+    ? `${entry.meta.external_port}-${entry.meta.external_port_end}`
+    : entry.meta.external_port;
+
   return {
     running: true,
     type: entry.type,
     meta: {
-      listen_port: entry.meta.external_port,
+      listen_port: listenPort,
       target: `${entry.meta.backend_url}:${entry.meta.backend_port}`
     }
   };
