@@ -230,6 +230,15 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
       return;
     }
 
+    if (formData.backendPort && !/^[0-9]{1,5}$/.test(formData.backendPort)) {
+      setError('Backend Port must be a single port number (1-65535) — ranges go in External Listen Port instead');
+      return;
+    }
+    if (formData.backendPort && Number(formData.backendPort) > 65535) {
+      setError('Backend Port must be between 1 and 65535');
+      return;
+    }
+
     if ((formData.proxyType === 'tcp' || formData.proxyType === 'udp' || formData.proxyType === 'minecraft') && user?.role === 'admin' && formData.externalPort) {
       const portNumber = Number(formData.externalPort);
       if (!Number.isInteger(portNumber)) {
@@ -571,6 +580,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
               value={formData.backendPort}
               onChange={handleChange}
               placeholder={formData.proxyType === 'minecraft' && formData.minecraftEdition === 'bedrock' ? '19132' : formData.proxyType === 'minecraft' ? '25565' : '8080'}
+              maxLength={5}
               disabled={isLoading}
               className="input-futuristic"
             />
