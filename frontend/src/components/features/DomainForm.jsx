@@ -592,7 +592,8 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
             )}
             {(formData.proxyType === 'tcp' || formData.proxyType === 'udp') && formData.externalPortEnd && (
               <p className="text-xs text-[#F59E0B]/80 mt-1">
-                Ignoré en mode plage de ports : chaque port {formData.externalPort}-{formData.externalPortEnd} est redirigé vers le même numéro de port sur le backend.
+                Ignoré en mode plage de ports : chaque port externe est redirigé vers <strong>lui-même</strong> côté backend, pas vers un port fixe.
+                Ex : {formData.externalPort} → backend {formData.externalPort}, {Number(formData.externalPort) + 1} → backend {Number(formData.externalPort) + 1}, ... jusqu'à {formData.externalPortEnd}.
               </p>
             )}
           </div>
@@ -740,7 +741,7 @@ export default function DomainForm({ domain, onSubmit, onClose, isLoading = fals
                   : formData.proxyType === 'minecraft' && formData.minecraftEdition === 'bedrock'
                   ? 'Admin only. Port UDP Bedrock/Geyser — 19132 par défaut.'
                   : formData.externalPortEnd
-                  ? `Admin only. Ouvre ${formData.externalPort}-${formData.externalPortEnd} en interne et en externe, redirigée 1:1 vers le backend (même numéro de port, le champ Backend Port est ignoré).`
+                  ? `Admin only. Ouvre ${formData.externalPort}-${formData.externalPortEnd} en interne et en externe. Chaque port redirige vers CE MÊME numéro de port sur le backend (ex: ${formData.externalPort} → ${formData.externalPort}), jamais vers un port unique fixe — le champ Backend Port est ignoré.`
                   : 'Admin only. Un seul port (1-65535), ou tape une plage type 50000-50100. Vide = port aléatoire.'}
               </p>
             </div>
