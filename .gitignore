@@ -82,3 +82,11 @@ coverage/
 
 # Documentation site (standalone, not part of the project)
 docs-site/
+
+# os/build/ holds the ISO-builder script, not JS build output — the
+# */build/ rule above matches it by coincidence of name, so un-ignore the
+# script explicitly while still excluding what it generates.
+!os/build/
+!os/build/*.sh
+os/build/.cache/
+os/build/*.iso
