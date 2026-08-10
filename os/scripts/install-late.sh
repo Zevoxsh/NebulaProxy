@@ -31,6 +31,10 @@ else
   echo "!! FAILED installing/enabling systemd units — see errors above"
 fi
 
+echo "==> Removing stale cdrom: apt source (install media, gone by now — a"
+echo "    dead cdrom: entry fails apt-get update entirely, not just itself)"
+sed -i '/^deb cdrom:/d' /etc/apt/sources.list
+
 echo "==> Installing Docker Engine"
 if curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sh /tmp/get-docker.sh; then
   systemctl enable docker
