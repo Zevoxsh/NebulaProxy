@@ -8,7 +8,7 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/nebulaproxy
-ExecStart=/usr/bin/docker compose up -d
+ExecStart=/opt/nebulaproxy/os/scripts/start-stack.sh
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=300
 
