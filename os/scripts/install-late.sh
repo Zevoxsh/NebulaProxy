@@ -46,6 +46,25 @@ cat > /etc/motd <<'EOF'
 EOF
 echo "==> Rebranding done"
 
+echo "==> Generating a stable setup-wizard access token"
+# Without this, backend/setup-server.js auto-generates a random token
+# EVERY container start and only ever prints it to `docker logs` — which
+# meant finding it required SSHing in and grepping container logs, not
+# exactly "look at the screen and go". Pinning it here (env_file'd into
+# the backend the same way DB/Redis creds already are) means
+# update-issue.sh can print the full setup URL — token included — right
+# on the console banner instead. Same 40-char alnum idiom
+# postgres/entrypoint.sh and redis/entrypoint.sh already use for their
+# own auto-generated secrets.
+ENV_FILE="$APP_DIR/.env.nebula"
+if ! grep -q '^SETUP_ACCESS_TOKEN=' "$ENV_FILE" 2>/dev/null; then
+  SETUP_TOKEN=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
+  echo "SETUP_ACCESS_TOKEN=$SETUP_TOKEN" >> "$ENV_FILE"
+  echo "==> Setup token written to $ENV_FILE"
+else
+  echo "==> Setup token already present in $ENV_FILE, leaving as-is"
+fi
+
 echo "==> Installing NebulaProxyV4 systemd units"
 if install -m 644 "$APP_DIR"/os/systemd/*.service /etc/systemd/system/ \
    && chmod +x "$APP_DIR"/os/scripts/*.sh \
