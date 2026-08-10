@@ -82,6 +82,21 @@ fi
 echo "==> Branding installer UI"
 cp "$OS_DIR/branding/splash.png" "$EXTRACT_DIR/isolinux/splash.png"
 
+# Stock stdmenu.cfg starts the menu list at row 8 (~row*16px), which lands
+# on top of our splash's title text ("NebulaProxyV4" sits around row 12-13,
+# subtitle/divider around row 15-16 — see os/branding/splash.png). Push the
+# whole menu block down to clear it, and shift the help/timeout rows below
+# down with it so they don't end up overlapping the (now lower) menu entry.
+if [ -f "$EXTRACT_DIR/isolinux/stdmenu.cfg" ]; then
+  sed -i \
+    -e 's/^menu vshift .*/menu vshift 19/' \
+    -e 's/^menu helpmsgrow .*/menu helpmsgrow 24/' \
+    -e 's/^menu cmdlinerow .*/menu cmdlinerow 26/' \
+    -e 's/^menu timeoutrow .*/menu timeoutrow 26/' \
+    -e 's/^menu tabmsgrow .*/menu tabmsgrow 28/' \
+    "$EXTRACT_DIR/isolinux/stdmenu.cfg"
+fi
+
 # Collapse the boot menu to a single "Install NebulaProxyV4" entry. Stock
 # Debian offers Advanced/Accessible-dark-contrast/speech-synthesis submenus
 # on top of graphical vs text install — none of that is meaningful for an
