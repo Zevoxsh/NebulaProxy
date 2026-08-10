@@ -21,6 +21,31 @@ exec > >(tee -a "$LOG") 2>&1
 
 echo "=== NebulaProxyV4 install-late.sh started $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
 
+echo "==> Rebranding the installed system's own identity"
+# Everything in os/branding/ + build-iso.sh only skins the INSTALLER media
+# — the machine you actually boot afterward is a separate GRUB config,
+# generated fresh by grub-mkconfig from THIS system's own /etc/os-release
+# and /etc/default/grub (grub-installer already ran this once during
+# install, using stock Debian values, before late_command ever got a
+# chance to run). Fix the source fields, then regenerate.
+sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="NebulaProxyV4"/' /etc/os-release
+sed -i 's/^NAME=.*/NAME="NebulaProxyV4"/' /etc/os-release
+if grep -q '^GRUB_DISTRIBUTOR=' /etc/default/grub; then
+  sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="NebulaProxyV4"/' /etc/default/grub
+else
+  echo 'GRUB_DISTRIBUTOR="NebulaProxyV4"' >> /etc/default/grub
+fi
+update-grub 2>&1 || grub-mkconfig -o /boot/grub/grub.cfg 2>&1
+cat > /etc/motd <<'EOF'
+
+  NebulaProxyV4
+  ------------------------------------------------------------
+  Manage this appliance from a browser — the URL is on the console
+  login screen.
+
+EOF
+echo "==> Rebranding done"
+
 echo "==> Installing NebulaProxyV4 systemd units"
 if install -m 644 "$APP_DIR"/os/systemd/*.service /etc/systemd/system/ \
    && chmod +x "$APP_DIR"/os/scripts/*.sh \
