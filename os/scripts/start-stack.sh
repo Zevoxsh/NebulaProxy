@@ -18,6 +18,27 @@
 # returns (RemainAfterExit=yes), the retry loop just keeps running after.
 set -u
 cd /opt/nebulaproxy
+
+# Pre-built images (os/build/build-iso.sh) — load once so `docker compose
+# up -d` below finds them already tagged and skips building from scratch
+# (that build is what used to leave the console/browser showing nothing
+# for several minutes on first boot). Must match build-iso.sh's project
+# name/service list.
+IMAGES_TAR=/opt/nebulaproxy/.docker-images.tar.gz
+LOADED_MARKER=/var/lib/nebulaproxy-images-loaded
+if [ -f "$IMAGES_TAR" ] && [ ! -f "$LOADED_MARKER" ]; then
+  echo "Loading pre-built NebulaProxyV4 images..."
+  if gunzip -c "$IMAGES_TAR" | docker load; then
+    for svc in backend frontend postgres redis watchdog autoheal; do
+      docker tag "nebulaproxyv4img-${svc}:latest" "nebulaproxy-${svc}:latest" 2>/dev/null || true
+    done
+    touch "$LOADED_MARKER"
+    echo "Pre-built images loaded and tagged."
+  else
+    echo "Failed to load pre-built images — docker compose will build from scratch instead."
+  fi
+fi
+
 docker compose up -d
 
 (

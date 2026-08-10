@@ -17,7 +17,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-for bin in xorriso curl; do
+for bin in xorriso curl docker; do
   command -v "$bin" >/dev/null 2>&1 || { echo "Missing dependency: $bin" >&2; exit 1; }
 done
 
@@ -66,6 +66,37 @@ cp "$OS_DIR/preseed/preseed.cfg" "$EXTRACT_DIR/preseed.cfg"
 mkdir -p "$EXTRACT_DIR/nebulaproxy-src"
 tar --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='build' \
     -C "$REPO_DIR" -cf - . | tar -C "$EXTRACT_DIR/nebulaproxy-src" -xf -
+
+echo "==> Pre-building app images (avoids a multi-minute silent wait on first boot)"
+# The slow part of first boot was never Debian/Docker install — it's
+# `docker compose up -d` building 6 images from scratch (npm ci, vite
+# build, ...), which leaves the console banner's URL unreachable for
+# several minutes with zero feedback (confusing enough in testing that a
+# real end user would likely give up on it). Building here instead, once,
+# at ISO-build time — where waiting is already the expectation — and
+# embedding the result means the target's first `docker compose up -d`
+# just loads already-built images. Built under an isolated project name
+# (nebulaproxyv4img) so the resulting image tags can't collide with any
+# other "nebulaproxy" stack's images on THIS build machine's Docker daemon
+# (e.g. the actual v3 production install this was forked from, which
+# would otherwise share the exact same auto-generated image names); only
+# re-tagged to what the target's own compose file expects after
+# `docker load` runs there — see start-stack.sh, must use the same
+# BUILD_SERVICES list and project name.
+IMAGE_BUILD_PROJECT=nebulaproxyv4img
+BUILD_SERVICES="backend frontend postgres redis watchdog autoheal"
+if docker compose -p "$IMAGE_BUILD_PROJECT" --project-directory "$REPO_DIR" build; then
+  IMAGE_REFS=""
+  for svc in $BUILD_SERVICES; do IMAGE_REFS="$IMAGE_REFS ${IMAGE_BUILD_PROJECT}-${svc}:latest"; done
+  IMAGES_TAR="$WORK_DIR/nebulaproxy-images.tar"
+  docker save -o "$IMAGES_TAR" $IMAGE_REFS
+  gzip -f "$IMAGES_TAR"
+  cp "$IMAGES_TAR.gz" "$EXTRACT_DIR/nebulaproxy-src/.docker-images.tar.gz"
+  docker rmi $IMAGE_REFS >/dev/null 2>&1 || true
+  echo "==> Pre-built images embedded ($(du -h "$EXTRACT_DIR/nebulaproxy-src/.docker-images.tar.gz" | cut -f1))"
+else
+  echo "!! Image pre-build failed — first boot will build from scratch instead (slower, not fatal)"
+fi
 
 echo "==> Setting automatic-install boot parameters"
 # BIOS boot (isolinux) — appends the preseed args to the default entry.
