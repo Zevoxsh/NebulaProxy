@@ -28,6 +28,7 @@ import { ApiKeyRepository } from '../repositories/apiKeyRepository.js';
 import { QueueRepository } from '../repositories/queueRepository.js';
 import { NotificationRepository } from '../repositories/notificationRepository.js';
 import { MinecraftPlayerRepository } from '../repositories/minecraftPlayerRepository.js';
+import { WireguardRepository } from '../repositories/wireguardRepository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -280,7 +281,8 @@ const _repositories = [
   ApiKeyRepository,
   QueueRepository,
   NotificationRepository,
-  MinecraftPlayerRepository
+  MinecraftPlayerRepository,
+  WireguardRepository
 ];
 for (const Repo of _repositories) {
   Object.getOwnPropertyNames(Repo.prototype)
