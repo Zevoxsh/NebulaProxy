@@ -1,5 +1,5 @@
 [Unit]
-Description=NebulaProxyV4 application stack (Docker Compose)
+Description=NebulaProxy application stack (Docker Compose)
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service

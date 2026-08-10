@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs inside the target chroot at the end of the Debian install (invoked
 # by preseed/preseed.cfg's late_command, via `in-target`). At this point
-# the NebulaProxyV4 source tree has already been copied to /opt/nebulaproxy
+# the NebulaProxy source tree has already been copied to /opt/nebulaproxy
 # by late_command itself.
 #
 # Deliberately NOT `set -e`: the old version installed Docker first and
@@ -19,7 +19,7 @@ APP_DIR=/opt/nebulaproxy
 LOG=/var/log/nebulaproxy-install.log
 exec > >(tee -a "$LOG") 2>&1
 
-echo "=== NebulaProxyV4 install-late.sh started $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+echo "=== NebulaProxy install-late.sh started $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
 
 echo "==> Rebranding the installed system's own identity"
 # Everything in os/branding/ + build-iso.sh only skins the INSTALLER media
@@ -28,44 +28,22 @@ echo "==> Rebranding the installed system's own identity"
 # and /etc/default/grub (grub-installer already ran this once during
 # install, using stock Debian values, before late_command ever got a
 # chance to run). Fix the source fields, then regenerate.
-sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="NebulaProxyV4"/' /etc/os-release
-sed -i 's/^NAME=.*/NAME="NebulaProxyV4"/' /etc/os-release
+sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="NebulaProxy"/' /etc/os-release
+sed -i 's/^NAME=.*/NAME="NebulaProxy"/' /etc/os-release
 if grep -q '^GRUB_DISTRIBUTOR=' /etc/default/grub; then
-  sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="NebulaProxyV4"/' /etc/default/grub
+  sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="NebulaProxy"/' /etc/default/grub
 else
-  echo 'GRUB_DISTRIBUTOR="NebulaProxyV4"' >> /etc/default/grub
+  echo 'GRUB_DISTRIBUTOR="NebulaProxy"' >> /etc/default/grub
 fi
 update-grub 2>&1 || grub-mkconfig -o /boot/grub/grub.cfg 2>&1
-cat > /etc/motd <<'EOF'
-
-  NebulaProxyV4
-  ------------------------------------------------------------
-  Manage this appliance from a browser — the URL is on the console
-  login screen.
-
-EOF
+# /etc/motd itself is now generated dynamically by update-issue.sh (same
+# script that maintains /etc/issue) once networking is available, so the
+# post-login welcome message shows the same live Web UI URL as the
+# console banner instead of just pointing back at it. Nothing to write
+# here until that runs.
 echo "==> Rebranding done"
 
-echo "==> Generating a stable setup-wizard access token"
-# Without this, backend/setup-server.js auto-generates a random token
-# EVERY container start and only ever prints it to `docker logs` — which
-# meant finding it required SSHing in and grepping container logs, not
-# exactly "look at the screen and go". Pinning it here (env_file'd into
-# the backend the same way DB/Redis creds already are) means
-# update-issue.sh can print the full setup URL — token included — right
-# on the console banner instead. Same 40-char alnum idiom
-# postgres/entrypoint.sh and redis/entrypoint.sh already use for their
-# own auto-generated secrets.
-ENV_FILE="$APP_DIR/.env.nebula"
-if ! grep -q '^SETUP_ACCESS_TOKEN=' "$ENV_FILE" 2>/dev/null; then
-  SETUP_TOKEN=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
-  echo "SETUP_ACCESS_TOKEN=$SETUP_TOKEN" >> "$ENV_FILE"
-  echo "==> Setup token written to $ENV_FILE"
-else
-  echo "==> Setup token already present in $ENV_FILE, leaving as-is"
-fi
-
-echo "==> Installing NebulaProxyV4 systemd units"
+echo "==> Installing NebulaProxy systemd units"
 if install -m 644 "$APP_DIR"/os/systemd/*.service /etc/systemd/system/ \
    && chmod +x "$APP_DIR"/os/scripts/*.sh \
    && systemctl enable nebulaproxy-issue.service \

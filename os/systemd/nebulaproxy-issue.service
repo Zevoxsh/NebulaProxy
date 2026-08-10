@@ -1,5 +1,5 @@
 [Unit]
-Description=Write NebulaProxyV4 access URL to the console login banner
+Description=Write NebulaProxy access URL to the console login banner
 After=network-online.target
 Wants=network-online.target
 

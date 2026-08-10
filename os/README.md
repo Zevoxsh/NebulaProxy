@@ -1,4 +1,4 @@
-# NebulaProxyV4 — OS layer
+# NebulaProxy — OS layer
 
 Turns the NebulaProxy app (this repo, copied verbatim from v3) into a
 pfSense/Proxmox-style appliance: install once from a USB stick/ISO, boot,
@@ -54,7 +54,7 @@ os/
    installs Docker (get.docker.com, with an apt/docker.io fallback),
    drops in the systemd units, enables them.
 3. Machine reboots into the installed system — GRUB now says
-   "NebulaProxyV4", not Debian.
+   "NebulaProxy", not Debian.
 4. `nebulaproxy-issue.service` writes the console banner with this host's
    IP(s) and the web UI URL (retries for ~30s if DHCP hasn't handed out a
    lease yet by the time it first runs).

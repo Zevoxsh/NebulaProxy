@@ -27,7 +27,7 @@ cd /opt/nebulaproxy
 IMAGES_TAR=/opt/nebulaproxy/.docker-images.tar.gz
 LOADED_MARKER=/var/lib/nebulaproxy-images-loaded
 if [ -f "$IMAGES_TAR" ] && [ ! -f "$LOADED_MARKER" ]; then
-  echo "Loading pre-built NebulaProxyV4 images..."
+  echo "Loading pre-built NebulaProxy images..."
   if gunzip -c "$IMAGES_TAR" | docker load; then
     for svc in backend frontend postgres redis watchdog autoheal; do
       docker tag "nebulaproxyv4img-${svc}:latest" "nebulaproxy-${svc}:latest" 2>/dev/null || true

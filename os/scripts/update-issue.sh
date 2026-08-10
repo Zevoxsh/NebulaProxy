@@ -1,26 +1,22 @@
 #!/bin/sh
-# Regenerates /etc/issue with this host's IPs, the same trick pfSense/Proxmox
-# use for their console banner: getty prints /etc/issue at every login
-# prompt automatically, so no custom console daemon is needed — just keep
-# this file up to date. Run once at boot by nebulaproxy-issue.service.
+# Regenerates /etc/issue (and /etc/motd) with this host's IPs, the same
+# trick pfSense/Proxmox use for their console banner: getty prints
+# /etc/issue at every login prompt automatically, and PAM prints /etc/motd
+# right after a successful login — no custom console daemon needed for
+# either, just keep both files up to date. Run once at boot by
+# nebulaproxy-issue.service. Writing the same content to both means the
+# URL is visible whether you're looking at the console before logging in
+# or reading the welcome message after SSHing in.
+#
+# Just the one URL: nginx's /setup location (frontend/nginx.conf) already
+# proxies straight to the backend's setup wizard, and setup-server.js has
+# no access-token gate anymore — reaching this box's network is enough,
+# same trust boundary as SSH/console access already has.
 set -eu
 
-OUT=/etc/issue
+ISSUE_OUT=/etc/issue
+MOTD_OUT=/etc/motd
 PORT="${NEBULAPROXY_PORT:-3001}"
-BACKEND_PORT="${NEBULAPROXY_BACKEND_PORT:-3000}"
-ENV_FILE=/opt/nebulaproxy/.env.nebula
-
-# install-late.sh pins SETUP_ACCESS_TOKEN into .env.nebula at install time
-# specifically so it can be printed here — otherwise backend/setup-server.js
-# generates a random one on every boot and only logs it to `docker logs`,
-# which meant SSHing in and grepping container output just to find the
-# setup URL. Harmless to keep showing after setup is complete: the token
-# stops meaning anything once the normal app takes over (no /setup route
-# there), it's just a dead link at that point.
-SETUP_TOKEN=""
-if [ -f "$ENV_FILE" ]; then
-  SETUP_TOKEN=$(grep '^SETUP_ACCESS_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2-)
-fi
 
 get_ips() {
   # Exclude Docker's own bridges/veths — noise, not how anyone reaches this
@@ -46,9 +42,9 @@ while [ "$i" -lt 15 ]; do
   sleep 2
 done
 
-{
+BANNER=$(
   echo ""
-  echo "  NebulaProxyV4"
+  echo "  NebulaProxy"
   echo "  ------------------------------------------------------------"
 
   if [ -z "$ips" ]; then
@@ -56,14 +52,13 @@ done
   else
     for ip in $ips; do
       echo "  Web UI:  http://$ip:$PORT/"
-      if [ -n "$SETUP_TOKEN" ]; then
-        echo "  Setup:   http://$ip:$BACKEND_PORT/setup?token=$SETUP_TOKEN"
-      fi
     done
   fi
 
   echo ""
-  echo "  Log in here for a shell, or use the Web UI above to configure"
   echo "  NebulaProxy (first visit runs the setup wizard)."
   echo ""
-} > "$OUT"
+)
+
+echo "$BANNER" > "$ISSUE_OUT"
+echo "$BANNER" > "$MOTD_OUT"
