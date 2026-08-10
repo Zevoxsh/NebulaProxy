@@ -21,6 +21,7 @@ import urlBlockingRoutes                 from '../routes/urlBlockingRules.js';
 import { smtpProxyRoutes }               from '../routes/smtpProxy.js';
 import { socks5ProxyRoutes }             from '../routes/socks5Proxy.js';
 import { wireguardRoutes }               from '../routes/wireguard.js';
+import { ipsecRoutes }                   from '../routes/ipsec.js';
 
 /**
  * Registers all application routes. Call after all plugins and decorators are set up.
@@ -50,4 +51,5 @@ export async function registerRoutes(fastify) {
   await fastify.register(smtpProxyRoutes,               { prefix: '/api/smtp-proxy' });
   await fastify.register(socks5ProxyRoutes,             { prefix: '/api/socks5-proxy' });
   await fastify.register(wireguardRoutes,               { prefix: '/api/admin/wireguard' });
+  await fastify.register(ipsecRoutes,                   { prefix: '/api/admin/ipsec' });
 }

@@ -78,6 +78,30 @@ fi
 echo "Configuration found. Starting proxy server..."
 echo "================================================"
 
+# ── strongSwan (IPsec) daemon ──────────────────────────────────────────────
+# Same rationale as WireGuard: NET_ADMIN + network_mode: host means the XFRM
+# policies/SAs charon creates are real host IPsec state. There's no systemd
+# in this container to supervise it, so start it directly in the background;
+# swanctl (talking to it over the vici unix socket) is what ipsecService.js
+# actually uses to manage tunnels afterwards. /etc/swanctl is bind-mounted
+# (see docker-compose.yml), so reloading here picks back up whatever tunnels
+# were configured before this container was last recreated/restarted.
+if command -v charon > /dev/null 2>&1; then
+  mkdir -p /etc/swanctl/conf.d
+  if [ ! -f /etc/swanctl/swanctl.conf ]; then
+    echo 'include conf.d/*.conf' > /etc/swanctl/swanctl.conf
+  fi
+  charon &
+  echo "strongSwan charon daemon started (pid $!)"
+  for i in 1 2 3 4 5; do
+    sleep 1
+    if swanctl --load-all > /var/log/swanctl-load.log 2>&1; then
+      echo "IPsec: loaded persisted tunnel configs"
+      break
+    fi
+  done
+fi
+
 # ── Set Node.js memory limits ──────────────────────────────────────────────
 # With CLUSTER_ENABLED=true, cluster.fork() inherits this NODE_OPTIONS into
 # every worker — a per-process heap sized for a single process would let N

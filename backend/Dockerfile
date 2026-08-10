@@ -6,7 +6,7 @@ FROM node:22.23-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache certbot git postgresql-client redis docker-cli docker-cli-compose wireguard-tools
+RUN apk add --no-cache certbot git postgresql-client redis docker-cli docker-cli-compose wireguard-tools strongswan
 
 COPY package*.json ./
 RUN npm ci --omit=dev

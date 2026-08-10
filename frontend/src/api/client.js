@@ -19,4 +19,5 @@ export { statusAPI } from './statusAPI';
 export { notificationAPI } from './notificationAPI';
 export { tunnelsAPI } from './tunnelsAPI';
 export { wireguardAPI } from './wireguardAPI';
+export { ipsecAPI } from './ipsecAPI';
 export { socks5ProxyAPI } from './socks5ProxyAPI';

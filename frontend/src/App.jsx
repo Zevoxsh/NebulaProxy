@@ -53,6 +53,8 @@ const AdminTunnelDetail = lazy(() => import('./pages/admin/AdminTunnelDetail'));
 const AdminOutgoingProxySettings = lazy(() => import('./pages/admin/AdminOutgoingProxySettings'));
 const AdminWireGuardList = lazy(() => import('./pages/admin/AdminWireGuardList'));
 const AdminWireGuardDetail = lazy(() => import('./pages/admin/AdminWireGuardDetail'));
+const AdminIPsecList = lazy(() => import('./pages/admin/AdminIPsecList'));
+const AdminIPsecDetail = lazy(() => import('./pages/admin/AdminIPsecDetail'));
 const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
 const AdminMonitoring = lazy(() => import('./pages/admin/AdminMonitoring'));
 const AdminSmtp = lazy(() => import('./pages/admin/AdminSmtp'));
@@ -106,6 +108,7 @@ const ROUTE_METADATA = [
   { patterns: ['/outgoing-proxy'], title: 'Proxy sortant', description: 'Create SOCKS5 credentials to route your own tools\' traffic through this server.' },
   { patterns: ['/admin/outgoing-proxy'], title: 'Admin Proxy sortant', description: 'Configure the outgoing SOCKS5 proxy and manage all users\' credentials.' },
   { patterns: ['/admin/wireguard', '/admin/wireguard/:id'], title: 'Admin WireGuard', description: 'Manage WireGuard VPN tunnels and peers for site-to-site connectivity.' },
+  { patterns: ['/admin/ipsec', '/admin/ipsec/:id'], title: 'Admin IPsec', description: 'Manage IPsec (IKEv2/PSK) VPN tunnels for site-to-site connectivity.' },
   { patterns: ['/admin/stats'], title: 'Admin Analytics', description: 'View platform analytics and usage stats.' },
   { patterns: ['/admin/config'], title: 'Admin Configuration', description: 'Configure global system settings.' },
   { patterns: ['/admin/services'], title: 'Admin Services', description: 'Manage backend and infrastructure services.' },
@@ -361,6 +364,8 @@ function App() {
           <Route path="/admin/outgoing-proxy" element={<AdminOutgoingProxySettings />} />
           <Route path="/admin/wireguard" element={<AdminWireGuardList />} />
           <Route path="/admin/wireguard/:id" element={<AdminWireGuardDetail />} />
+          <Route path="/admin/ipsec" element={<AdminIPsecList />} />
+          <Route path="/admin/ipsec/:id" element={<AdminIPsecDetail />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/admin/config" element={<AdminConfig />} />
           <Route path="/admin/config/health" element={<AdminConfigHealth />} />

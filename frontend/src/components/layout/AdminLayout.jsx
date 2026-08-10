@@ -27,7 +27,8 @@ import {
   Cable,
   Network,
   KeyRound,
-  Lock
+  Lock,
+  Route
 } from 'lucide-react';
 import {
   Sheet,
@@ -216,6 +217,7 @@ export function AdminLayout() {
         { path: '/admin/redirections', icon: ArrowLeftRight, label: 'Redirections' },
         { path: '/admin/tunnels', icon: Cable, label: 'Tunnels' },
         { path: '/admin/wireguard', icon: Lock, label: 'WireGuard' },
+        { path: '/admin/ipsec', icon: Route, label: 'IPsec' },
         { path: '/admin/outgoing-proxy', icon: Network, label: 'Proxy sortant' },
         { path: '/admin/url-blocking', icon: ShieldAlert, label: 'URL Blocking' },
         { path: '/admin/traffic', icon: Radio, label: 'Trafic live' }
