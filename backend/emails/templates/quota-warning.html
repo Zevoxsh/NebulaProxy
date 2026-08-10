@@ -1,0 +1,29 @@
+﻿<p class="email-title">Domain quota warning</p>
+<p class="email-subtitle">You are approaching your account domain limit and may not be able to add new domains soon.</p>
+
+<div class="alert alert-warning">
+  <span class="alert-label">Quota alert</span>
+  <p>You have used <strong>{{currentUsage}}</strong> of your <strong>{{maxQuota}}</strong> allowed domains ({{percentage}}%).</p>
+</div>
+
+<div class="progress-wrap">
+  <div class="progress-track">
+    <div class="progress-fill" style="width: {{percentage}}%;"></div>
+  </div>
+  <p class="progress-meta"><strong>{{currentUsage}} / {{maxQuota}}</strong> domains used</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Used</td><td class="dv">{{currentUsage}} domains</td></tr>
+  <tr><td class="dk">Limit</td><td class="dv">{{maxQuota}} domains</td></tr>
+  <tr><td class="dk">Remaining</td><td class="dv">{{remaining}} domains</td></tr>
+  <tr><td class="dk">Account type</td><td class="dv"><span class="badge badge-info">{{accountType}}</span></td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/domains" class="btn btn-primary">Manage domains</a>
+</div>
+
+<div class="note">
+  To increase your limit, contact your administrator or upgrade your account plan.
+</div>

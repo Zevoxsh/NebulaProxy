@@ -1,0 +1,23 @@
+﻿<p class="email-title">New sign-in detected</p>
+<p class="email-subtitle">Your account was accessed from an IP address we have not seen before.</p>
+
+<div class="alert alert-warning">
+  <span class="alert-label">Security notice</span>
+  <p>If this was not you, your account may be compromised. Change your password immediately and enable two-factor authentication.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Time</td><td class="dv">{{timestamp}}</td></tr>
+  <tr><td class="dk">IP address</td><td class="dv">{{ipAddress}}</td></tr>
+  <tr><td class="dk">Location</td><td class="dv">{{location}}</td></tr>
+  <tr><td class="dk">Device</td><td class="dv text-muted">{{userAgent}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/settings/security" class="btn btn-primary">Review security</a>
+  <a href="{{dashboardUrl}}/auth/change-password" class="btn btn-ghost">Change password</a>
+</div>
+
+<div class="note">
+  If you recognise this activity, no action is needed. We will not send another alert for this IP address.
+</div>

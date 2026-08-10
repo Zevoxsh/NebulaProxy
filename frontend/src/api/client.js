@@ -1,0 +1,21 @@
+// Barrel file — re-exports everything so all existing imports keep working.
+export { api, api as default } from './instance';
+export { authAPI } from './authAPI';
+export { userAPI } from './userAPI';
+export { proxyAPI } from './proxyAPI';
+export { domainAPI } from './domainAPI';
+export { redirectionAPI } from './redirectionAPI';
+export { adminAPI } from './adminAPI';
+export { teamAPI } from './teamAPI';
+export { domainGroupAPI } from './domainGroupAPI';
+export { analyticsAPI } from './analyticsAPI';
+export { logsAPI } from './logsAPI';
+export { monitoringAPI } from './monitoringAPI';
+export { sslAPI } from './sslAPI';
+export { settingsAPI } from './settingsAPI';
+export { apiKeysAPI } from './apiKeysAPI';
+export { smtpProxyAPI } from './smtpProxyAPI';
+export { statusAPI } from './statusAPI';
+export { notificationAPI } from './notificationAPI';
+export { tunnelsAPI } from './tunnelsAPI';
+export { socks5ProxyAPI } from './socks5ProxyAPI';

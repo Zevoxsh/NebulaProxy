@@ -1,0 +1,1025 @@
+// @ts-check
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { config } from '../config/config.js';
+import { database } from '../services/database.js';
+import { allocateAvailablePort } from '../services/portAllocator.js';
+import { tunnelRelayService } from '../services/tunnelRelayService.js';
+
+const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
+const randomCode = (bytes = 16) => crypto.randomBytes(bytes).toString('hex');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const agentScriptCandidates = [
+  path.join(__dirname, '..', 'scripts', 'tunnel-agent.js'),
+  '/repo/backend/scripts/tunnel-agent.js'
+];
+
+async function readAgentScriptContent() {
+  for (const candidatePath of agentScriptCandidates) {
+    try {
+      if (fs.existsSync(candidatePath)) {
+        return await fs.promises.readFile(candidatePath, 'utf8');
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error(`Tunnel agent script not found. Checked: ${agentScriptCandidates.join(', ')}`);
+}
+
+async function canAccessTunnel(tunnel, userId, isAdmin) {
+  if (isAdmin) return true;
+  if (String(tunnel.user_id) === String(userId)) return true;
+  if (tunnel.team_id && await database.isTeamMember(tunnel.team_id, userId)) return true;
+  const access = await database.getTunnelAccessEntry(tunnel.id, userId);
+  if (access) return true;
+  return false;
+}
+
+async function canManageTunnel(tunnel, userId, isAdmin) {
+  if (isAdmin) return true;
+  if (String(tunnel.user_id) === String(userId)) return true;
+  const access = await database.getTunnelAccessEntry(tunnel.id, userId);
+  return access?.role === 'manage';
+}
+
+function buildPublicHostname(tunnel, protocol, publicPort = null) {
+  const publicSlug = tunnel.public_slug || tunnel.publicSlug || tunnel.id;
+  const publicDomain = tunnel.public_domain || config.tunnels.publicDomain;
+
+  if (publicPort) {
+    return `${protocol}-${publicSlug}-${publicPort}.${publicDomain}`;
+  }
+
+  return `${protocol}.${publicSlug}.${publicDomain}`;
+}
+
+function getPublicBaseUrl(request) {
+  if (config.tunnels.baseUrl) {
+    return config.tunnels.baseUrl;
+  }
+
+  const headers = request?.headers || {};
+  const forwardedProto = String(headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const forwardedHost = String(headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || (request?.socket?.encrypted ? 'https' : 'http');
+  const host = forwardedHost || String(headers.host || '').trim() || `127.0.0.1:${config.port}`;
+  return `${protocol}://${host}`;
+}
+
+function buildInstallCommands(baseUrl, code) {
+  const encodedCode = encodeURIComponent(code);
+  const linuxInstallerUrl = `${baseUrl}/api/tunnels/install.sh?code=${encodedCode}`;
+  const windowsInstallerUrl = `${baseUrl}/api/tunnels/install.ps1?code=${encodedCode}`;
+
+  return {
+    linuxInstallerUrl,
+    windowsInstallerUrl,
+    linuxCommand: `curl -fsSL "${linuxInstallerUrl}" | bash`,
+    windowsCommand: `powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr '${windowsInstallerUrl}' -UseBasicParsing | iex"`
+  };
+}
+
+function buildBindingAccessUrl(binding) {
+  const host = `${binding.publicHostname}:${binding.publicPort}`;
+  if (binding.protocol === 'udp') {
+    return `udp://${host}`;
+  }
+  return `tcp://${host}`;
+}
+
+function buildLinuxInstallerScript({ baseUrl, code }) {
+  const safeBaseUrl = JSON.stringify(baseUrl);
+  const safeCode = JSON.stringify(code);
+
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[nebula-tunnel] Node.js est requis (version 18+)."
+  echo "[nebula-tunnel] Installe Node puis relance la commande."
+  exit 1
+fi
+
+API_BASE=${safeBaseUrl}
+ENROLL_CODE=${safeCode}
+AGENT_NAME="$(hostname 2>/dev/null || echo tunnel-agent)"
+INSTALL_DIR="$HOME/.nebula-tunnel"
+AGENT_FILE="$INSTALL_DIR/tunnel-agent.mjs"
+CONFIG_FILE="$INSTALL_DIR/agent-config.json"
+LOG_FILE="$INSTALL_DIR/agent.log"
+NODE_WS_ARGS=""
+
+if node --experimental-websocket -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" >/dev/null 2>&1; then
+  NODE_WS_ARGS="--experimental-websocket"
+fi
+
+mkdir -p "$INSTALL_DIR"
+curl -fsSL "$API_BASE/api/tunnels/agent-script" -o "$AGENT_FILE"
+
+if ! node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "[nebula-tunnel] WebSocket natif indisponible, installation du fallback ws..."
+    (
+      cd "$INSTALL_DIR"
+      npm init -y >/dev/null 2>&1 || true
+      npm install ws --no-audit --no-fund --silent >/dev/null 2>&1
+    ) || echo "[nebula-tunnel] Impossible d installer ws automatiquement."
+  else
+    echo "[nebula-tunnel] npm absent: fallback ws non installe automatiquement."
+  fi
+fi
+
+PREVIEW_JSON="$(curl -fsSL "$API_BASE/api/tunnels/enrollment-code/preview?code=$ENROLL_CODE" 2>/dev/null || true)"
+PREVIEW_TUNNEL_ID=""
+if [ -n "$PREVIEW_JSON" ]; then
+  PREVIEW_TUNNEL_ID="$(printf '%s' "$PREVIEW_JSON" | node -e 'const fs=require("fs"); let data=""; process.stdin.on("data", chunk => data += chunk).on("end", () => { try { const json = JSON.parse(data); process.stdout.write(String(json.tunnel?.id || "")); } catch { process.stdout.write(""); } });')"
+fi
+
+EXISTING_TUNNEL_ID=""
+if [ -s "$CONFIG_FILE" ]; then
+  EXISTING_TUNNEL_ID="$(cat "$CONFIG_FILE" | node -e 'const fs=require("fs"); let data=""; process.stdin.on("data", chunk => data += chunk).on("end", () => { try { const json = JSON.parse(data); process.stdout.write(String(json.tunnelId || "")); } catch { process.stdout.write(""); } });')"
+fi
+
+if [ -n "$PREVIEW_TUNNEL_ID" ] && [ -n "$EXISTING_TUNNEL_ID" ] && [ "$EXISTING_TUNNEL_ID" = "$PREVIEW_TUNNEL_ID" ]; then
+  echo "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
+else
+  node "$AGENT_FILE" enroll --server "$API_BASE" --code "$ENROLL_CODE" --name "$AGENT_NAME" --config "$CONFIG_FILE"
+fi
+
+# Register the agent as a persistent OS-level service instead of a plain
+# background process -- nohup alone survives a closed terminal but NOT a
+# reboot, since nothing re-launches it at boot. This is what previously made
+# the agent silently stop coming back after restarting the host it runs on.
+OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
+NODE_BIN="$(command -v node)"
+
+start_plain_background() {
+  echo "[nebula-tunnel] Lancement en arriere-plan simple (ne survivra PAS a un redemarrage)."
+  if command -v nohup >/dev/null 2>&1; then
+    nohup node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+  else
+    node $NODE_WS_ARGS "$AGENT_FILE" run --server "$API_BASE" --config "$CONFIG_FILE"
+  fi
+}
+
+if [ "$OS_NAME" = "Darwin" ]; then
+  PLIST_DIR="$HOME/Library/LaunchAgents"
+  PLIST_FILE="$PLIST_DIR/com.nebulaproxy.tunnel-agent.plist"
+  mkdir -p "$PLIST_DIR"
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+    echo '<plist version="1.0">'
+    echo '<dict>'
+    echo '  <key>Label</key>'
+    echo '  <string>com.nebulaproxy.tunnel-agent</string>'
+    echo '  <key>ProgramArguments</key>'
+    echo '  <array>'
+    echo "    <string>$NODE_BIN</string>"
+    if [ -n "$NODE_WS_ARGS" ]; then
+      echo "    <string>$NODE_WS_ARGS</string>"
+    fi
+    echo "    <string>$AGENT_FILE</string>"
+    echo '    <string>run</string>'
+    echo '    <string>--server</string>'
+    echo "    <string>$API_BASE</string>"
+    echo '    <string>--config</string>'
+    echo "    <string>$CONFIG_FILE</string>"
+    echo '  </array>'
+    echo '  <key>RunAtLoad</key>'
+    echo '  <true/>'
+    echo '  <key>KeepAlive</key>'
+    echo '  <true/>'
+    echo '  <key>StandardOutPath</key>'
+    echo "  <string>$LOG_FILE</string>"
+    echo '  <key>StandardErrorPath</key>'
+    echo "  <string>$LOG_FILE</string>"
+    echo '</dict>'
+    echo '</plist>'
+  } > "$PLIST_FILE"
+
+  launchctl unload "$PLIST_FILE" >/dev/null 2>&1 || true
+  if launchctl load -w "$PLIST_FILE" >/dev/null 2>&1; then
+    echo "[nebula-tunnel] Agent installe comme service launchd (demarre a la connexion, redemarre automatiquement)."
+    echo "[nebula-tunnel] Service: $PLIST_FILE"
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+  else
+    start_plain_background
+  fi
+
+elif command -v systemctl >/dev/null 2>&1; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  UNIT_FILE="$UNIT_DIR/nebula-tunnel-agent.service"
+  mkdir -p "$UNIT_DIR"
+  {
+    echo "[Unit]"
+    echo "Description=NebulaProxy Tunnel Agent"
+    echo "After=network-online.target"
+    echo "Wants=network-online.target"
+    echo ""
+    echo "[Service]"
+    echo "ExecStart=$NODE_BIN $NODE_WS_ARGS $AGENT_FILE run --server $API_BASE --config $CONFIG_FILE"
+    echo "Restart=always"
+    echo "RestartSec=5"
+    echo "StandardOutput=append:$LOG_FILE"
+    echo "StandardError=append:$LOG_FILE"
+    echo ""
+    echo "[Install]"
+    echo "WantedBy=default.target"
+  } > "$UNIT_FILE"
+
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  if systemctl --user enable --now nebula-tunnel-agent.service >/dev/null 2>&1; then
+    echo "[nebula-tunnel] Agent installe comme service systemd --user (survit aux redemarrages, redemarre automatiquement)."
+    echo "[nebula-tunnel] Service: $UNIT_FILE"
+    echo "[nebula-tunnel] Logs: $LOG_FILE"
+    if command -v loginctl >/dev/null 2>&1; then
+      loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || echo "[nebula-tunnel] Astuce: lance 'loginctl enable-linger $(id -un)' (root) pour que l'agent tourne meme sans session ouverte."
+    fi
+  else
+    start_plain_background
+  fi
+
+else
+  start_plain_background
+fi
+`;
+}
+
+function buildWindowsInstallerScript({ baseUrl, code }) {
+  const safeBaseUrl = JSON.stringify(baseUrl);
+  const safeCode = JSON.stringify(code);
+
+  return `
+$ErrorActionPreference = 'Stop'
+
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Error "Node.js 18+ est requis. Installe Node puis relance la commande."
+  exit 1
+}
+
+$ApiBase = ${safeBaseUrl}
+$EnrollCode = ${safeCode}
+$AgentName = $env:COMPUTERNAME
+$InstallDir = Join-Path $env:USERPROFILE ".nebula-tunnel"
+$AgentFile = Join-Path $InstallDir "tunnel-agent.mjs"
+$ConfigFile = Join-Path $InstallDir "agent-config.json"
+$LogFile = Join-Path $InstallDir "agent.log"
+$NodeWsArgs = @()
+
+try {
+  node --experimental-websocket -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $NodeWsArgs = @('--experimental-websocket')
+  }
+} catch {
+  $NodeWsArgs = @()
+}
+
+New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
+Invoke-WebRequest -Uri "$ApiBase/api/tunnels/agent-script" -OutFile $AgentFile
+
+$HasNativeWs = $false
+try {
+  node -e "process.exit(typeof WebSocket === 'function' ? 0 : 1)" *> $null
+  if ($LASTEXITCODE -eq 0) {
+    $HasNativeWs = $true
+  }
+} catch {
+  $HasNativeWs = $false
+}
+
+if (-not $HasNativeWs) {
+  if (Get-Command npm -ErrorAction SilentlyContinue) {
+    Write-Host "[nebula-tunnel] WebSocket natif indisponible, installation du fallback ws..."
+    try {
+      Push-Location $InstallDir
+      npm init -y *> $null
+      npm install ws --no-audit --no-fund --silent *> $null
+    } catch {
+      Write-Host "[nebula-tunnel] Impossible d installer ws automatiquement."
+    } finally {
+      Pop-Location
+    }
+  } else {
+    Write-Host "[nebula-tunnel] npm absent: fallback ws non installe automatiquement."
+  }
+}
+
+$PreviewJson = ''
+try {
+  $PreviewJson = (Invoke-WebRequest -Uri "$ApiBase/api/tunnels/enrollment-code/preview?code=$EnrollCode" -UseBasicParsing).Content
+} catch {
+  $PreviewJson = ''
+}
+
+$PreviewTunnelId = ''
+if ($PreviewJson) {
+  try {
+    $PreviewTunnelId = ((($PreviewJson | ConvertFrom-Json).tunnel).id).ToString()
+  } catch {
+    $PreviewTunnelId = ''
+  }
+}
+
+$ExistingTunnelId = ''
+if ((Test-Path $ConfigFile -PathType Leaf) -and ((Get-Item $ConfigFile).Length -gt 0)) {
+  try {
+    $ExistingTunnelId = ((Get-Content $ConfigFile -Raw | ConvertFrom-Json).tunnelId).ToString()
+  } catch {
+    $ExistingTunnelId = ''
+  }
+}
+
+if ($PreviewTunnelId -and $ExistingTunnelId -and $ExistingTunnelId -eq $PreviewTunnelId) {
+  Write-Host "[nebula-tunnel] Configuration existante détectée, réutilisation de l'agent."
+} else {
+  node $AgentFile enroll --server $ApiBase --code $EnrollCode --name $AgentName --config $ConfigFile
+}
+
+# Register the agent as a persistent Scheduled Task instead of a bare
+# Start-Process -- a plain background process doesn't survive a reboot or
+# even a logoff, since nothing re-launches it. Scheduled Tasks don't
+# cleanly pass through multi-arg node invocations, so write a small wrapper
+# script and point the task at that.
+$NodePath = (Get-Command node).Source
+$NodeArgsList = @($NodeWsArgs + @($AgentFile, 'run', '--server', $ApiBase, '--config', $ConfigFile))
+$QuotedNodeArgs = ($NodeArgsList | ForEach-Object { '"' + $_ + '"' }) -join ' '
+
+$RunScript = Join-Path $InstallDir "run-agent.ps1"
+$RunScriptContent = @"
+& '$NodePath' $QuotedNodeArgs *>> '$LogFile'
+"@
+Set-Content -Path $RunScript -Value $RunScriptContent -Encoding UTF8
+
+$TaskName = "NebulaProxyTunnelAgent"
+try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+
+$installedAsTask = $false
+try {
+  $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""$RunScript""")
+  $Trigger = New-ScheduledTaskTrigger -AtLogOn
+  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "NebulaProxy tunnel agent" | Out-Null
+  Start-ScheduledTask -TaskName $TaskName
+  $installedAsTask = $true
+} catch {
+  $installedAsTask = $false
+}
+
+if ($installedAsTask) {
+  Write-Host "[nebula-tunnel] Agent installe comme tache planifiee '$TaskName' (demarre a la connexion, relance automatique)."
+  Write-Host "[nebula-tunnel] Logs: $LogFile"
+} else {
+  Write-Host "[nebula-tunnel] Echec de l'enregistrement de la tache planifiee, lancement en arriere-plan simple (ne survivra pas a un redemarrage)."
+  $process = Start-Process -FilePath node -ArgumentList $NodeArgsList -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile -WindowStyle Hidden -PassThru
+  Write-Host "[nebula-tunnel] Agent demarre. PID: $($process.Id)"
+  Write-Host "[nebula-tunnel] Logs: $LogFile"
+}
+`;
+}
+
+export async function tunnelRoutes(fastify, _options) {
+  fastify.get('/', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const userId = request.user.id;
+      const isAdmin = request.user.role === 'admin';
+
+      const tunnels = isAdmin
+        ? await database.getAllTunnels()
+        : await database.getAccessibleTunnelsByUserId(userId);
+
+      const withRelations = await Promise.all(tunnels.map(async (tunnel) => ({
+        ...tunnel,
+        agents: await database.getTunnelAgents(tunnel.id),
+        bindings: await database.getTunnelBindings(tunnel.id),
+        access: await database.getTunnelAccessEntries(tunnel.id)
+      })));
+
+      reply.send({ success: true, tunnels: withRelations, count: withRelations.length });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch tunnels');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch tunnels' });
+    }
+  });
+
+  fastify.post('/', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          description: { type: 'string', maxLength: 2000 },
+          provider: { type: 'string', enum: ['cloudflare', 'manual'] },
+          publicDomain: { type: 'string', minLength: 1, maxLength: 255 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const userId = request.user.id;
+      const { name, description, provider = 'cloudflare', publicDomain } = request.body;
+
+      const tunnel = await database.createTunnel({
+        userId,
+        name,
+        description: description || null,
+        provider,
+        publicDomain: publicDomain || config.tunnels.publicDomain
+      });
+
+      await database.createAuditLog({
+        userId,
+        action: 'tunnel_created',
+        entityType: 'tunnel',
+        entityId: tunnel.id,
+        details: { name: tunnel.name, provider: tunnel.provider, public_domain: tunnel.public_domain },
+        ipAddress: request.ip
+      });
+
+      reply.code(201).send({ success: true, tunnel });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to create tunnel');
+      reply.code(500).send({ error: 'Internal Server Error', message: error.message || 'Failed to create tunnel' });
+    }
+  });
+
+  fastify.delete('/:id', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to delete this tunnel' });
+      }
+
+      await database.deleteTunnel(tunnelId);
+
+      try {
+        await tunnelRelayService.reloadBindings();
+      } catch (reloadError) {
+        fastify.log.error({ error: reloadError, tunnelId }, 'Tunnel deleted but failed to reload relay bindings');
+      }
+
+      try {
+        await database.createAuditLog({
+          userId: request.user.id,
+          action: 'tunnel_deleted',
+          entityType: 'tunnel',
+          entityId: tunnelId,
+          details: { name: tunnel.name, provider: tunnel.provider, public_domain: tunnel.public_domain },
+          ipAddress: request.ip
+        });
+      } catch (auditError) {
+        fastify.log.error({ error: auditError, tunnelId }, 'Tunnel deleted but failed to write audit log');
+      }
+
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to delete tunnel');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to delete tunnel' });
+    }
+  });
+
+  fastify.get('/:id', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+
+      if (!await canAccessTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to access this tunnel' });
+      }
+
+      reply.send({
+        success: true,
+        tunnel: {
+          ...tunnel,
+          agents: await database.getTunnelAgents(tunnelId),
+          bindings: await database.getTunnelBindings(tunnelId),
+          access: await database.getTunnelAccessEntries(tunnelId)
+        }
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch tunnel');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch tunnel' });
+    }
+  });
+
+  fastify.post('/:id/enrollment-code', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        properties: { ttlMinutes: { type: 'integer', minimum: 1, maximum: 1440 } },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this tunnel' });
+      }
+
+      const code = randomCode(12);
+      const ttlMinutes = request.body.ttlMinutes || config.tunnels.enrollmentCodeTtlMinutes;
+      const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
+      const baseUrl = getPublicBaseUrl(request);
+      const commands = buildInstallCommands(baseUrl, code);
+
+      await database.updateTunnelEnrollmentCode(tunnelId, sha256(code), expiresAt);
+
+      reply.send({ success: true, code, expiresAt, ...commands });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to generate tunnel enrollment code');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to generate enrollment code' });
+    }
+  });
+
+  const sendAgentScript = async (request, reply) => {
+    try {
+      const content = await readAgentScriptContent();
+      reply.type('application/javascript; charset=utf-8').send(content);
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch tunnel agent script');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch agent script' });
+    }
+  };
+
+  // Prefer extensionless path to avoid frontend nginx static .js routing conflicts.
+  fastify.get('/agent-script', sendAgentScript);
+  // Backward compatible endpoint for older installers.
+  fastify.get('/agent-script.js', sendAgentScript);
+
+  fastify.get('/install.sh', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: { type: 'string', minLength: 8, maxLength: 256 }
+        },
+        additionalProperties: true
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const baseUrl = getPublicBaseUrl(request);
+      const code = String(request.query.code || '').trim();
+      const script = buildLinuxInstallerScript({ baseUrl, code });
+      reply.type('text/x-shellscript; charset=utf-8').send(script);
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to generate Linux tunnel installer');
+      const headers = request?.headers || {};
+      const host = String(headers['x-forwarded-host'] || headers.host || `127.0.0.1:${config.port}`).trim();
+      const protocol = String(headers['x-forwarded-proto'] || (request?.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim() || 'http';
+      const fallbackBaseUrl = `${protocol}://${host}`;
+      const code = String(request?.query?.code || '').trim();
+      reply.type('text/x-shellscript; charset=utf-8').send(buildLinuxInstallerScript({ baseUrl: fallbackBaseUrl, code }));
+    }
+  });
+
+  fastify.get('/install.ps1', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: { type: 'string', minLength: 8, maxLength: 256 }
+        },
+        additionalProperties: true
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const baseUrl = getPublicBaseUrl(request);
+      const code = String(request.query.code || '').trim();
+      const script = buildWindowsInstallerScript({ baseUrl, code });
+      reply.type('text/plain; charset=utf-8').send(script);
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to generate Windows tunnel installer');
+      const headers = request?.headers || {};
+      const host = String(headers['x-forwarded-host'] || headers.host || `127.0.0.1:${config.port}`).trim();
+      const protocol = String(headers['x-forwarded-proto'] || (request?.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim() || 'http';
+      const fallbackBaseUrl = `${protocol}://${host}`;
+      const code = String(request?.query?.code || '').trim();
+      reply.type('text/plain; charset=utf-8').send(buildWindowsInstallerScript({ baseUrl: fallbackBaseUrl, code }));
+    }
+  });
+
+  fastify.post('/enroll', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['code', 'name'],
+        properties: {
+          code: { type: 'string', minLength: 16, maxLength: 128 },
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          platform: { type: 'string', maxLength: 64 },
+          osName: { type: 'string', maxLength: 64 },
+          arch: { type: 'string', maxLength: 64 },
+          version: { type: 'string', maxLength: 32 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { code, name, platform, osName, arch, version } = request.body;
+      const tunnel = await database.consumeTunnelEnrollmentCode(sha256(code));
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Enrollment code is invalid or expired' });
+      }
+
+      const agentToken = randomCode(24);
+      const agent = await database.createTunnelAgent({
+        tunnelId: tunnel.id,
+        name,
+        platform,
+        osName,
+        arch,
+        version,
+        agentTokenHash: sha256(agentToken)
+      });
+
+      await database.createAuditLog({
+        userId: tunnel.user_id,
+        action: 'tunnel_enrolled',
+        entityType: 'tunnel',
+        entityId: tunnel.id,
+        details: { agent_id: agent.id, agent_name: name },
+        ipAddress: request.ip
+      });
+
+      reply.send({ success: true, tunnel, agent, agentToken });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to enroll tunnel agent');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to enroll tunnel agent' });
+    }
+  });
+
+  fastify.get('/enrollment-code/preview', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: { type: 'string', minLength: 16, maxLength: 128 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const code = String(request.query.code || '').trim();
+      const tunnel = await database.getTunnelByEnrollmentCodeHash(sha256(code));
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Enrollment code is invalid or expired' });
+      }
+
+      reply.send({
+        success: true,
+        tunnel: {
+          id: tunnel.id,
+          name: tunnel.name,
+          public_domain: tunnel.public_domain,
+          status: tunnel.status
+        }
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to preview tunnel enrollment code');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to preview enrollment code' });
+    }
+  });
+
+  fastify.get('/:id/bindings', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canAccessTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to access this tunnel' });
+      }
+
+      reply.send({
+        success: true,
+        bindings: await database.getTunnelBindings(tunnelId),
+        access: await database.getTunnelAccessEntries(tunnelId)
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch tunnel bindings');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch tunnel bindings' });
+    }
+  });
+
+  fastify.post('/:id/bindings', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['label', 'localPort'],
+        properties: {
+          label: { type: 'string', minLength: 1, maxLength: 255 },
+          protocol: { type: 'string', enum: ['tcp', 'udp'] },
+          agentId: { type: ['integer', 'null'], minimum: 1 },
+          localPort: { type: 'integer', minimum: 1, maximum: 65535 },
+          publicPort: { type: ['integer', 'null'], minimum: 1, maximum: 65535 },
+          targetHost: { type: 'string', minLength: 1, maxLength: 255 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this tunnel' });
+      }
+
+      const { label, protocol = 'tcp', localPort, publicPort, targetHost = '127.0.0.1', agentId: requestedAgentId } = request.body;
+
+      let effectiveAgentId = requestedAgentId ?? null;
+      if (effectiveAgentId !== null) {
+        const agent = await database.getTunnelAgentById(effectiveAgentId);
+        if (!agent || Number(agent.tunnel_id) !== tunnelId) {
+          return reply.code(400).send({ error: 'Bad Request', message: 'Invalid agent for this tunnel' });
+        }
+      } else {
+        const agents = await database.getTunnelAgents(tunnelId);
+        const preferredAgent = agents.find((agent) => agent.status === 'online') || agents[0] || null;
+        effectiveAgentId = preferredAgent ? preferredAgent.id : null;
+      }
+
+      const effectivePublicPort = publicPort ?? await allocateAvailablePort(protocol, {
+        minPort: config.tunnels.portRangeMin,
+        maxPort: config.tunnels.portRangeMax
+      });
+      const publicHostname = buildPublicHostname(tunnel, protocol, effectivePublicPort);
+
+      const binding = await database.createTunnelBinding({
+        tunnelId,
+        agentId: effectiveAgentId,
+        label,
+        protocol,
+        localPort,
+        publicPort: effectivePublicPort,
+        publicHostname,
+        targetHost
+      });
+
+      await tunnelRelayService.reloadBindings();
+
+      await database.createAuditLog({
+        userId: request.user.id,
+        action: 'tunnel_binding_created',
+        entityType: 'tunnel',
+        entityId: tunnelId,
+        details: { binding_id: binding.id, label, protocol, local_port: localPort, public_port: effectivePublicPort },
+        ipAddress: request.ip
+      });
+
+      reply.code(201).send({
+        success: true,
+        binding,
+        accessUrl: buildBindingAccessUrl({
+          protocol,
+          localPort,
+          publicHostname,
+          publicPort: effectivePublicPort
+        })
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to create tunnel binding');
+      reply.code(500).send({ error: 'Internal Server Error', message: error.message || 'Failed to create tunnel binding' });
+    }
+  });
+
+  fastify.delete('/:id/bindings/:bindingId', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const bindingId = parseInt(request.params.bindingId, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this tunnel' });
+      }
+
+      const binding = await database.getTunnelBindingById(bindingId);
+      if (!binding || Number(binding.tunnel_id) !== tunnelId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Binding not found' });
+      }
+
+      await database.deleteTunnelBinding(bindingId);
+      await tunnelRelayService.reloadBindings();
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to delete tunnel binding');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to delete tunnel binding' });
+    }
+  });
+
+  fastify.get('/:id/access', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to manage this tunnel' });
+      }
+
+      reply.send({
+        success: true,
+        access: await database.getTunnelAccessEntries(tunnelId)
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to fetch tunnel access');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to fetch tunnel access' });
+    }
+  });
+
+  fastify.post('/:id/access', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['userId'],
+        properties: {
+          userId: { type: 'integer', minimum: 1 },
+          role: { type: 'string', enum: ['view', 'manage'] }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to manage this tunnel' });
+      }
+
+      const { userId, role = 'view' } = request.body;
+      const access = await database.grantTunnelAccess({
+        tunnelId,
+        userId,
+        role,
+        grantedBy: request.user.id
+      });
+
+      reply.code(201).send({ success: true, access });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to grant tunnel access');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to grant tunnel access' });
+    }
+  });
+
+  fastify.delete('/:id/access/:userId', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const userId = parseInt(request.params.userId, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to manage this tunnel' });
+      }
+
+      await database.revokeTunnelAccess(tunnelId, userId);
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to revoke tunnel access');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to revoke tunnel access' });
+    }
+  });
+
+  fastify.delete('/:id/agents/:agentId', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const tunnelId = parseInt(request.params.id, 10);
+      const agentId = parseInt(request.params.agentId, 10);
+      const tunnel = await database.getTunnelById(tunnelId);
+
+      if (!tunnel) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Tunnel not found' });
+      }
+
+      if (!await canManageTunnel(tunnel, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this tunnel' });
+      }
+
+      const agent = await database.getTunnelAgentById(agentId);
+      if (!agent || Number(agent.tunnel_id) !== tunnelId) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Agent not found' });
+      }
+
+      tunnelRelayService.disconnectAgent(agentId, 1008, 'Agent deleted from panel');
+      await database.deleteTunnelAgent(agentId);
+      await tunnelRelayService.reloadBindings();
+
+      await database.createAuditLog({
+        userId: request.user.id,
+        action: 'tunnel_agent_deleted',
+        entityType: 'tunnel',
+        entityId: tunnelId,
+        details: { agent_id: agentId, agent_name: agent.name },
+        ipAddress: request.ip
+      });
+
+      reply.send({ success: true });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to delete tunnel agent');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to delete tunnel agent' });
+    }
+  });
+
+  fastify.post('/agents/:id/heartbeat', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['online', 'offline'] },
+          version: { type: 'string', maxLength: 32 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const agentId = parseInt(request.params.id, 10);
+      const agentToken = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!agentToken) {
+        return reply.code(401).send({ error: 'Unauthorized', message: 'Missing agent token' });
+      }
+
+      const agent = await database.getTunnelAgentById(agentId);
+      if (!agent || agent.agent_token_hash !== sha256(agentToken)) {
+        return reply.code(401).send({ error: 'Unauthorized', message: 'Invalid agent token' });
+      }
+
+      const updatedAgent = await database.updateTunnelAgentHeartbeat(agentId, { status: request.body.status || 'online' });
+      const bindings = await database.getTunnelBindingsByAgentId(agentId);
+
+      reply.send({
+        success: true,
+        agent: updatedAgent,
+        tunnel: await database.getTunnelById(agent.tunnel_id),
+        bindings
+      });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to process tunnel heartbeat');
+      reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to process tunnel heartbeat' });
+    }
+  });
+}

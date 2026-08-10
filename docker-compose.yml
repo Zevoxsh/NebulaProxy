@@ -1,0 +1,387 @@
+name: nebulaproxy
+
+# ─── Syslog logging — tous les containers envoient vers rsyslog sur l'hôte ───
+x-logging: &default-logging
+  driver: syslog
+  options:
+    syslog-address: "unixgram:///dev/log"
+    syslog-facility: "daemon"
+    tag: "nebulaproxy-{{.Name}}"
+    syslog-format: "rfc3164"
+
+# ─── Isolated bridge network — no container runs on the host network ──────────
+networks:
+  nebula-net:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+        - subnet: fd00:db8:1::/48
+
+services:
+
+  # ── Docker socket proxy (read-only) ────────────────────────────────────────
+  # Backend monitoring only — no POST, no BUILD. Cannot create/stop/modify containers.
+  socket-proxy-ro:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: nebulaproxy-socket-proxy-ro
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      VOLUMES: 1
+    ports:
+      - "127.0.0.1:2375:2375"   # accessible depuis le backend en network_mode host
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Docker socket proxy (read-write) ────────────────────────────────────────
+  # Watchdog only — POST + BUILD required to rebuild and restart containers on update.
+  # Not published on host, accessible only via nebula-net.
+  socket-proxy-rw:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: nebulaproxy-socket-proxy-rw
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      BUILD: 1
+      POST: 1
+      INFO: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      # POST + CONTAINERS alone aren't enough for this proxy — restart/start/stop
+      # are gated by their own explicit flags (default 0), separately from the
+      # generic POST permission. Without these the admin panel's container
+      # restart/start/stop actions fail with a 403 from the socket-proxy itself.
+      ALLOW_RESTARTS: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+    # Backend (network_mode: host) reaches this over localhost for its admin
+    # "Services" restart/start/stop actions — same pattern as socket-proxy-ro's
+    # 127.0.0.1:2375 publish below, on a separate port since ro already owns
+    # 2375. Bound to loopback only, never exposed beyond this host.
+    ports:
+      - "127.0.0.1:2376:2375"
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-redis
+    logging: *default-logging
+    volumes:
+      - redis-data:/data
+      - redis-secret:/run/redis-secret  # secret also written here for sibling containers
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"   # accessible depuis le backend en host network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $(cat /data/redis.secret) --no-auth-warning ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-postgres
+    logging: *default-logging
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - pg-secret:/run/pg-secret  # auto-generated password exposed to backend (read-only)
+    environment:
+      POSTGRES_USER: nebulaproxy
+      POSTGRES_DB: nebulaproxy
+      # POSTGRES_PASSWORD_FILE is set by the custom entrypoint
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"   # accessible depuis le backend en host network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nebulaproxy -d nebulaproxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          # Host now has 24GB/8 cores (was 3.8GB) — comfortable headroom for
+          # real shared_buffers/cache instead of the bare minimum needed to
+          # avoid connection timeouts under load.
+          memory: 2048M
+        reservations:
+          memory: 512M
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  # SECURITY NOTE: network_mode: host is required because the proxy must bind
+  # to arbitrary TCP/UDP ports at runtime (80, 443, custom game ports, etc.).
+  # Mitigation: drop all unneeded Linux capabilities and prevent privilege
+  # escalation. The proxy only needs NET_BIND_SERVICE (ports < 1024).
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-backend
+    logging: *default-logging
+    env_file:
+      - path: .env.nebula
+        required: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # bind to ports < 1024 (80, 443)
+      - CHOWN              # write let's encrypt certs
+      - DAC_OVERRIDE       # read/write cert files as non-root
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/www/letsencrypt:/var/www/letsencrypt
+      # Optional: mount an extra .well-known from another service (e.g. mailcow).
+      # Add this line to a docker-compose.override.yml if needed:
+      #   - /opt/mailcow-dockerized/data/web/.well-known:/var/www/letsencrypt/.well-known
+      - /etc/NebulaProxy:/repo
+      - backups:/app/backups
+      - uploads:/app/uploads
+      - redis-secret:/run/redis-secret:ro
+      - pg-secret:/run/pg-secret:ro
+    environment:
+      - GIT_DIR=/repo/.git
+      - REPO_PATH=/repo
+      - COMPOSE_PROJECT_NAME=nebulaproxy
+      # Own container name, so dockerService can detect a self-restart
+      # request and answer the HTTP call before triggering it — `docker
+      # restart` blocks until the container has actually stopped and started
+      # again, so if we awaited that normally for our own container the
+      # response could never be flushed (the process making the call is
+      # inside the container being killed).
+      - CONTAINER_NAME=nebulaproxy-backend
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6379
+      - DB_HOST=127.0.0.1
+      - DB_PORT=5432
+      - DB_USER=nebulaproxy
+      - DB_NAME=nebulaproxy
+      # 2375 = socket-proxy-ro (read-only, listing/inspect). Mutating actions
+      # (restart/start/stop from the admin "Services" page) need write
+      # access, so those go through dockerService.js's separate rw client
+      # on 2376 = socket-proxy-rw (ALLOW_RESTARTS/START/STOP enabled there).
+      - DOCKER_HOST=tcp://127.0.0.1:2375
+      - DOCKER_HOST_RW=tcp://127.0.0.1:2376
+      - PUBLIC_IP=${PUBLIC_IP:-}
+      - PUBLIC_IPV6=${PUBLIC_IPV6:-}
+      - LOG_LEVEL=warn
+      - LOG_RETENTION_DAYS=3
+      # 2 workers now that the host has 8 cores / 24GB — was disabled when
+      # the box only had 3.8GB (halving per-worker DB pool + heap budget
+      # wasn't worth it there). See backend/cluster.js and
+      # clusterCoordinator.js for the leader-gated singleton jobs.
+      - CLUSTER_ENABLED=true
+      - CLUSTER_WORKERS=2
+    healthcheck:
+      # Was `wget /health` alone — with CLUSTER_ENABLED, that can land on
+      # either worker (shared port, SCHED_NONE) and pass even if the other
+      # one is stuck. healthcheck.js additionally verifies every worker's
+      # Redis heartbeat is fresh. Was also interval:15s/retries:5 (~75s to
+      # mark unhealthy) — tightened so autoheal reacts in well under a
+      # minute instead of 90-120s.
+      test: ["CMD", "node", "/app/healthcheck.js"]
+      interval: 8s
+      timeout: 5s
+      retries: 3
+      # Bumped from 40s: with 2 workers, one can legitimately take longer
+      # than the other to reach its first cluster heartbeat write (DB
+      # migrations, S3 cleanup, etc. aren't perfectly synchronized between
+      # them) — a real autoheal restart was triggered by this exact race,
+      # not an actual problem. More headroom before failures start counting.
+      start_period: 75s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      socket-proxy-ro:
+        condition: service_started
+    # host network = expose TOUS les ports dynamiquement (TCP/UDP domaines, 80, 443, 3000, 25565, SMTP...)
+    # Aucun port n'a besoin d'être listé — tout ce que le backend écoute est accessible sur l'hôte.
+    network_mode: host
+    stop_signal: SIGTERM
+    stop_grace_period: 45s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Host now has 24GB/8 cores (was 3.8GB/4 cores). CLUSTER_ENABLED=true
+          # with 2 workers below — sized to give each worker roughly a full
+          # core's worth of headroom for its event loop plus libuv thread pool
+          # (crypto, TLS, DNS, fs) and V8's parallel GC/compilation.
+          cpus: '3.0'
+          # Shared across both cluster workers — entrypoint.sh splits
+          # TOTAL_HEAP_MB across CLUSTER_WORKERS for --max-old-space-size.
+          memory: 3072M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-frontend
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # nginx binds port 80
+      - CHOWN               # nginx needs to chown its cache dirs at startup
+      - SETUID              # nginx drops privileges from root → nginx user
+      - SETGID
+    ports:
+      - "0.0.0.0:3001:80"
+      - "[::]:3001:80"
+    extra_hosts:
+      - "backend:host-gateway"   # résout 'backend' vers l'hôte (backend en network_mode host)
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+
+  # ── Watchdog ───────────────────────────────────────────────────────────────
+  watchdog:
+    build:
+      context: ./watchdog
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-watchdog
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    volumes:
+      - /etc/NebulaProxy:/repo
+      - watchdog-logs:/var/log
+      - redis-secret:/run/redis-secret:ro
+    environment:
+      - REPO_PATH=/repo
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_HOST=tcp://socket-proxy-rw:2375
+      - COMPOSE_PROJECT_NAME=nebulaproxy
+    extra_hosts:
+      - "backend:host-gateway"   # resout 'backend' vers l'hote (backend en network_mode host) pour le health-poll post-update
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/watchdog.heartbeat -mmin -2 | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+      socket-proxy-rw:
+        condition: service_started
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
+
+  # ── Autoheal ───────────────────────────────────────────────────────────────
+  # Restarts any container Docker marks "unhealthy". `restart: unless-stopped`
+  # alone only reacts to a container actually exiting — not to a healthcheck
+  # failing while the process is still alive (stuck event loop, exhausted
+  # pool, etc.), which previously meant a degraded backend could stay
+  # unhealthy — and every proxied domain unreachable — until someone noticed
+  # and restarted it manually.
+  autoheal:
+    build:
+      context: ./autoheal
+      dockerfile: Dockerfile
+    container_name: nebulaproxy-autoheal
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    environment:
+      - DOCKER_API_HOST=socket-proxy-rw:2375
+      # Matched to the backend healthcheck's tighter interval/retries so
+      # detection-to-restart stays well under a minute end to end.
+      - AUTOHEAL_INTERVAL=8
+    depends_on:
+      socket-proxy-rw:
+        condition: service_started
+    networks:
+      - nebula-net
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+volumes:
+  redis-data:
+    driver: local
+  redis-secret:
+    driver: local
+  pg-data:
+    driver: local
+  pg-secret:
+    driver: local
+  backups:
+    driver: local
+  uploads:
+    driver: local
+  watchdog-logs:
+    driver: local

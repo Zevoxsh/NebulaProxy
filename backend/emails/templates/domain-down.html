@@ -1,0 +1,24 @@
+﻿<p class="email-title">Domain offline</p>
+<p class="email-subtitle">{{domainName}} has failed multiple health checks and has been unreachable for more than 10 minutes.</p>
+
+<div class="alert alert-danger">
+  <span class="alert-label">Incident</span>
+  <p>We have paused repeated alerts. You will be notified automatically when the domain recovers.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Domain</td><td class="dv text-danger">{{domainName}}</td></tr>
+  <tr><td class="dk">Status</td><td class="dv"><span class="badge badge-danger">Offline</span></td></tr>
+  <tr><td class="dk">Down since</td><td class="dv">{{firstFailedAt}}</td></tr>
+  <tr><td class="dk">Duration</td><td class="dv">{{downDuration}}</td></tr>
+  <tr><td class="dk">Last error</td><td class="dv text-muted">{{lastError}}</td></tr>
+  <tr><td class="dk">Backend</td><td class="dv text-muted">{{backendUrl}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/domains/{{domainId}}" class="btn btn-primary">View domain</a>
+</div>
+
+<div class="note">
+  <strong>Suggested checks:</strong> verify your backend server is running, confirm network connectivity, review any recent configuration changes.
+</div>

@@ -1,0 +1,23 @@
+﻿<p class="email-title">High resource usage</p>
+<p class="email-subtitle">One or more system resources have exceeded their configured threshold.</p>
+
+<div class="alert alert-warning">
+  <span class="alert-label">Performance warning</span>
+  <p>Sustained high resource usage may degrade response times and affect the reliability of your proxied domains.</p>
+</div>
+
+<table class="data-table">
+  <tr><td class="dk">Detected at</td><td class="dv">{{timestamp}}</td></tr>
+  {{#cpuHigh}}<tr><td class="dk">CPU usage</td><td class="dv text-warning">{{cpuUsage}}% &nbsp;<span class="text-muted" style="font-weight:400;">threshold {{cpuThreshold}}%</span></td></tr>{{/cpuHigh}}
+  {{#memoryHigh}}<tr><td class="dk">Memory usage</td><td class="dv text-warning">{{memoryUsage}}% &nbsp;<span class="text-muted" style="font-weight:400;">threshold {{memoryThreshold}}%</span></td></tr>{{/memoryHigh}}
+  {{#diskHigh}}<tr><td class="dk">Disk usage</td><td class="dv text-warning">{{diskUsage}}% &nbsp;<span class="text-muted" style="font-weight:400;">threshold {{diskThreshold}}%</span></td></tr>{{/diskHigh}}
+  <tr><td class="dk">Duration</td><td class="dv">{{duration}}</td></tr>
+</table>
+
+<div class="btn-row">
+  <a href="{{dashboardUrl}}/admin/monitoring" class="btn btn-primary">View monitoring</a>
+</div>
+
+<div class="note">
+  <strong>Suggested checks:</strong> look for resource-intensive processes, review recent traffic patterns, consider scaling your infrastructure if usage remains elevated.
+</div>

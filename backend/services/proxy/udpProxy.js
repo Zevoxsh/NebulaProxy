@@ -1,0 +1,285 @@
+// Auto-extracted from proxyManager.js — do not edit directly.
+// Mixed into ProxyManager.prototype in proxyManager.js.
+
+import dgram from 'dgram';
+import { lts } from '../proxyContext.js';
+import { logger } from '../../utils/logger.js';
+import { database } from '../database.js';
+import { loadBalancer } from '../loadBalancer.js';
+import { urlFilterService } from '../urlFilterService.js';
+import { logBatchQueue } from '../logBatchQueue.js';
+import * as activeConnections from '../activeConnectionsRegistry.js';
+
+export class UdpProxy {
+// ==================== UDP PROXY ====================
+
+/**
+ * Build a HAProxy PROXY Protocol v2 binary header for a UDP packet.
+ * Used to forward the real client IP to Geyser (use-proxy-protocol: true).
+ *
+ * Format (IPv4, 28 bytes total):
+ *   12B signature + 1B version/cmd + 1B family + 2B addr_len + 4B src + 4B dst + 2B src_port + 2B dst_port
+ */
+_buildProxyV2Header(srcIp, srcPort, dstIp, dstPort) {
+  const isIPv6 = srcIp.includes(':');
+  const sig = Buffer.from([0x0D,0x0A,0x0D,0x0A,0x00,0x0D,0x0A,0x51,0x55,0x49,0x54,0x0A]);
+  const addrLen = isIPv6 ? 36 : 12;
+  const header = Buffer.alloc(16 + addrLen);
+
+  sig.copy(header, 0);
+  header[12] = 0x21;                       // version 2, PROXY command
+  header[13] = isIPv6 ? 0x22 : 0x12;       // AF_INET(6) + DGRAM
+  header.writeUInt16BE(addrLen, 14);
+
+  if (isIPv6) {
+    const expand = (ip) => {
+      const halves = ip.split('::');
+      const left = halves[0] ? halves[0].split(':') : [];
+      const right = halves[1] ? halves[1].split(':') : [];
+      const groups = [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+      const buf = Buffer.alloc(16);
+      groups.forEach((g, i) => { const v = parseInt(g || '0', 16); buf[i*2] = v>>8; buf[i*2+1] = v&0xFF; });
+      return buf;
+    };
+    expand(srcIp).copy(header, 16);
+    expand(dstIp).copy(header, 32);
+    header.writeUInt16BE(srcPort, 48);
+    header.writeUInt16BE(dstPort, 50);
+  } else {
+    const s = srcIp.split('.').map(Number);
+    const d = (dstIp || '0.0.0.0').split('.').map(Number);
+    header[16]=s[0]; header[17]=s[1]; header[18]=s[2]; header[19]=s[3];
+    header[20]=d[0]; header[21]=d[1]; header[22]=d[2]; header[23]=d[3];
+    header.writeUInt16BE(srcPort, 24);
+    header.writeUInt16BE(dstPort, 26);
+  }
+
+  return header;
+}
+
+/**
+ * Start a UDP proxy for a domain. Opens one listening socket per port in
+ * [external_port, external_port_end] (a single port when external_port_end
+ * isn't set). In range mode, each external port forwards 1:1 by port number
+ * to the same port on the backend host.
+ */
+_startUdpProxy(domain) {
+  const startPort = domain.external_port;
+  const endPort = domain.external_port_end || domain.external_port;
+  const isRangeMode = endPort > startPort;
+
+  const servers = [];
+  for (let port = startPort; port <= endPort; port++) {
+    servers.push(this._startUdpProxyListener(domain, port, isRangeMode));
+  }
+
+  this.proxies.set(domain.id, {
+    type: 'udp',
+    servers,
+    meta: domain
+  });
+
+  return servers;
+}
+
+/**
+ * Start a single UDP listener on `listenPort` for `domain`.
+ * Multi-client bidirectional forwarding with load balancing.
+ */
+_startUdpProxyListener(domain, listenPort, isRangeMode) {
+  // udp6 (not udp4) so bind(port, '::') below actually works — a udp4
+  // socket bound to the IPv6 wildcard address throws EINVAL. udp6 without
+  // ipv6Only accepts both IPv4-mapped and IPv6 traffic, same dual-stack
+  // intent as the TCP/minecraft listeners elsewhere in this codebase that
+  // already bind '::' successfully via net's default dual-stack behavior.
+  const serverSocket = dgram.createSocket('udp6');
+  const upstreams = new Map(); // clientKey -> { upstream, timeout, metrics, backendHost, backendPort }
+
+  // Shared teardown for a client's NAT-like UDP session — used by both the
+  // idle-timeout path and the manual "kick" action (activeConnectionsRegistry's
+  // close callback) so there's exactly one place that logs, closes the
+  // upstream socket, and removes the session, however it ends.
+  const closeUpstreamSession = (clientKey) => {
+    const upstreamEntry = upstreams.get(clientKey);
+    if (!upstreamEntry) return;
+
+    if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
+
+    const responseTime = Date.now() - upstreamEntry.metrics.startTime;
+    database.createRequestLog({
+      domainId: domain.id,
+      hostname: domain.hostname,
+      method: 'UDP',
+      path: `${upstreamEntry.backendHost}:${upstreamEntry.backendPort}`,
+      queryString: null,
+      statusCode: upstreamEntry.metrics.errorMessage ? 502 : 200,
+      responseTime: responseTime,
+      responseSize: upstreamEntry.metrics.bytesSent,
+      ipAddress: upstreamEntry.clientIp,
+      userAgent: null,
+      referer: null,
+      requestHeaders: {
+        'bytes-received': upstreamEntry.metrics.bytesReceived,
+        'bytes-sent': upstreamEntry.metrics.bytesSent
+      },
+      responseHeaders: {},
+      errorMessage: upstreamEntry.metrics.errorMessage
+    }).catch((err) => {
+      logger.error({ error: err }, '[ProxyManager] Failed to write UDP log:');
+    });
+
+    try {
+      upstreamEntry.upstream.close();
+    } catch (e) {
+      // Ignore
+    }
+    activeConnections.unregister(upstreamEntry.connectionId);
+    upstreams.delete(clientKey);
+  };
+
+    serverSocket.on('error', (err) => {
+      logger.error(`[UDP Proxy ${domain.id}] Server error on port ${listenPort}:`, err.message);
+  });
+
+  serverSocket.on('message', async (msg, rinfo) => {
+    // TEMP DEBUG (remove after diagnosing external UDP reachability):
+    logger.warn(`[UDP DEBUG] domain=${domain.id} listenPort=${listenPort} got ${msg.length}B from ${rinfo.address}:${rinfo.port}`);
+    const clientKey = `${rinfo.address}:${rinfo.port}`;
+    const clientIp = this._normalizeIp(rinfo.address);
+    let upstreamEntry = upstreams.get(clientKey);
+
+    if (!upstreamEntry) {
+      try {
+        const networkAccess = await urlFilterService.checkNetworkAccess(domain.id, clientIp);
+        if (networkAccess.blocked) {
+          const message = networkAccess.response?.message || 'Connection blocked by network policy';
+          logger.warn(`[UDP Proxy ${domain.id}] Blocked client ${clientKey}: ${message}`);
+
+          logBatchQueue.queueRequestLog({
+            domainId: domain.id,
+            hostname: domain.hostname,
+            method: 'UDP',
+            path: 'network-policy',
+            queryString: null,
+            statusCode: 403,
+            responseTime: 0,
+            responseSize: 0,
+            ipAddress: clientIp,
+            userAgent: null,
+            referer: null,
+            requestHeaders: {
+              'bytes-received': msg.length,
+              'bytes-sent': 0
+            },
+            responseHeaders: {},
+            errorMessage: message
+          });
+
+          return;
+        }
+      } catch (err) {
+        logger.error(`[UDP Proxy ${domain.id}] Network policy check failed:`, err.message);
+      }
+
+      // New client: select backend via load balancing and create dedicated upstream socket
+      let backendHost, backendPort;
+      try {
+        const target = await this._selectBackendForDomain(domain, clientIp, 'udp');
+        backendHost = target.hostname;
+        // Range mode: forward 1:1 by port number instead of the domain's
+        // configured backend port.
+        backendPort = isRangeMode ? listenPort : target.port;
+      } catch (err) {
+        logger.error(`[UDP Proxy ${domain.id}] Backend selection failed:`, err.message);
+        return;
+      }
+
+      const upstream = dgram.createSocket('udp4');
+
+      // Initialize metrics for this client
+      const metrics = {
+        startTime: Date.now(),
+        bytesReceived: 0,
+        bytesSent: 0,
+        errorMessage: null
+      };
+
+      upstream.on('message', (upMsg) => {
+        // Track bytes sent to client
+        metrics.bytesSent += upMsg.length;
+        activeConnections.addBytes(connectionId, 0, upMsg.length);
+
+        // Forward response back to original client
+        serverSocket.send(upMsg, rinfo.port, rinfo.address, (err) => {
+          if (err) {
+            logger.error(`[UDP Proxy ${domain.id}] Failed to forward response to ${clientKey}:`, err.message);
+            metrics.errorMessage = `Forward error: ${err.message}`;
+          }
+        });
+      });
+
+      upstream.on('error', (err) => {
+        logger.error(`[UDP Proxy ${domain.id}] Upstream error for ${clientKey}:`, err.message);
+        metrics.errorMessage = `Upstream error: ${err.message}`;
+      });
+
+      const connectionId = activeConnections.nextConnectionId('udp');
+      upstreamEntry = { upstream, timeout: null, metrics, clientIp, backendHost, backendPort, proxySent: false, connectionId };
+      upstreams.set(clientKey, upstreamEntry);
+      // Live traffic tracking (fire-and-forget)
+      { const s = lts(); if (s) s.recordHit(domain.id, clientIp, 'udp', `${backendHost}:${backendPort}`); }
+      activeConnections.register(connectionId, {
+        domainId: domain.id,
+        protocol: 'udp',
+        clientIp,
+        connectedAt: metrics.startTime,
+        label: `${backendHost}:${backendPort}`,
+        close: () => closeUpstreamSession(clientKey)
+      });
+      logger.info(`[UDP Proxy ${domain.id}] New client ${clientKey} -> ${backendHost}:${backendPort}`);
+    }
+
+    // Track bytes received from client
+    upstreamEntry.metrics.bytesReceived += msg.length;
+    activeConnections.addBytes(upstreamEntry.connectionId, msg.length, 0);
+
+      // Reset timeout for this client (inactivity)
+      if (this.UDP_CLIENT_TIMEOUT > 0) {
+        if (upstreamEntry.timeout) clearTimeout(upstreamEntry.timeout);
+        upstreamEntry.timeout = setTimeout(() => {
+          closeUpstreamSession(clientKey);
+          logger.info(`[UDP Proxy ${domain.id}] Client ${clientKey} timed out after ${this.UDP_CLIENT_TIMEOUT / 1000}s`);
+        }, this.UDP_CLIENT_TIMEOUT);
+      }
+
+    // Forward packet to backend
+    // If Geyser PROXY Protocol v2 is enabled, prepend the binary header to the FIRST
+    // packet so Geyser can read the real Bedrock client IP (use-proxy-protocol: true).
+    let packetToSend = msg;
+    if (domain.geyser_proxy_protocol && !upstreamEntry.proxySent) {
+      upstreamEntry.proxySent = true;
+      const proxyHdr = this._buildProxyV2Header(
+        upstreamEntry.clientIp, rinfo.port,
+        upstreamEntry.backendHost, upstreamEntry.backendPort
+      );
+      packetToSend = Buffer.concat([proxyHdr, msg]);
+    }
+    upstreamEntry.upstream.send(packetToSend, upstreamEntry.backendPort, upstreamEntry.backendHost, (err) => {
+      if (err) {
+        logger.error(`[UDP Proxy ${domain.id}] Failed to forward to backend:`, err.message);
+        upstreamEntry.metrics.errorMessage = `Backend forward error: ${err.message}`;
+      }
+    });
+  });
+
+  // Get initial backend info for logging
+  const defaultTarget = loadBalancer.getBackendTarget(domain, null, 'udp');
+  serverSocket.bind(listenPort, '::', () => {
+    const lbStatus = domain.load_balancing_enabled ? ' (load balanced)' : '';
+    const initialBackendPort = isRangeMode ? listenPort : defaultTarget.port;
+    logger.info(`[UDP Proxy ${domain.id}] Listening on [::]:${listenPort} -> ${defaultTarget.hostname}:${initialBackendPort}${lbStatus}`);
+  });
+
+  return { server: serverSocket, upstreams };
+}
+}
