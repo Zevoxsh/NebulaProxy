@@ -140,7 +140,9 @@ export const config = {
   auth: {
     get mode() {
       const rawAuthMode = (getConfig('AUTH_MODE', 'ldap') || 'ldap').toLowerCase();
-      return rawAuthMode === 'local' ? 'local' : 'ldap';
+      if (rawAuthMode === 'local') return 'local';
+      if (rawAuthMode === 'oidc') return 'oidc';
+      return 'ldap';
     }
   },
 
@@ -155,6 +157,28 @@ export const config = {
     get requireGroup() { return getConfig('LDAP_REQUIRE_GROUP', 'false') === 'true'; },
     timeout: 5000,
     connectTimeout: 10000
+  },
+
+  // OIDC — issuer must expose /.well-known/openid-configuration. Same
+  // group-based role mapping shape as LDAP (adminGroup/userGroup/requireGroup),
+  // just sourced from a claim in the userinfo response instead of an LDAP
+  // memberOf search. See services/oidc.js.
+  oidc: {
+    get issuer() { return getConfig('OIDC_ISSUER', ''); },
+    get clientId() { return getConfig('OIDC_CLIENT_ID', ''); },
+    get clientSecret() { return getConfig('OIDC_CLIENT_SECRET', ''); },
+    get scopes() { return getConfig('OIDC_SCOPES', 'openid profile email'); },
+    // Optional explicit override — required for providers that strictly
+    // validate redirect_uri against a pre-registered value (i.e. most of
+    // them). Falls back to a same-origin guess from the incoming request
+    // (same trick as getWebauthnContext) when unset, which only works for
+    // single-hostname deployments.
+    get redirectUri() { return getConfig('OIDC_REDIRECT_URI', ''); },
+    get usernameClaim() { return getConfig('OIDC_USERNAME_CLAIM', 'preferred_username'); },
+    get groupsClaim() { return getConfig('OIDC_GROUPS_CLAIM', 'groups'); },
+    get adminGroup() { return getConfig('OIDC_ADMIN_GROUP', ''); },
+    get userGroup() { return getConfig('OIDC_USER_GROUP', ''); },
+    get requireGroup() { return getConfig('OIDC_REQUIRE_GROUP', 'false') === 'true'; }
   },
 
   // Database

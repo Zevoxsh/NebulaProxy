@@ -17,9 +17,11 @@ import {
 } from './helpers.js';
 
 export async function basicRoutes(fastify, _options) {
-  // Auth mode endpoint
-  // SECURITY FIX: Return generic response to avoid information disclosure
-  // Frontend can determine auth type from registration availability
+  // Auth mode endpoint. The login page's form genuinely differs by mode
+  // (username/password vs a single SSO redirect button), so the frontend
+  // needs the real mode here — unlike most config, this isn't meaningfully
+  // sensitive to disclose (a working SSO button already reveals "this app
+  // uses SSO" to anyone looking at the page).
   fastify.get('/mode', async (request, reply) => {
     let registrationEnabled = false;
 
@@ -40,7 +42,7 @@ export async function basicRoutes(fastify, _options) {
     reply.send({
       registrationEnabled,
       // Only reveal this for legitimate use case (login form behavior)
-      authType: config.auth.mode === 'local' ? 'local' : 'enterprise'
+      authType: config.auth.mode
     });
   });
 
@@ -169,6 +171,14 @@ export async function basicRoutes(fastify, _options) {
         });
         fastify.log.info({ username: dbUser.username, role: dbUser.role }, 'User logged in (local)');
         return;
+      }
+
+      if (config.auth.mode === 'oidc') {
+        return reply.code(400).send({
+          success: false,
+          error: 'Password login disabled',
+          message: 'Sign in via SSO instead.'
+        });
       }
 
       const ldapUser = await ldapAuth.authenticate(username, password);

@@ -108,6 +108,11 @@ export const adminAPI = {
   getUsersForTransfer: () => api.get('/admin/ldap/users-for-transfer'),
   transferDomains: (fromId, toUserId) => api.post(`/admin/users/${fromId}/transfer-domains`, { toUserId }),
 
+  // OIDC configuration
+  getOidcConfig: () => api.get('/admin/config/oidc'),
+  saveOidcConfig: (data) => api.put('/admin/config/oidc', data),
+  testOidcConnection: (data) => api.post('/admin/config/oidc/test', data),
+
   // URL Blocking Rules
   getUrlBlockingRules: (domainId) => api.get(`/url-blocking/domains/${domainId}/rules`),
   createUrlBlockingRule: (domainId, data) => api.post(`/url-blocking/domains/${domainId}/rules`, data),

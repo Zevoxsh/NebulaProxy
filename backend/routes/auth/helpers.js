@@ -507,9 +507,10 @@ export async function syncLegacyTwoFactorState(userId) {
   );
 }
 
-export function sendAuthSuccess(request, reply, dbUser, options = {}) {
-  const tokenClaims = options.tokenClaims || {};
-  const responseData = options.responseData || {};
+// Signs the JWT and sets the auth cookie without sending a response —
+// factored out of sendAuthSuccess so a redirect-based flow (OIDC callback)
+// can reuse the exact same cookie logic instead of a JSON body.
+export function issueAuthCookie(request, reply, dbUser, tokenClaims = {}) {
   const token = request.server.jwt.sign(
     {
       id: dbUser.id,
@@ -552,20 +553,25 @@ export function sendAuthSuccess(request, reply, dbUser, options = {}) {
     }, '[AUTH DEBUG] Setting auth cookie');
   }
 
-  reply
-    .setCookie('token', token, cookieOptions)
-    .send({
-      success: true,
-      user: {
-        id: dbUser.id,
-        username: dbUser.username,
-        displayName: dbUser.display_name,
-        email: dbUser.email,
-        role: dbUser.role,
-        avatarUrl: dbUser.avatar_url || null
-      },
-      ...responseData
-    });
+  reply.setCookie('token', token, cookieOptions);
+  return token;
+}
+
+export function sendAuthSuccess(request, reply, dbUser, options = {}) {
+  const responseData = options.responseData || {};
+  issueAuthCookie(request, reply, dbUser, options.tokenClaims || {});
+  reply.send({
+    success: true,
+    user: {
+      id: dbUser.id,
+      username: dbUser.username,
+      displayName: dbUser.display_name,
+      email: dbUser.email,
+      role: dbUser.role,
+      avatarUrl: dbUser.avatar_url || null
+    },
+    ...responseData
+  });
 }
 
 // request.hostname/request.protocol are Fastify's own getters, already aware

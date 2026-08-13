@@ -211,8 +211,8 @@ class ConfigManager {
     });
 
     // Validate AUTH_MODE
-    if (config.AUTH_MODE && !['ldap', 'local'].includes(config.AUTH_MODE)) {
-      errors.push('AUTH_MODE must be either "ldap" or "local"');
+    if (config.AUTH_MODE && !['ldap', 'local', 'oidc'].includes(config.AUTH_MODE)) {
+      errors.push('AUTH_MODE must be "ldap", "local" or "oidc"');
     }
 
     // Validate LDAP if AUTH_MODE is ldap
@@ -221,6 +221,16 @@ class ConfigManager {
       ldapRequired.forEach(field => {
         if (!config[field] || config[field].trim() === '') {
           errors.push(`${field} is required when using LDAP authentication`);
+        }
+      });
+    }
+
+    // Validate OIDC if AUTH_MODE is oidc
+    if (config.AUTH_MODE === 'oidc') {
+      const oidcRequired = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'];
+      oidcRequired.forEach(field => {
+        if (!config[field] || config[field].trim() === '') {
+          errors.push(`${field} is required when using OIDC authentication`);
         }
       });
     }

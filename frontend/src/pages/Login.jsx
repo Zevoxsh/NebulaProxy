@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, KeyRound, Sparkles, Lock } from 'lucide-react';
+import { Loader2, AlertCircle, KeyRound, Sparkles, Lock, LogIn } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useBrandingStore } from '../store/brandingStore';
@@ -14,7 +14,8 @@ export default function Login() {
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [authMode, setAuthMode] = useState('enterprise');
+  const [authMode, setAuthMode] = useState('ldap');
+  const [ssoRedirecting, setSsoRedirecting] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [twoFactorStep, setTwoFactorStep] = useState(false);
   const [pendingToken, setPendingToken] = useState('');
@@ -33,8 +34,7 @@ export default function Login() {
     authAPI.getMode()
       .then((response) => {
         if (isMounted) {
-          const mode = response.data?.authType === 'local' ? 'local' : 'enterprise';
-          setAuthMode(mode);
+          setAuthMode(response.data?.authType || 'ldap');
           setRegistrationEnabled(Boolean(response.data?.registrationEnabled));
         }
       })
@@ -42,6 +42,20 @@ export default function Login() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  // The OIDC callback redirects back here with ?error=... on failure (it's a
+  // plain browser navigation, so it can't hand back a JSON error the way the
+  // local/LDAP form submit does).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oidcError = params.get('error');
+    if (oidcError) {
+      setError(oidcError);
+      params.delete('error');
+      const cleanSearch = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}`);
+    }
   }, []);
 
   useEffect(() => {
@@ -219,6 +233,12 @@ export default function Login() {
     navigate('/reset-password');
   };
 
+  const handleSsoLogin = () => {
+    setSsoRedirecting(true);
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+    window.location.href = `${apiBaseUrl}/auth/oidc/login`;
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-white">
       <div className="grid min-h-screen lg:grid-cols-2">
@@ -241,7 +261,9 @@ export default function Login() {
                   ? 'Choose your 2FA method and enter the verification code.'
                   : authMode === 'local'
                     ? 'Local authentication is enabled.'
-                    : 'LDAP/Enterprise authentication is enabled.'}
+                    : authMode === 'oidc'
+                      ? 'Single sign-on (OIDC) is enabled.'
+                      : 'LDAP/Enterprise authentication is enabled.'}
               </p>
             </div>
 
@@ -252,7 +274,11 @@ export default function Login() {
                   <span>{error}</span>
                 </div>
               )}
-              {!twoFactorStep && !bootstrapChangeStep ? (
+              {!twoFactorStep && !bootstrapChangeStep && authMode === 'oidc' ? (
+                <div className="rounded-md border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70">
+                  This instance uses single sign-on (SSO). Continue below to sign in through your identity provider.
+                </div>
+              ) : !twoFactorStep && !bootstrapChangeStep ? (
                 <>
                   <div className="space-y-2">
                     <label htmlFor="username" className="text-sm text-white/80">Username</label>
@@ -408,14 +434,28 @@ export default function Login() {
                 </>
               )}
 
-              <button type="submit" disabled={loading} className="btn-primary w-full">
+              {!twoFactorStep && !bootstrapChangeStep && authMode === 'oidc' ? (
+                <button
+                  type="button"
+                  disabled={ssoRedirecting}
+                  onClick={handleSsoLogin}
+                  className="btn-primary w-full"
+                >
                   <span className="flex items-center justify-center gap-2">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  {loading
-                    ? (bootstrapChangeStep ? 'Updating password...' : (twoFactorStep ? 'Verifying...' : 'Authenticating...'))
-                    : (bootstrapChangeStep ? 'Update password' : (twoFactorStep ? 'Verify code' : 'Sign in'))}
-                </span>
-              </button>
+                    {ssoRedirecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                    {ssoRedirecting ? 'Redirecting...' : 'Sign in with SSO'}
+                  </span>
+                </button>
+              ) : (
+                <button type="submit" disabled={loading} className="btn-primary w-full">
+                    <span className="flex items-center justify-center gap-2">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {loading
+                      ? (bootstrapChangeStep ? 'Updating password...' : (twoFactorStep ? 'Verifying...' : 'Authenticating...'))
+                      : (bootstrapChangeStep ? 'Update password' : (twoFactorStep ? 'Verify code' : 'Sign in'))}
+                  </span>
+                </button>
+              )}
             </form>
 
             <div className="text-center text-xs text-white/50 space-y-2">
@@ -428,6 +468,8 @@ export default function Login() {
                     </button>
                   )}
                 </>
+              ) : authMode === 'oidc' ? (
+                <p>Secured with OIDC single sign-on</p>
               ) : (
                 <p>Secured with Active Directory / Enterprise authentication</p>
               )}
@@ -463,7 +505,7 @@ export default function Login() {
                   2FA Enabled
                 </div>
                 <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
-                  {authMode === 'local' ? 'Local Auth' : 'LDAP / Enterprise'}
+                  {authMode === 'local' ? 'Local Auth' : authMode === 'oidc' ? 'OIDC / SSO' : 'LDAP / Enterprise'}
                 </div>
                 <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
                   Admin Security

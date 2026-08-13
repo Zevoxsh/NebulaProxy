@@ -91,8 +91,8 @@ export async function adminLdapRoutes(fastify, _options) {
     const updates = {};
 
     if (authMode !== undefined) {
-      if (authMode !== 'local' && authMode !== 'ldap') {
-        return reply.code(400).send({ error: 'authMode must be "local" or "ldap"' });
+      if (authMode !== 'local' && authMode !== 'ldap' && authMode !== 'oidc') {
+        return reply.code(400).send({ error: 'authMode must be "local", "ldap" or "oidc"' });
       }
       updates.AUTH_MODE = authMode;
       process.env.AUTH_MODE = authMode;

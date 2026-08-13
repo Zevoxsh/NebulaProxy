@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Save, Plug, RefreshCw, ArrowRight, AlertCircle, Eye, EyeOff, Info, Users, CheckCircle } from 'lucide-react';
+import { KeyRound, Save, Plug, RefreshCw, ArrowRight, AlertCircle, Eye, EyeOff, Info, Users, CheckCircle, Globe } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { useModal } from '../../context/ModalContext';
 import {
@@ -31,6 +31,9 @@ export default function AdminLdap() {
   const [error, setError] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [oidcTesting, setOidcTesting] = useState(false);
+  const [oidcTestResult, setOidcTestResult] = useState(null);
+  const [showClientSecret, setShowClientSecret] = useState(false);
 
   const [form, setForm] = useState({
     authMode: 'local',
@@ -42,6 +45,21 @@ export default function AdminLdap() {
     userGroup: '',
     requireGroup: false,
   });
+
+  const [oidcForm, setOidcForm] = useState({
+    issuer: '',
+    clientId: '',
+    clientSecret: '',
+    scopes: 'openid profile email',
+    redirectUri: '',
+    usernameClaim: 'preferred_username',
+    groupsClaim: 'groups',
+    adminGroup: '',
+    userGroup: '',
+    requireGroup: false,
+  });
+
+  const setOidc = (key, val) => setOidcForm(p => ({ ...p, [key]: val }));
 
   const [users, setUsers] = useState([]);
   const [fromUser, setFromUser] = useState('');
@@ -57,8 +75,9 @@ export default function AdminLdap() {
   useEffect(() => {
     (async () => {
       try {
-        const [cfgRes, usersRes] = await Promise.all([
+        const [cfgRes, oidcRes, usersRes] = await Promise.all([
           adminAPI.getLdapConfig(),
+          adminAPI.getOidcConfig(),
           adminAPI.getUsersForTransfer(),
         ]);
         const c = cfgRes.data.config || {};
@@ -72,9 +91,22 @@ export default function AdminLdap() {
           userGroup: c.userGroup || '',
           requireGroup: Boolean(c.requireGroup),
         });
+        const o = oidcRes.data.config || {};
+        setOidcForm({
+          issuer: o.issuer || '',
+          clientId: o.clientId || '',
+          clientSecret: '',
+          scopes: o.scopes || 'openid profile email',
+          redirectUri: o.redirectUri || '',
+          usernameClaim: o.usernameClaim || 'preferred_username',
+          groupsClaim: o.groupsClaim || 'groups',
+          adminGroup: o.adminGroup || '',
+          userGroup: o.userGroup || '',
+          requireGroup: Boolean(o.requireGroup),
+        });
         setUsers(usersRes.data.users || []);
       } catch {
-        setError('Impossible de charger la configuration LDAP.');
+        setError('Impossible de charger la configuration d\'authentification.');
       } finally {
         setLoading(false);
       }
@@ -87,7 +119,14 @@ export default function AdminLdap() {
       setError('');
       const payload = { ...form };
       if (!payload.bindPassword) delete payload.bindPassword;
-      await adminAPI.saveLdapConfig(payload);
+
+      const oidcPayload = { ...oidcForm };
+      if (!oidcPayload.clientSecret) delete oidcPayload.clientSecret;
+
+      await Promise.all([
+        adminAPI.saveLdapConfig(payload),
+        adminAPI.saveOidcConfig(oidcPayload),
+      ]);
       toast({
         title: 'Configuration sauvegardée',
         description: 'Redémarrez le backend pour appliquer le changement de mode.',
@@ -98,6 +137,19 @@ export default function AdminLdap() {
       toast({ variant: 'destructive', title: 'Erreur', description: msg });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOidcTest = async () => {
+    try {
+      setOidcTesting(true);
+      setOidcTestResult(null);
+      const res = await adminAPI.testOidcConnection({ issuer: oidcForm.issuer });
+      setOidcTestResult({ ok: true, message: res.data.message });
+    } catch (e) {
+      setOidcTestResult({ ok: false, message: e.response?.data?.error || 'Découverte échouée' });
+    } finally {
+      setOidcTesting(false);
     }
   };
 
@@ -191,8 +243,8 @@ export default function AdminLdap() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-semibold text-admin-text mb-2">LDAP / Authentification</h1>
-          <p className="text-admin-text-muted">Configurez l'annuaire LDAP/Active Directory et gérez le transfert de domaines entre comptes.</p>
+          <h1 className="text-3xl font-semibold text-admin-text mb-2">Authentification</h1>
+          <p className="text-admin-text-muted">Configurez LDAP/Active Directory ou OIDC/SSO et gérez le transfert de domaines entre comptes.</p>
         </div>
         <AdminButton onClick={handleSave} disabled={saving}>
           <Save className="w-4 h-4 mr-2" />
@@ -217,10 +269,11 @@ export default function AdminLdap() {
           <p className="text-xs text-admin-text-muted mt-1">Choisissez comment les utilisateurs se connectent à la plateforme.</p>
         </AdminCardHeader>
         <AdminCardContent className="pt-6">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
               { value: 'local', label: 'Local', desc: 'Comptes en base de données. Inscription possible si activée.' },
               { value: 'ldap', label: 'LDAP / Active Directory', desc: 'Connexion via votre annuaire d\'entreprise.' },
+              { value: 'oidc', label: 'OIDC / SSO', desc: 'Connexion via un fournisseur d\'identité (Keycloak, Entra ID, Okta...).' },
             ].map(opt => (
               <button
                 key={opt.value}
@@ -411,6 +464,171 @@ export default function AdminLdap() {
           >
             <Plug className="w-4 h-4 mr-2" strokeWidth={1.5} />
             {testing ? 'Test en cours...' : 'Tester la connexion'}
+          </AdminButton>
+        </AdminCardContent>
+      </AdminCard>
+
+      {/* OIDC provider config */}
+      <AdminCard>
+        <AdminCardHeader>
+          <AdminCardTitle className="flex items-center gap-2">
+            <Globe className="w-5 h-5" />
+            Fournisseur OIDC
+          </AdminCardTitle>
+          <p className="text-xs text-admin-text-muted mt-1">
+            Paramètres OpenID Connect (Keycloak, Entra ID, Okta, Authentik...). L'issuer doit exposer /.well-known/openid-configuration.
+          </p>
+        </AdminCardHeader>
+        <AdminCardContent className="pt-6 space-y-6">
+          {form.authMode === 'oidc' && (
+            <div className="flex items-start gap-3 bg-amber-500/8 border border-amber-500/20 rounded-lg px-4 py-3">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" strokeWidth={1.5} />
+              <p className="text-sm text-amber-300/80">
+                Le compte admin local reste actif même en mode OIDC. Les nouveaux utilisateurs SSO sont créés
+                automatiquement à leur première connexion. Le mot de passe local est désactivé en mode OIDC —
+                seul le bouton "Se connecter avec SSO" apparaît sur la page de connexion.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label className="text-admin-text">Issuer</Label>
+              <Input
+                value={oidcForm.issuer}
+                onChange={e => setOidc('issuer', e.target.value)}
+                placeholder="https://idp.exemple.com/realms/nebula"
+                className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-admin-text">Redirect URI (optionnel)</Label>
+              <Input
+                value={oidcForm.redirectUri}
+                onChange={e => setOidc('redirectUri', e.target.value)}
+                placeholder="https://proxy.exemple.com/api/auth/oidc/callback"
+                className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              />
+              <p className="text-xs text-admin-text-muted">
+                À enregistrer côté fournisseur. Laisser vide pour le déduire automatiquement de l'hôte courant.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-admin-text">Client ID</Label>
+              <Input
+                value={oidcForm.clientId}
+                onChange={e => setOidc('clientId', e.target.value)}
+                className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-admin-text">Client Secret</Label>
+              <div className="relative">
+                <Input
+                  type={showClientSecret ? 'text' : 'password'}
+                  value={oidcForm.clientSecret}
+                  onChange={e => setOidc('clientSecret', e.target.value)}
+                  placeholder="Laisser vide pour conserver l'actuel"
+                  className="bg-admin-bg border-admin-border text-admin-text pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowClientSecret(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-admin-text-muted hover:text-admin-text"
+                >
+                  {showClientSecret
+                    ? <EyeOff className="w-4 h-4" strokeWidth={1.5} />
+                    : <Eye className="w-4 h-4" strokeWidth={1.5} />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-admin-text">Scopes</Label>
+              <Input
+                value={oidcForm.scopes}
+                onChange={e => setOidc('scopes', e.target.value)}
+                className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-admin-text">Claim du nom d'utilisateur</Label>
+              <Input
+                value={oidcForm.usernameClaim}
+                onChange={e => setOidc('usernameClaim', e.target.value)}
+                className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              />
+            </div>
+          </div>
+
+          <Separator className="bg-admin-border" />
+
+          <div>
+            <p className="text-sm font-medium text-admin-text mb-4">Groupes <span className="text-admin-text-muted font-normal">(optionnel)</span></p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label className="text-admin-text">Claim des groupes</Label>
+                <Input
+                  value={oidcForm.groupsClaim}
+                  onChange={e => setOidc('groupsClaim', e.target.value)}
+                  placeholder="groups"
+                  className="bg-admin-bg border-admin-border text-admin-text font-mono"
+                />
+              </div>
+              <div />
+              <div className="space-y-2">
+                <Label className="text-admin-text">Groupe Admins</Label>
+                <Input
+                  value={oidcForm.adminGroup}
+                  onChange={e => setOidc('adminGroup', e.target.value)}
+                  placeholder="proxy-admins"
+                  className="bg-admin-bg border-admin-border text-admin-text font-mono"
+                />
+                <p className="text-xs text-admin-text-muted">Valeur du claim groupe qui obtient le rôle admin</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-admin-text">Groupe Users</Label>
+                <Input
+                  value={oidcForm.userGroup}
+                  onChange={e => setOidc('userGroup', e.target.value)}
+                  placeholder="proxy-users"
+                  className="bg-admin-bg border-admin-border text-admin-text font-mono"
+                />
+                <p className="text-xs text-admin-text-muted">Valeur du claim groupe qui obtient le rôle utilisateur</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 mt-4">
+              <Checkbox
+                id="oidc-require-group"
+                checked={oidcForm.requireGroup}
+                onCheckedChange={val => setOidc('requireGroup', val)}
+                className="border-admin-border data-[state=checked]:bg-white data-[state=checked]:border-white data-[state=checked]:text-black"
+              />
+              <Label htmlFor="oidc-require-group" className="text-admin-text cursor-pointer">
+                Refuser la connexion si l'utilisateur n'appartient à aucun groupe configuré
+              </Label>
+            </div>
+          </div>
+
+          {oidcTestResult && (
+            <div className={`flex items-center gap-2.5 text-sm px-4 py-3 rounded-lg border ${
+              oidcTestResult.ok
+                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                : 'bg-red-500/10 border-red-500/25 text-red-400'
+            }`}>
+              <AlertCircle className="w-4 h-4 shrink-0" strokeWidth={2} />
+              {oidcTestResult.message}
+            </div>
+          )}
+
+          <Separator className="bg-admin-border" />
+
+          <AdminButton
+            variant="secondary"
+            onClick={handleOidcTest}
+            disabled={oidcTesting || !oidcForm.issuer}
+          >
+            <Plug className="w-4 h-4 mr-2" strokeWidth={1.5} />
+            {oidcTesting ? 'Test en cours...' : 'Tester la découverte'}
           </AdminButton>
         </AdminCardContent>
       </AdminCard>
