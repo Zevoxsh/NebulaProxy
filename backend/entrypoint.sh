@@ -86,14 +86,30 @@ echo "================================================"
 # actually uses to manage tunnels afterwards. /etc/swanctl is bind-mounted
 # (see docker-compose.yml), so reloading here picks back up whatever tunnels
 # were configured before this container was last recreated/restarted.
+#
+# charon can die on its own (seen crashing to a zombie — State: Z — right
+# after a failed-negotiation timeout cleanup, no usable backtrace since this
+# image is musl/Alpine and strongSwan's crash handler needs glibc's
+# backtrace()) — with nothing waiting on it, that leaves a permanently dead
+# vici socket until the whole container restarts. Run it in a respawn loop
+# instead of a bare `&`: the loop process is charon's real parent, so it both
+# reaps the exit (no zombie) and immediately restarts it, and the vici
+# plugin unlinks/rebinds its socket on each start so swanctl recovers
+# without any container restart.
 CHARON_BIN="/usr/lib/strongswan/charon"
 if [ -x "$CHARON_BIN" ]; then
   mkdir -p /etc/swanctl/conf.d
   if [ ! -f /etc/swanctl/swanctl.conf ]; then
     echo 'include conf.d/*.conf' > /etc/swanctl/swanctl.conf
   fi
-  "$CHARON_BIN" &
-  echo "strongSwan charon daemon started (pid $!)"
+  (
+    while true; do
+      "$CHARON_BIN"
+      echo "strongSwan charon exited (code $?) — restarting in 2s" >&2
+      sleep 2
+    done
+  ) &
+  echo "strongSwan charon daemon started (supervised, pid $!)"
   for i in 1 2 3 4 5; do
     sleep 1
     if swanctl --load-all > /var/log/swanctl-load.log 2>&1; then
