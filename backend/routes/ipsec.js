@@ -212,13 +212,27 @@ export async function ipsecRoutes(fastify, _options) {
     }
   });
 
-  fastify.post('/:id/rotate-psk', { preHandler: fastify.requireAdmin }, async (request, reply) => {
+  fastify.post('/:id/rotate-psk', {
+    preHandler: fastify.requireAdmin,
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          // Lets an admin pin the PSK to match a peer that's already
+          // configured elsewhere (e.g. an existing pfSense tunnel) instead
+          // of always generating a fresh random one.
+          psk: { type: 'string', minLength: 8, maxLength: 512 }
+        },
+        additionalProperties: false
+      }
+    }
+  }, async (request, reply) => {
     try {
       const id = Number.parseInt(request.params.id, 10);
       const tunnel = await loadTunnelOr404(reply, id);
       if (!tunnel) return;
 
-      const psk = ipsecService.generatePresharedKey();
+      const psk = request.body?.psk || ipsecService.generatePresharedKey();
       const updated = await database.rotateIpsecTunnelPsk(id, encryptSecret(psk));
       await ipsecService.writeConfig({ ...updated, psk });
       await ipsecService.reload(updated);

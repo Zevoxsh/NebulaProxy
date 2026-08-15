@@ -22,7 +22,7 @@ import { Label } from '@/components/ui/label';
 
 const emptyForm = {
   name: '', mode: 'server', localSubnet: '', remoteSubnet: '', remoteAddr: '',
-  localId: '', remoteId: ''
+  localId: '', remoteId: '', psk: ''
 };
 
 export default function AdminIPsecList() {
@@ -84,6 +84,7 @@ export default function AdminIPsecList() {
       if (form.remoteAddr) payload.remoteAddr = form.remoteAddr.trim();
       if (form.localId) payload.localId = form.localId.trim();
       if (form.remoteId) payload.remoteId = form.remoteId.trim();
+      if (form.psk) payload.psk = form.psk.trim();
 
       const response = await ipsecAPI.create(payload);
       setCreating(false);
@@ -284,9 +285,19 @@ export default function AdminIPsecList() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-admin-text-muted">
-                Une cle pre-partagee est generee automatiquement — visible depuis la page du tunnel.
-              </p>
+              <div className="space-y-2">
+                <Label className="text-admin-text">Cle pre-partagee (optionnel)</Label>
+                <Input
+                  value={form.psk}
+                  onChange={(e) => setForm({ ...form, psk: e.target.value })}
+                  className="bg-admin-bg border-admin-border text-admin-text font-mono"
+                  placeholder="Laisser vide pour en generer une automatiquement"
+                  minLength={8}
+                />
+                <p className="text-xs text-admin-text-muted">
+                  Pour matcher un site distant deja configure (ex. un tunnel pfSense existant), colle ici sa cle. Sinon une cle est generee automatiquement — visible depuis la page du tunnel.
+                </p>
+              </div>
             </div>
             <AdminModalFooter>
               <AdminButton type="button" variant="secondary" onClick={() => setCreating(false)}>

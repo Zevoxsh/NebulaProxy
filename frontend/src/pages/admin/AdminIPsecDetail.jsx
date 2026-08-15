@@ -15,6 +15,7 @@ import {
   AdminCardTitle,
   AdminBadge
 } from '@/components/admin';
+import { Input } from '@/components/ui/input';
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -51,6 +52,8 @@ export default function AdminIPsecDetail() {
 
   const [psk, setPsk] = useState(null);
   const [pskLoading, setPskLoading] = useState(false);
+  const [customPsk, setCustomPsk] = useState('');
+  const [settingPsk, setSettingPsk] = useState(false);
 
   const refresh = async () => {
     try {
@@ -96,6 +99,23 @@ export default function AdminIPsecDetail() {
       setError(err.response?.data?.message || 'Impossible de regenerer la cle');
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const setCustomPskValue = async () => {
+    const value = customPsk.trim();
+    if (!value) return;
+    if (!window.confirm('Remplacer la cle pre-partagee de ce tunnel par celle saisie ? Le site distant doit deja utiliser la meme.')) return;
+    setSettingPsk(true);
+    try {
+      const response = await ipsecAPI.rotatePsk(id, value);
+      setPsk(response.data.psk);
+      setCustomPsk('');
+      await refresh();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Impossible de definir cette cle');
+    } finally {
+      setSettingPsk(false);
     }
   };
 
@@ -227,6 +247,25 @@ export default function AdminIPsecDetail() {
           <p className="mt-2 text-xs text-admin-text-muted">
             A saisir tel quel dans la configuration IPsec du site distant. Chaque consultation est journalisee.
           </p>
+
+          <div className="mt-4 flex flex-col gap-2 border-t border-admin-border pt-4 sm:flex-row">
+            <Input
+              value={customPsk}
+              onChange={(e) => setCustomPsk(e.target.value)}
+              className="bg-admin-bg border-admin-border text-admin-text font-mono"
+              placeholder="Coller une cle existante (ex. celle deja configuree sur pfSense)"
+              minLength={8}
+            />
+            <AdminButton
+              variant="secondary"
+              onClick={setCustomPskValue}
+              disabled={settingPsk || customPsk.trim().length < 8}
+              className="shrink-0"
+            >
+              {settingPsk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Key className="mr-2 h-4 w-4" />}
+              Definir cette cle
+            </AdminButton>
+          </div>
         </AdminCardContent>
       </AdminCard>
 
