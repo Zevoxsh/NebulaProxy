@@ -86,12 +86,13 @@ echo "================================================"
 # actually uses to manage tunnels afterwards. /etc/swanctl is bind-mounted
 # (see docker-compose.yml), so reloading here picks back up whatever tunnels
 # were configured before this container was last recreated/restarted.
-if command -v charon > /dev/null 2>&1; then
+CHARON_BIN="/usr/lib/strongswan/charon"
+if [ -x "$CHARON_BIN" ]; then
   mkdir -p /etc/swanctl/conf.d
   if [ ! -f /etc/swanctl/swanctl.conf ]; then
     echo 'include conf.d/*.conf' > /etc/swanctl/swanctl.conf
   fi
-  charon &
+  "$CHARON_BIN" &
   echo "strongSwan charon daemon started (pid $!)"
   for i in 1 2 3 4 5; do
     sleep 1
