@@ -169,6 +169,7 @@ services:
       - CHOWN              # write let's encrypt certs
       - DAC_OVERRIDE       # read/write cert files as non-root
       - NET_ADMIN          # create/manage WireGuard interfaces + IPsec XFRM policies/SAs (see wireguardService.js / ipsecService.js)
+      - SETPCAP            # charon drops its own capabilities down to a minimal set after startup — that self-drop itself needs CAP_SETPCAP, without it charon aborts with "capability dropping failed"
     devices:
       - /dev/net/tun        # required to bring up WireGuard (and other tun/tap) interfaces
     volumes:
