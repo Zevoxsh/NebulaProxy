@@ -13,6 +13,7 @@ import net from 'net';
 import validator from 'validator';
 import { logger } from '../utils/logger.js';
 import { ddosProtectionService } from '../services/ddosProtectionService.js';
+import { nebulaShield } from '../services/nebulaShieldService.js';
 import {
   ROUTE_CHECK_PATH,
   getBackendUrlPortError, parsePortNumber,
@@ -2160,7 +2161,7 @@ export async function domainRoutes(fastify, _options) {
       const domainId = parseInt(request.params.id, 10);
       const userId = request.user.id;
       const isAdmin = request.user.role === 'admin';
-      const { enabled } = request.body || {};
+      const { enabled, mode } = request.body || {};
 
       const domain = await database.getDomainById(domainId);
       if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
@@ -2171,12 +2172,16 @@ export async function domainRoutes(fastify, _options) {
         return reply.code(400).send({ error: 'Bad Request', message: 'Anti-bot protection is only available for HTTP domains' });
       }
 
+      const validModes = ['lenient', 'balanced', 'strict'];
+      const nextMode = validModes.includes(mode) ? mode : (domain.antibot_mode || 'balanced');
+
       await database.execute(
         `UPDATE domains SET
           antibot_enabled = $1,
+          antibot_mode = $2,
           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [enabled !== undefined ? !!enabled : domain.antibot_enabled, domainId]
+         WHERE id = $3`,
+        [enabled !== undefined ? !!enabled : domain.antibot_enabled, nextMode, domainId]
       );
 
       const updated = await database.getDomainById(domainId);
@@ -2187,6 +2192,23 @@ export async function domainRoutes(fastify, _options) {
     } catch (error) {
       fastify.log.error({ error }, 'Failed to update anti-bot settings');
       return reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to update anti-bot settings' });
+    }
+  });
+
+  // Nebula Shield live stats for a domain.
+  fastify.get('/:id/antibot/stats', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const domain = await database.getDomainById(domainId);
+      if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      if (!await canAccessDomain(domain, request.user.id, request.user.role === 'admin')) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const stats = await nebulaShield.getStats(domainId);
+      return reply.send({ stats });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to load anti-bot stats');
+      return reply.code(500).send({ error: 'Internal Server Error' });
     }
   });
 

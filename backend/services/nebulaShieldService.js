@@ -1,100 +1,271 @@
 // @ts-check
-// Nebula Shield — native proof-of-work anti-bot for NebulaProxy.
+// Nebula Shield — native, self-contained bot defense for NebulaProxy.
 //
-// Replaces the external Anubis sidecar with an in-process module: a visitor
-// on a shielded domain is served a branded challenge page whose JS must find
-// a nonce N such that sha256(challenge + N) starts with `difficulty` zero hex
-// digits. Cheap for one browser, expensive for a scraper hitting the site at
-// scale. On success the visitor gets a signed clearance cookie and passes
-// straight through until it expires.
+// Pipeline per request on a shielded domain:
+//   analyze()  → cheap local + Redis signals (UA class, header quality,
+//                request rate, recent failures, GeoIP; DNS-verified good bots)
+//   decide()   → allow / deny / challenge, with an ADAPTIVE proof-of-work
+//                difficulty driven by a suspicion score
+//   challenge  → branded page: a Web Worker brute-forces sha256(challenge+nonce)
+//                to `difficulty` leading zero hex digits AND collects a browser
+//                fingerprint; both are returned and verified server-side
+//   clearance  → signed cookie (bound to IP + host + solved difficulty)
 //
-// Everything is stateless: the challenge itself is HMAC-signed (tied to the
-// client IP + host + issue time), so there is no server-side challenge store
-// to keep — a returned solution carries the signed challenge it solved, and
-// we re-verify the signature before checking the proof of work.
+// Everything is stateless crypto (HMAC-signed challenges/cookies) plus Redis
+// counters. No external service, no sidecar.
 
 import crypto from 'crypto';
+import dns from 'dns';
 import { config } from '../config/config.js';
+import { redisService } from './redis.js';
+import { classifyUserAgent, headerSuspicion, scoreFingerprint } from './shield/signatures.js';
 
-const CHALLENGE_TTL_MS = 5 * 60 * 1000; // a challenge must be solved within 5 min
-
-const secret = () => config.proxy.antibot.secret;
-
-function hmac(data) {
-  return crypto.createHmac('sha256', secret()).update(data).digest('hex');
-}
-
-function timingSafeEqHex(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  } catch {
-    return false;
-  }
-}
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const BASE_DIFFICULTY = { lenient: 3, balanced: 4, strict: 5 };
+const RATE_SOFT = { lenient: 60, balanced: 40, strict: 25 };  // req/10s → +difficulty
+const RATE_HARD = { lenient: 400, balanced: 250, strict: 150 }; // req/10s → deny
+const DNS_TIMEOUT_MS = 2000;
 
 export const COOKIE_NAME = '__nebula_shield';
 export const VERIFY_PATH = '/.well-known/nebula-shield/verify';
 
+const secret = () => config.proxy.antibot.secret;
+const hmac = (data) => crypto.createHmac('sha256', secret()).update(data).digest('hex');
+const clampDifficulty = (d) => Math.max(1, Math.min(6, d | 0));
+
+function timingSafeEqHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)); } catch { return false; }
+}
+
+function normalizeIp(ip) {
+  if (!ip) return '';
+  if (ip.startsWith('::ffff:')) return ip.slice(7);
+  if (ip === '::1') return '127.0.0.1';
+  return ip;
+}
+
+async function redisIncrTtl(key, ttlSec) {
+  try {
+    if (!redisService.isConnected || !redisService.client) return 0;
+    const n = await redisService.client.incr(key);
+    if (n === 1) await redisService.client.expire(key, ttlSec);
+    return n;
+  } catch { return 0; }
+}
+
+async function redisGetInt(key) {
+  try {
+    if (!redisService.isConnected || !redisService.client) return 0;
+    const v = await redisService.client.get(key);
+    return v ? parseInt(v, 10) || 0 : 0;
+  } catch { return 0; }
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => { setTimeout(() => rej(new Error('timeout')), ms); }),
+  ]);
+}
+
 export const nebulaShield = {
   COOKIE_NAME,
   VERIFY_PATH,
+  BASE_DIFFICULTY,
 
-  /** Issue a fresh signed challenge for this client/host. */
-  issueChallenge(clientIp, host) {
-    const challenge = crypto.randomBytes(24).toString('hex');
-    const issuedAt = Date.now();
-    const difficulty = config.proxy.antibot.difficulty;
-    const sig = hmac(`challenge.${challenge}.${clientIp}.${host}.${issuedAt}.${difficulty}`);
-    return { challenge, issuedAt, difficulty, sig };
+  // ── Decision engine ───────────────────────────────────────────────────────
+
+  /** Gather signals for a request. Cheap: a couple of Redis ops; DNS only for
+   *  UAs that claim to be a verifiable good bot. */
+  async analyze(req, clientIp, _host) {
+    const ua = req.headers['user-agent'];
+    const uaInfo = classifyUserAgent(ua);
+    const headerScore = headerSuspicion(req.headers);
+    const rate = await redisIncrTtl(`shield:rate:${clientIp}`, 10);
+    const recentFails = await redisGetInt(`shield:fail:${clientIp}`);
+
+    let goodBotVerified = null;
+    if (uaInfo.class === 'good-bot') {
+      goodBotVerified = await this.verifyGoodBot(clientIp, uaInfo.bot);
+    }
+
+    // GeoIP from cache only — never block the request on a lookup.
+    let country = null;
+    try {
+      if (redisService.isConnected && redisService.client) {
+        country = await redisService.client.get(`geoip:${clientIp}`);
+      }
+    } catch { /* ignore */ }
+
+    return { uaClass: uaInfo.class, bot: uaInfo.bot, headerScore, rate, recentFails, goodBotVerified, country };
   },
 
-  /** Verify a returned solution: signature genuine, not expired, PoW valid. */
-  verifySolution(clientIp, host, payload) {
-    if (!payload) return false;
+  /** Pure decision from signals. */
+  decide(s, mode = 'balanced') {
+    const base = BASE_DIFFICULTY[mode] ?? 4;
+
+    if (s.uaClass === 'good-bot') {
+      if (s.goodBotVerified === true) return { action: 'allow', reason: `verified ${s.bot?.name || 'good bot'}` };
+      if (s.bot?.verify === 'open') return { action: 'allow', reason: `${s.bot?.name} preview agent` };
+      if (s.goodBotVerified === false) {
+        return mode === 'lenient'
+          ? { action: 'challenge', difficulty: clampDifficulty(base + 2), reason: 'spoofed good-bot UA' }
+          : { action: 'deny', reason: 'spoofed good-bot UA (reverse DNS mismatch)' };
+      }
+      return { action: 'challenge', difficulty: clampDifficulty(base + 1), reason: 'unverified good-bot UA' };
+    }
+
+    if (s.rate >= (RATE_HARD[mode] ?? 250)) {
+      return { action: 'deny', reason: `request flood (${s.rate}/10s)` };
+    }
+
+    if (s.uaClass === 'ai-scraper') {
+      return mode === 'lenient'
+        ? { action: 'challenge', difficulty: clampDifficulty(base + 2), reason: 'AI scraper UA' }
+        : { action: 'deny', reason: 'AI scraper UA' };
+    }
+
+    if (s.uaClass === 'automation' || s.uaClass === 'empty') {
+      return mode === 'strict'
+        ? { action: 'deny', reason: 'automation / non-browser UA' }
+        : { action: 'challenge', difficulty: clampDifficulty(base + 2), reason: 'automation / non-browser UA' };
+    }
+
+    // Browser → adaptive challenge.
+    let d = base;
+    d += Math.min(2, s.headerScore);
+    const soft = RATE_SOFT[mode] ?? 40;
+    if (s.rate >= soft) d += (s.rate >= soft * 2 ? 2 : 1);
+    if (s.recentFails >= 3) d += 1;
+    return { action: 'challenge', difficulty: clampDifficulty(d), reason: 'browser challenge' };
+  },
+
+  /** Reverse+forward DNS good-bot verification, cached in Redis for 1h. */
+  async verifyGoodBot(rawIp, bot) {
+    if (!bot) return false;
+    if (bot.verify === 'open') return true;
+    const ip = normalizeIp(rawIp);
+    const cacheKey = `shield:goodbot:${ip}`;
+    try {
+      if (redisService.isConnected && redisService.client) {
+        const c = await redisService.client.get(cacheKey);
+        if (c === '1') return true;
+        if (c === '0') return false;
+      }
+    } catch { /* ignore */ }
+
+    let verified = false;
+    try {
+      const names = await withTimeout(dns.promises.reverse(ip), DNS_TIMEOUT_MS);
+      const ptr = names.find((n) => bot.suffixes?.some((suf) => n.toLowerCase().endsWith(suf)));
+      if (ptr) {
+        const addrs = new Set();
+        try { (await withTimeout(dns.promises.resolve4(ptr), DNS_TIMEOUT_MS)).forEach((a) => addrs.add(normalizeIp(a))); } catch { /* none */ }
+        try { (await withTimeout(dns.promises.resolve6(ptr), DNS_TIMEOUT_MS)).forEach((a) => addrs.add(normalizeIp(a))); } catch { /* none */ }
+        verified = addrs.has(ip);
+      }
+    } catch { verified = false; }
+
+    try {
+      if (redisService.isConnected && redisService.client) {
+        await redisService.client.setex(cacheKey, 3600, verified ? '1' : '0');
+      }
+    } catch { /* ignore */ }
+    return verified;
+  },
+
+  // ── Challenge crypto (stateless, signed) ──────────────────────────────────
+
+  issueChallenge(clientIp, host, difficulty) {
+    const challenge = crypto.randomBytes(24).toString('hex');
+    const issuedAt = Date.now();
+    const diff = clampDifficulty(difficulty || BASE_DIFFICULTY.balanced);
+    const sig = hmac(`challenge.${challenge}.${clientIp}.${host}.${issuedAt}.${diff}`);
+    return { challenge, issuedAt, difficulty: diff, sig };
+  },
+
+  /** Verify a returned solution + fingerprint. Returns { ok, block?, reason? }. */
+  verifySolution(clientIp, host, payload, mode = 'balanced') {
+    if (!payload) return { ok: false };
     const { challenge, sig, nonce, hash } = payload;
     const issuedAt = Number(payload.issuedAt);
     const difficulty = Number(payload.difficulty);
-    if (typeof challenge !== 'string' || typeof sig !== 'string' || nonce === undefined) return false;
-    if (!Number.isFinite(issuedAt) || !Number.isInteger(difficulty) || difficulty < 1 || difficulty > 8) return false;
+    if (typeof challenge !== 'string' || typeof sig !== 'string' || nonce === undefined) return { ok: false };
+    if (!Number.isFinite(issuedAt) || !Number.isInteger(difficulty) || difficulty < 1 || difficulty > 6) return { ok: false };
     const now = Date.now();
-    if (now - issuedAt > CHALLENGE_TTL_MS || issuedAt > now + 60_000) return false;
+    if (now - issuedAt > CHALLENGE_TTL_MS || issuedAt > now + 60_000) return { ok: false };
 
     const expectSig = hmac(`challenge.${challenge}.${clientIp}.${host}.${issuedAt}.${difficulty}`);
-    if (!timingSafeEqHex(sig, expectSig)) return false;
+    if (!timingSafeEqHex(sig, expectSig)) return { ok: false };
 
     const computed = crypto.createHash('sha256').update(`${challenge}${nonce}`).digest('hex');
-    if (typeof hash === 'string' && hash && !timingSafeEqHex(hash, computed)) return false;
-    return computed.startsWith('0'.repeat(difficulty));
+    if (typeof hash === 'string' && hash && !timingSafeEqHex(hash, computed)) return { ok: false };
+    if (!computed.startsWith('0'.repeat(difficulty))) return { ok: false };
+
+    // Proof of work is valid — now judge the environment. A headless bot that
+    // can still solve the PoW is caught here by fingerprint anomalies. Lenient
+    // mode never blocks on fingerprint (avoids false positives).
+    const fp = scoreFingerprint(payload.fp);
+    if (fp.hardBot && mode !== 'lenient') return { ok: false, block: true, reason: 'automation fingerprint' };
+
+    return { ok: true, difficulty };
   },
 
-  /** Mint a clearance token bound to client IP + host. */
-  issueClearance(clientIp, host) {
+  issueClearance(clientIp, host, difficulty) {
     const issuedAt = Date.now();
-    const sig = hmac(`clearance.${clientIp}.${host}.${issuedAt}`);
-    return `${issuedAt}.${sig}`;
+    const d = clampDifficulty(difficulty || BASE_DIFFICULTY.balanced);
+    const sig = hmac(`clearance.${clientIp}.${host}.${issuedAt}.${d}`);
+    return `${issuedAt}.${d}.${sig}`;
   },
 
-  /** Validate a clearance cookie value. */
-  verifyClearance(clientIp, host, token) {
+  /** Valid clearance whose solved difficulty covers what's now required. */
+  verifyClearance(clientIp, host, token, requiredDifficulty) {
     if (!token || typeof token !== 'string') return false;
-    const dot = token.indexOf('.');
-    if (dot < 1) return false;
-    const issuedAt = Number(token.slice(0, dot));
-    const sig = token.slice(dot + 1);
-    if (!Number.isFinite(issuedAt)) return false;
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const issuedAt = Number(parts[0]);
+    const d = Number(parts[1]);
+    const sig = parts[2];
+    if (!Number.isFinite(issuedAt) || !Number.isInteger(d)) return false;
     if (Date.now() - issuedAt > config.proxy.antibot.clearanceTtlSec * 1000) return false;
-    return timingSafeEqHex(sig, hmac(`clearance.${clientIp}.${host}.${issuedAt}`));
+    if (Number.isInteger(requiredDifficulty) && d < requiredDifficulty) return false;
+    return timingSafeEqHex(sig, hmac(`clearance.${clientIp}.${host}.${issuedAt}.${d}`));
   },
 
-  /** Build the Set-Cookie header value for a fresh clearance. */
-  clearanceCookie(clientIp, host, { secure }) {
-    const token = this.issueClearance(clientIp, host);
+  clearanceCookie(clientIp, host, difficulty, { secure }) {
+    const token = this.issueClearance(clientIp, host, difficulty);
     const maxAge = config.proxy.antibot.clearanceTtlSec;
     return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
   },
 
-  /** The branded interstitial served to unverified visitors. */
+  // ── Metrics (Redis counters, aggregated across cluster workers) ────────────
+
+  metric(domainId, field) {
+    try {
+      if (redisService.isConnected && redisService.client) {
+        redisService.client.hincrby(`shield:stats:${domainId}`, field, 1).catch(() => {});
+      }
+    } catch { /* ignore */ }
+  },
+
+  async recordFailure(clientIp) {
+    await redisIncrTtl(`shield:fail:${clientIp}`, 300);
+  },
+
+  async getStats(domainId) {
+    const empty = { challenge: 0, allow: 0, deny: 0, pass: 0, fail: 0, block: 0 };
+    try {
+      if (!redisService.isConnected || !redisService.client) return empty;
+      const h = await redisService.client.hgetall(`shield:stats:${domainId}`);
+      const out = { ...empty };
+      for (const k of Object.keys(empty)) out[k] = parseInt(h?.[k] || '0', 10) || 0;
+      return out;
+    } catch { return empty; }
+  },
+
+  // ── Pages ─────────────────────────────────────────────────────────────────
+
   renderChallengePage(host, challenge, returnUrl) {
     const data = JSON.stringify({
       challenge: challenge.challenge,
@@ -105,14 +276,17 @@ export const nebulaShield = {
       return: returnUrl || '/',
     }).replace(/</g, '\\u003c');
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
-    return CHALLENGE_HTML.replace('__DATA__', data).replace('__HOST__', safeHost);
+    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost);
+  },
+
+  renderBlockPage(host, reason) {
+    const safeHost = String(host || '').replace(/[<>&"]/g, '');
+    const safeReason = String(reason || 'requête bloquée').replace(/[<>&"]/g, '');
+    return BLOCK_HTML.replace(/__HOST__/g, safeHost).replace('__REASON__', safeReason);
   },
 };
 
 // ── Challenge page ──────────────────────────────────────────────────────────
-// Self-contained: inline CSS, a Web Worker built from a Blob that runs a
-// compact synchronous SHA-256 over challenge+nonce until the difficulty is
-// met, then POSTs the solution back and reloads to the original URL.
 const CHALLENGE_HTML = `<!doctype html>
 <html lang="fr">
 <head>
@@ -158,8 +332,40 @@ const CHALLENGE_HTML = `<!doctype html>
   (function(){
     var cfg = JSON.parse(document.getElementById('nb-data').textContent);
     var statusEl = document.getElementById('status'), fill = document.getElementById('fill');
-    // Compact synchronous SHA-256 (ASCII input), run inside a Worker so the
-    // page stays responsive while it brute-forces the nonce.
+
+    function collectFP(){
+      var n = navigator, fp = {};
+      try{ fp.webdriver = n.webdriver === true; }catch(e){}
+      try{ fp.languages = n.languages ? Array.prototype.slice.call(n.languages) : undefined; }catch(e){}
+      try{ fp.hw = n.hardwareConcurrency; }catch(e){}
+      try{ fp.tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || ''; }catch(e){}
+      try{ fp.screen = { w: screen.width, h: screen.height }; }catch(e){}
+      try{
+        var ua = (n.userAgent||'').toLowerCase(), plat = (n.platform||'').toLowerCase(), mm = false;
+        if(ua.indexOf('windows')>-1 && plat && plat.indexOf('win')===-1) mm = true;
+        if(ua.indexOf('mac os')>-1 && plat && plat.indexOf('mac')===-1) mm = true;
+        if(ua.indexOf('linux')>-1 && ua.indexOf('android')===-1 && plat && plat.indexOf('linux')===-1) mm = true;
+        fp.uaPlatformMismatch = mm;
+      }catch(e){}
+      try{
+        fp.automationGlobals = !!(window.__nightmare || window._phantom || window.callPhantom ||
+          window.__selenium_unwrapped || window.__webdriver_evaluate || window.domAutomation ||
+          document.__$webdriverAsyncExecutor || window.__driver_evaluate);
+      }catch(e){}
+      try{
+        var c = document.createElement('canvas'); c.width = 120; c.height = 30;
+        var g = c.getContext('2d');
+        if(!g){ fp.canvas = 'blank'; }
+        else { g.textBaseline='top'; g.font='14px Arial'; g.fillStyle='#f60'; g.fillRect(0,0,120,30);
+          g.fillStyle='#069'; g.fillText('Nebula\\u2728',2,2);
+          var url = c.toDataURL(); var h=0,i;
+          for(i=0;i<url.length;i++){ h=((h<<5)-h+url.charCodeAt(i))|0; }
+          fp.canvas = (url.length < 60) ? 'blank' : ('h'+(h>>>0).toString(16));
+        }
+      }catch(e){ fp.canvas = 'error'; }
+      return fp;
+    }
+
     var sha256src = function(){
       function sha256(ascii){
         function rr(v,a){return (v>>>a)|(v<<(32-a));}
@@ -184,18 +390,20 @@ const CHALLENGE_HTML = `<!doctype html>
           n++;if(n%4000===0)postMessage({progress:n});}
       };
     };
+    var fpData = collectFP();
     var blob=new Blob(['('+sha256src.toString()+')()'],{type:'application/javascript'});
     var worker=new Worker(URL.createObjectURL(blob));
-    var t0=Date.now();
     worker.onmessage=function(ev){
       var d=ev.data;
-      if(d.progress){var pct=Math.min(90,8+(d.progress/700));fill.style.width=pct+'%';statusEl.textContent='Calcul de la preuve de travail… ('+d.progress+' essais)';return;}
+      if(d.progress){var pct=Math.min(90,8+(d.progress/700));fill.style.width=pct+'%';statusEl.textContent='Preuve de travail… ('+d.progress+' essais)';return;}
       if(d.done){
         fill.style.width='96%';statusEl.textContent='Vérification…';
         fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:d.nonce,hash:d.hash,return:cfg['return']})})
+          body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:d.nonce,hash:d.hash,fp:fpData,'return':cfg['return']})})
         .then(function(r){return r.json();})
-        .then(function(j){if(j&&j.ok){fill.style.width='100%';statusEl.textContent='Accès autorisé.';location.replace(j['return']||cfg['return']||'/');}else{statusEl.textContent='Échec de la vérification. Rechargez la page.';}})
+        .then(function(j){if(j&&j.ok){fill.style.width='100%';statusEl.textContent='Accès autorisé.';location.replace(j['return']||cfg['return']||'/');}
+          else if(j&&j.blocked){statusEl.textContent='Accès refusé.';location.reload();}
+          else{statusEl.textContent='Échec de la vérification. Nouvelle tentative…';setTimeout(function(){location.reload();},1200);}})
         .catch(function(){statusEl.textContent='Erreur réseau. Rechargez la page.';});
       }
     };
@@ -203,5 +411,40 @@ const CHALLENGE_HTML = `<!doctype html>
     worker.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
   })();
   </script>
+</body>
+</html>`;
+
+// ── Block page (403) ────────────────────────────────────────────────────────
+const BLOCK_HTML = `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>Accès refusé — Bouclier Nebula</title>
+<style>
+  html,body{margin:0;height:100%}
+  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#f4f4f5;
+    background:radial-gradient(circle at 25% 12%,rgba(239,68,68,.16),transparent 45%),linear-gradient(160deg,#0a0a0b,#12090c 60%,#08080c);
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:420px;border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:30px 28px;
+    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));text-align:center}
+  .mark{width:54px;height:54px;margin:0 auto 18px;border-radius:15px;border:1px solid rgba(239,68,68,.4);
+    display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.12);font-size:26px}
+  h1{font-size:19px;margin:0 0 6px}
+  p{margin:0;color:#a1a1aa;font-size:13px}
+  .reason{margin-top:14px;font-size:12px;color:#f0a1a1;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:8px 12px;display:inline-block}
+  .brand{margin-top:22px;font-size:11px;color:#a1a1aa;letter-spacing:.14em;text-transform:uppercase}
+  .brand b{color:#cbb6ea;font-weight:700}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">⛔</div>
+    <h1>Accès refusé</h1>
+    <p>Le trafic automatisé vers <b>__HOST__</b> est bloqué.</p>
+    <div class="reason">__REASON__</div>
+    <div class="brand">Protégé par le <b>Bouclier Nebula</b></div>
+  </div>
 </body>
 </html>`;

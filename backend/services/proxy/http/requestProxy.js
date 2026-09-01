@@ -92,36 +92,47 @@ if (domain.maintenance_mode) {
 }
 
 // ── 2. ANTI-BOT (Nebula Shield) ──────────────────────────────────────────
-// Native proof-of-work gate. Unverified visitors get the branded challenge
-// page; the page POSTs its solution to VERIFY_PATH, we mint a signed
-// clearance cookie, and subsequent requests fall straight through. No
-// external service, no sidecar — see nebulaShieldService.js.
+// Native bot defense: a rules engine (UA classification, DNS-verified good
+// bots, rate/GeoIP signals) picks allow / deny / adaptive-difficulty proof-
+// of-work; the challenge page also returns a browser fingerprint that catches
+// headless automation. No external service — see nebulaShieldService.js.
 if (domain.antibot_enabled) {
   const shieldHost = req.headers.host || domain.hostname;
+  const shieldMode = domain.antibot_mode || 'balanced';
   const isHttps = !!req.socket.encrypted
     || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
 
-  // Solution submission — verify and issue clearance (terminal).
+  // Solution submission — verify PoW + fingerprint, issue clearance (terminal).
   if (urlPath === nebulaShield.VERIFY_PATH && req.method === 'POST') {
     let body = '';
     let tooBig = false;
     req.on('data', (c) => {
       body += c;
-      if (body.length > 8192) { tooBig = true; req.destroy(); }
+      if (body.length > 16384) { tooBig = true; req.destroy(); }
     });
     req.on('end', () => {
       if (tooBig) return;
       let payload = null;
       try { payload = JSON.parse(body); } catch { /* invalid */ }
-      if (payload && nebulaShield.verifySolution(clientIp, shieldHost, payload)) {
+      const result = payload ? nebulaShield.verifySolution(clientIp, shieldHost, payload, shieldMode) : { ok: false };
+      if (result.ok) {
+        nebulaShield.metric(domain.id, 'pass');
         res.writeHead(200, {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-store',
-          'Set-Cookie': nebulaShield.clearanceCookie(clientIp, shieldHost, { secure: isHttps }),
+          'Set-Cookie': nebulaShield.clearanceCookie(clientIp, shieldHost, result.difficulty, { secure: isHttps }),
         });
         res.end(JSON.stringify({ ok: true, return: typeof payload.return === 'string' ? payload.return : '/' }));
         this._logBlockedRequest(domain, req, clientIp, 200, 'Bouclier Nebula : défi résolu', startTime);
+      } else if (result.block) {
+        nebulaShield.metric(domain.id, 'block');
+        nebulaShield.recordFailure(clientIp);
+        res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, blocked: true, error: 'Automation detected' }));
+        this._logBlockedRequest(domain, req, clientIp, 403, `Bouclier Nebula : bloqué (${result.reason})`, startTime);
       } else {
+        nebulaShield.metric(domain.id, 'fail');
+        nebulaShield.recordFailure(clientIp);
         res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ ok: false, error: 'Challenge failed' }));
         this._logBlockedRequest(domain, req, clientIp, 403, 'Bouclier Nebula : défi échoué', startTime);
@@ -130,22 +141,45 @@ if (domain.antibot_enabled) {
     return;
   }
 
-  // No valid clearance → serve the challenge (terminal). WebSockets never
-  // reach here (handled before _proxyHttpRequest), so app sockets are safe.
+  // A valid clearance cookie covering the base difficulty passes cheaply,
+  // without re-running the engine on every request.
   const shieldCookies = this._parseCookies(req.headers.cookie || '');
-  if (!nebulaShield.verifyClearance(clientIp, shieldHost, shieldCookies[nebulaShield.COOKIE_NAME])) {
-    const challenge = nebulaShield.issueChallenge(clientIp, shieldHost);
-    const html = nebulaShield.renderChallengePage(shieldHost, challenge, req.url);
-    res.writeHead(200, {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Nebula-Shield': 'challenge',
-    });
-    res.end(html);
-    this._logBlockedRequest(domain, req, clientIp, 200, 'Bouclier Nebula : défi affiché', startTime);
-    return;
+  const baseDiff = nebulaShield.BASE_DIFFICULTY[shieldMode] || 4;
+  const cleared = nebulaShield.verifyClearance(clientIp, shieldHost, shieldCookies[nebulaShield.COOKIE_NAME], baseDiff);
+
+  if (!cleared) {
+    let decision;
+    try {
+      const signals = await nebulaShield.analyze(req, clientIp, shieldHost);
+      decision = nebulaShield.decide(signals, shieldMode);
+    } catch (shieldErr) {
+      // Fail open — never take a site down because the shield errored.
+      logger.error(`[Shield ${domain.id}] analyze failed: ${shieldErr.message}`);
+      decision = { action: 'allow', reason: 'shield error (fail-open)' };
+    }
+
+    if (decision.action === 'deny') {
+      nebulaShield.metric(domain.id, 'deny');
+      const wantsHtml = (req.headers.accept || '').includes('text/html');
+      res.writeHead(403, { 'Content-Type': wantsHtml ? 'text/html; charset=utf-8' : 'application/json', 'Cache-Control': 'no-store', 'X-Nebula-Shield': 'deny' });
+      res.end(wantsHtml ? nebulaShield.renderBlockPage(shieldHost, decision.reason) : JSON.stringify({ error: 'Access Denied', message: decision.reason }));
+      this._logBlockedRequest(domain, req, clientIp, 403, `Bouclier Nebula : refusé (${decision.reason})`, startTime);
+      return;
+    }
+
+    if (decision.action === 'challenge') {
+      nebulaShield.metric(domain.id, 'challenge');
+      const challenge = nebulaShield.issueChallenge(clientIp, shieldHost, decision.difficulty);
+      const html = nebulaShield.renderChallengePage(shieldHost, challenge, req.url);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Nebula-Shield': `challenge; d=${decision.difficulty}` });
+      res.end(html);
+      this._logBlockedRequest(domain, req, clientIp, 200, `Bouclier Nebula : défi (d=${decision.difficulty}, ${decision.reason})`, startTime);
+      return;
+    }
+
+    // action === 'allow' (verified good bot, or fail-open) — fall through.
+    nebulaShield.metric(domain.id, 'allow');
   }
-  // Cleared — fall through to the normal pipeline.
 }
 
 // ── 2.5. BANDWIDTH QUOTA CHECK ──────────────────────────────────────────────

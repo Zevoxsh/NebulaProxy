@@ -94,14 +94,29 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
   const [challengeMode, setChallengeMode] = useState(domain?.ddos_challenge_mode || false);
   const [selectedTypes, setSelectedTypes] = useState(domain?.ddos_challenge_types || []);
   const [antibot, setAntibot] = useState(domain?.antibot_enabled || false);
+  const [antibotMode, setAntibotMode] = useState(domain?.antibot_mode || 'balanced');
   const [antibotSaving, setAntibotSaving] = useState(false);
+  const [shieldStats, setShieldStats] = useState(null);
 
   useEffect(() => {
     if (!domain) return;
     setChallengeMode(domain.ddos_challenge_mode || false);
     setSelectedTypes(domain.ddos_challenge_types || []);
     setAntibot(domain.antibot_enabled || false);
+    setAntibotMode(domain.antibot_mode || 'balanced');
   }, [domain]);
+
+  // Poll live shield stats while protection is on.
+  useEffect(() => {
+    if (!domain?.id || !antibot) { setShieldStats(null); return; }
+    let alive = true;
+    const load = () => domainAPI.getAntibotStats(domain.id)
+      .then(res => { if (alive) setShieldStats(res.data.stats); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [domain?.id, antibot]);
 
   useEffect(() => {
     domainAPI.getChallengeTypesCatalog()
@@ -123,12 +138,28 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
     setAntibot(value);
     setAntibotSaving(true);
     try {
-      await domainAPI.setAntibot(domain.id, { enabled: value });
+      await domainAPI.setAntibot(domain.id, { enabled: value, mode: antibotMode });
       flash(value ? 'Bouclier Nebula activé' : 'Bouclier Nebula désactivé');
       if (onUpdate) onUpdate();
     } catch (err) {
       setAntibot(!value);
       flash(err.response?.data?.message || "Échec de la mise à jour de l'anti-bot", true);
+    } finally {
+      setAntibotSaving(false);
+    }
+  };
+
+  const changeAntibotMode = async (mode) => {
+    const prev = antibotMode;
+    setAntibotMode(mode);
+    setAntibotSaving(true);
+    try {
+      await domainAPI.setAntibot(domain.id, { mode });
+      flash(`Niveau : ${mode === 'lenient' ? 'Souple' : mode === 'strict' ? 'Strict' : 'Équilibré'}`);
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setAntibotMode(prev);
+      flash(err.response?.data?.message || 'Échec du changement de niveau', true);
     } finally {
       setAntibotSaving(false);
     }
@@ -170,18 +201,71 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
         </div>
       )}
 
-      <Section icon={Bot} title="Anti-bot (Bouclier Nebula)" description="Challenge de preuve de travail bloquant les scrapers et bots IA avant l'accès au site" color="#F59E0B">
+      <Section icon={Bot} title="Anti-bot (Bouclier Nebula)" description="Défense native : règles, difficulté adaptative, empreinte anti-headless" color="#F59E0B">
         <ToggleRow
           label="Activer la protection anti-bot"
-          description="Chaque visiteur résout un défi de preuve de travail (invisible pour un navigateur normal) avant d'atteindre le backend"
+          description="Scrapers IA et outils d'automatisation bloqués ou défiés ; les navigateurs résolvent une preuve de travail invisible"
           checked={antibot}
           onCheckedChange={v => { if (!antibotSaving) toggleAntibot(v); }}
           icon={Bot}
           color="#F59E0B"
         />
+
+        {antibot && (
+          <>
+            <div>
+              <p className="text-xs font-medium text-white/60 mb-1.5">Niveau d'agressivité</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'lenient', label: 'Souple', desc: 'Défi léger, rien de bloqué' },
+                  { id: 'balanced', label: 'Équilibré', desc: 'Bloque scrapers IA connus' },
+                  { id: 'strict', label: 'Strict', desc: 'Bloque toute automatisation' },
+                ].map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={antibotSaving}
+                    onClick={() => changeAntibotMode(m.id)}
+                    className={`p-2.5 rounded-lg border text-left transition-all ${
+                      antibotMode === m.id
+                        ? 'bg-[#F59E0B]/15 border-[#F59E0B]/40'
+                        : 'bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16]'
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-white">{m.label}</p>
+                    <p className="text-[11px] text-white/40 mt-0.5">{m.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {shieldStats && (
+              <div>
+                <p className="text-xs font-medium text-white/60 mb-1.5">Activité (cumulé)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { k: 'pass', label: 'Vérifiés', color: '#10B981' },
+                    { k: 'challenge', label: 'Défis servis', color: '#3B82F6' },
+                    { k: 'deny', label: 'Refusés', color: '#EF4444' },
+                    { k: 'block', label: 'Bots bloqués', color: '#EF4444' },
+                    { k: 'fail', label: 'Défis échoués', color: '#F59E0B' },
+                    { k: 'allow', label: 'Bots autorisés', color: '#10B981' },
+                  ].map(s => (
+                    <div key={s.k} className="rounded-lg bg-white/[0.03] border border-white/[0.08] p-2.5">
+                      <p className="text-lg font-semibold tabular-nums" style={{ color: s.color }}>{shieldStats[s.k] ?? 0}</p>
+                      <p className="text-[11px] text-white/40">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
         <p className="text-xs text-white/35">
-          Module natif <span className="text-[#F59E0B]/80">Bouclier Nebula</span> — aucun service externe.
-          Les WebSockets et le trafic déjà vérifié passent sans re-challenge ; le cookie de vérification est valable 7 jours.
+          Module natif <span className="text-[#F59E0B]/80">Bouclier Nebula</span> — aucun service externe. Les faux
+          « Googlebot » sont démasqués par DNS inverse, la difficulté monte selon la suspicion, et les navigateurs
+          headless sont détectés par empreinte. Cookie de vérification valable 7 jours.
         </p>
       </Section>
 

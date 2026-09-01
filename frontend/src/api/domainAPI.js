@@ -31,6 +31,7 @@ export const domainAPI = {
   setGeyserProxyProtocol: (id, data) => api.put(`/domains/${id}/geyser-proxy-protocol`, data),
   setDdosProtection: (id, data) => api.put(`/domains/${id}/ddos-protection`, data),
   setAntibot: (id, data) => api.put(`/domains/${id}/antibot`, data),
+  getAntibotStats: (id) => api.get(`/domains/${id}/antibot/stats`),
   getChallengeTypesCatalog: () => api.get('/domains/challenge-types'),
 
   // Circuit breaker (admin)
