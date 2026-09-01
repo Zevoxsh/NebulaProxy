@@ -1,6 +1,7 @@
 // @ts-check
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
+import { CELEBRATION_SNIPPET } from './shield/celebration.js';
 
 // ── Challenge secret (regenerated each process start, that's fine) ───────────
 
@@ -615,7 +616,8 @@ class ChallengeService {
     .then(function(res){
       if(res.ok&&res.data.ok){
         msg.className='msg ok';msg.textContent='Accès autorisé, redirection\u2026';
-        window.location.href=res.data.return||RETURN;
+        var dest=res.data.return||RETURN;
+        if(window.nebulaCelebrate){window.nebulaCelebrate(function(){window.location.href=dest;});}else{window.location.href=dest;}
       } else {
         msg.className='msg err';msg.textContent='Incorrect. Réessayez.';
         shake();if(onFail)onFail();
@@ -867,6 +869,7 @@ class ChallengeService {
 
 })();
 </script>
+${CELEBRATION_SNIPPET}
 </body>
 </html>`;
   }

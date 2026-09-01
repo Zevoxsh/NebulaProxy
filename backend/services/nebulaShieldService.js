@@ -19,6 +19,7 @@ import dns from 'dns';
 import { config } from '../config/config.js';
 import { redisService } from './redis.js';
 import { classifyUserAgent, headerSuspicion, scoreFingerprint } from './shield/signatures.js';
+import { CELEBRATION_SNIPPET } from './shield/celebration.js';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const BASE_DIFFICULTY = { lenient: 3, balanced: 4, strict: 5 };
@@ -276,7 +277,7 @@ export const nebulaShield = {
       return: returnUrl || '/',
     }).replace(/</g, '\\u003c');
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
-    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost);
+    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost).replace('__CELEBRATION__', CELEBRATION_SNIPPET);
   },
 
   /**
@@ -446,7 +447,9 @@ const CHALLENGE_HTML = `<!doctype html>
         fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:d.nonce,hash:d.hash,fp:fpData,'return':cfg['return']})})
         .then(function(r){return r.json();})
-        .then(function(j){if(j&&j.ok){fill.style.width='100%';statusEl.textContent='Accès autorisé.';location.replace(j['return']||cfg['return']||'/');}
+        .then(function(j){if(j&&j.ok){fill.style.width='100%';statusEl.textContent='Vérifié !';
+            var go=function(){location.replace(j['return']||cfg['return']||'/');};
+            if(window.nebulaCelebrate){window.nebulaCelebrate(go);}else{go();}}
           else if(j&&j.blocked){statusEl.textContent='Accès refusé.';location.reload();}
           else{statusEl.textContent='Échec de la vérification. Nouvelle tentative…';setTimeout(function(){location.reload();},1200);}})
         .catch(function(){statusEl.textContent='Erreur réseau. Rechargez la page.';});
@@ -456,6 +459,7 @@ const CHALLENGE_HTML = `<!doctype html>
     worker.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
   })();
   </script>
+__CELEBRATION__
 </body>
 </html>`;
 
