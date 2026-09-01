@@ -32,6 +32,12 @@ export const getDdos = () => {
   return _ddos;
 };
 
+// Warm the lazy singletons shortly after startup so the FIRST request to a
+// domain that needs them (e.g. the DDoS/anti-bot challenge) doesn't race the
+// async import and fail open. Deferred a tick to avoid circular-import issues
+// during initial module resolution.
+setTimeout(() => { getDdos(); getLb(); lts(); }, 0);
+
 export const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
