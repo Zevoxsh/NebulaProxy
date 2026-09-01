@@ -245,18 +245,21 @@ export const config = {
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
     },
-    // Anubis anti-bot sidecar (see docker-compose.yml `anubis` service).
-    // Requests for antibot-enabled domains are forwarded to Anubis, which
-    // challenges the client then proxies verified traffic back into the
-    // re-entry listener below. reentryBind must NOT be publicly reachable:
-    // it skips the anti-bot step and trusts X-Real-IP/X-Forwarded-Proto.
-    // In the compose setup it binds the nebula-net bridge gateway, reachable
-    // only from containers on that bridge and the host itself.
+    // Nebula Shield — native proof-of-work anti-bot (see
+    // services/nebulaShieldService.js). No external service; these tune the
+    // challenge only. `secret` signs both the stateless challenges and the
+    // clearance cookies — falls back to JWT_SECRET so it's stable by default.
     antibot: {
-      get upstreamHost() { return getConfig('ANTIBOT_UPSTREAM_HOST', '127.0.0.1'); },
-      get upstreamPort() { return parseInt(getConfig('ANTIBOT_UPSTREAM_PORT', '8923'), 10); },
-      get reentryBind() { return getConfig('ANTIBOT_REENTRY_BIND', '127.0.0.1'); },
-      get reentryPort() { return parseInt(getConfig('ANTIBOT_REENTRY_PORT', '8924'), 10); },
+      get difficulty() {
+        const d = parseInt(getConfig('ANTIBOT_DIFFICULTY', '4'), 10);
+        return Number.isInteger(d) ? Math.max(1, Math.min(6, d)) : 4;
+      },
+      get clearanceTtlSec() {
+        return parseInt(getConfig('ANTIBOT_CLEARANCE_TTL_SEC', String(7 * 24 * 3600)), 10);
+      },
+      get secret() {
+        return (getConfig('ANTIBOT_SECRET') || getConfig('JWT_SECRET') || getConfig('PROXY_CHECK_TOKEN') || 'nebula-shield').trim();
+      },
     },
     // Max sockets kept alive per backend (host:port) in the shared keep-alive agent
     get maxSocketsPerBackend() {

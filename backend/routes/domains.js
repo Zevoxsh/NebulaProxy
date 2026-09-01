@@ -2152,7 +2152,7 @@ export async function domainRoutes(fastify, _options) {
     }
   });
 
-  // ── Anti-bot (Anubis) ─────────────────────────────────────────────────────
+  // ── Anti-bot (Bouclier Nebula) ─────────────────────────────────────────────
   fastify.put('/:id/antibot', {
     preHandler: fastify.authenticate
   }, async (request, reply) => {

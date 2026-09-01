@@ -23,6 +23,7 @@ import { bandwidthTracker } from '../../bandwidthTracker.js';
 import { urlFilterService } from '../../urlFilterService.js';
 import { logBatchQueue } from '../../logBatchQueue.js';
 import { proxyMetrics } from '../../proxyMetrics.js';
+import { nebulaShield } from '../../nebulaShieldService.js';
 
 // Shared keep-alive agents reused across every proxied request. Previously
 // each request used `agent: false`, opening a brand new TCP (+ TLS handshake
@@ -90,17 +91,61 @@ if (domain.maintenance_mode) {
   return;
 }
 
-// ── 2. ANTI-BOT (Anubis) ─────────────────────────────────────────────────
-// Terminal: Anubis either serves its challenge or proxies verified traffic
-// back through the re-entry listener, where this pipeline runs in full with
-// _antibotReentry set. _antibotBypass marks a fail-open retry after Anubis
-// was found unreachable (GET/HEAD only — nothing sent, nothing consumed).
-if (domain.antibot_enabled && !req._antibotReentry && !req._antibotBypass) {
-  this._forwardToAnubis(req, res, domain, clientIp, () => {
-    req._antibotBypass = true;
-    this._proxyHttpRequest(req, res, domain);
-  });
-  return;
+// ── 2. ANTI-BOT (Nebula Shield) ──────────────────────────────────────────
+// Native proof-of-work gate. Unverified visitors get the branded challenge
+// page; the page POSTs its solution to VERIFY_PATH, we mint a signed
+// clearance cookie, and subsequent requests fall straight through. No
+// external service, no sidecar — see nebulaShieldService.js.
+if (domain.antibot_enabled) {
+  const shieldHost = req.headers.host || domain.hostname;
+  const isHttps = !!req.socket.encrypted
+    || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
+
+  // Solution submission — verify and issue clearance (terminal).
+  if (urlPath === nebulaShield.VERIFY_PATH && req.method === 'POST') {
+    let body = '';
+    let tooBig = false;
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 8192) { tooBig = true; req.destroy(); }
+    });
+    req.on('end', () => {
+      if (tooBig) return;
+      let payload = null;
+      try { payload = JSON.parse(body); } catch { /* invalid */ }
+      if (payload && nebulaShield.verifySolution(clientIp, shieldHost, payload)) {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          'Set-Cookie': nebulaShield.clearanceCookie(clientIp, shieldHost, { secure: isHttps }),
+        });
+        res.end(JSON.stringify({ ok: true, return: typeof payload.return === 'string' ? payload.return : '/' }));
+        this._logBlockedRequest(domain, req, clientIp, 200, 'Bouclier Nebula : défi résolu', startTime);
+      } else {
+        res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, error: 'Challenge failed' }));
+        this._logBlockedRequest(domain, req, clientIp, 403, 'Bouclier Nebula : défi échoué', startTime);
+      }
+    });
+    return;
+  }
+
+  // No valid clearance → serve the challenge (terminal). WebSockets never
+  // reach here (handled before _proxyHttpRequest), so app sockets are safe.
+  const shieldCookies = this._parseCookies(req.headers.cookie || '');
+  if (!nebulaShield.verifyClearance(clientIp, shieldHost, shieldCookies[nebulaShield.COOKIE_NAME])) {
+    const challenge = nebulaShield.issueChallenge(clientIp, shieldHost);
+    const html = nebulaShield.renderChallengePage(shieldHost, challenge, req.url);
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Nebula-Shield': 'challenge',
+    });
+    res.end(html);
+    this._logBlockedRequest(domain, req, clientIp, 200, 'Bouclier Nebula : défi affiché', startTime);
+    return;
+  }
+  // Cleared — fall through to the normal pipeline.
 }
 
 // ── 2.5. BANDWIDTH QUOTA CHECK ──────────────────────────────────────────────
@@ -350,13 +395,7 @@ if (!circuitBreaker.isAvailable(cbKey)) {
 // This prevents issues with headers like 'Host', 'Connection', etc.
 const headers = {
   'X-Forwarded-For': clientIp,
-  // On anti-bot re-entry the socket is a plain-HTTP hop from Anubis: the
-  // original scheme only survives in the X-Forwarded-Proto set before the
-  // Anubis hop — recomputing from the socket would tell HTTPS backends
-  // 'http' and trigger their redirect loops.
-  'X-Forwarded-Proto': req._antibotReentry
-    ? (String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim())
-    : (req.socket.encrypted ? 'https' : 'http'),
+  'X-Forwarded-Proto': req.socket.encrypted ? 'https' : 'http',
   'X-Forwarded-Host': req.headers.host,
   'X-Real-IP': clientIp,
   // Use the original domain name as Host so SNI-based backends (Plesk, nginx vhosts) route correctly.

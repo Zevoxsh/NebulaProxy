@@ -16,11 +16,6 @@ networks:
     enable_ipv6: true
     ipam:
       config:
-        # The anti-bot flow assumes this bridge's gateway is 172.20.0.1 (the
-        # docker default for this subnet): the backend's re-entry listener
-        # binds it on the host (ANTIBOT_REENTRY_BIND) and anubis dials it as
-        # TARGET. Not pinned via `gateway:` — that changes the network's
-        # config hash and makes compose try to recreate a live network.
         - subnet: 172.20.0.0/16
         - subnet: fd00:db8:1::/48
 
@@ -151,56 +146,9 @@ services:
         reservations:
           memory: 512M
 
-  # ── Anubis anti-bot ────────────────────────────────────────────────────────
-  # Proof-of-work challenge proxy (https://anubis.techaro.lol). The backend
-  # forwards HTTP requests for antibot-enabled domains to 127.0.0.1:8923;
-  # anubis challenges the client, then proxies verified traffic to the
-  # backend's re-entry listener on the nebula-net gateway (172.20.0.1:8924).
-  # One-shot key generator: a persistent ed25519 seed keeps challenge cookies
-  # valid across anubis restarts (ephemeral otherwise).
-  anubis-keygen:
-    image: alpine:3.20
-    container_name: nebulaproxy-anubis-keygen
-    logging: *default-logging
-    command: ["sh", "-c", "test -s /data/anubis.key || (head -c32 /dev/urandom | od -An -v -tx1 | tr -d ' \\n' > /data/anubis.key && chmod 444 /data/anubis.key)"]
-    volumes:
-      - anubis-key:/data
-    network_mode: none
-    restart: "no"
-
-  anubis:
-    image: ghcr.io/techarohq/anubis:latest
-    container_name: nebulaproxy-anubis
-    logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    environment:
-      - BIND=:8923
-      - TARGET=http://172.20.0.1:8924
-      - DIFFICULTY=${ANUBIS_DIFFICULTY:-4}
-      - ED25519_PRIVATE_KEY_HEX_FILE=/data/anubis.key
-      - COOKIE_SECURE=true
-      - METRICS_BIND=:9090   # not published — scrape via nebula-net if needed
-    volumes:
-      - anubis-key:/data:ro
-    ports:
-      - "127.0.0.1:8923:8923"   # accessible depuis le backend en host network
-    depends_on:
-      anubis-keygen:
-        condition: service_completed_successfully
-    networks:
-      - nebula-net
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 32M
-
   # ── Backend ────────────────────────────────────────────────────────────────
+  # Anti-bot is native (Nebula Shield, proof-of-work in the backend itself —
+  # see services/nebulaShieldService.js). No sidecar container.
   # SECURITY NOTE: network_mode: host is required because the proxy must bind
   # to arbitrary TCP/UDP ports at runtime (80, 443, custom game ports, etc.).
   # Mitigation: drop all unneeded Linux capabilities and prevent privilege
@@ -266,13 +214,9 @@ services:
       - DOCKER_HOST_RW=tcp://127.0.0.1:2376
       - PUBLIC_IP=${PUBLIC_IP:-}
       - PUBLIC_IPV6=${PUBLIC_IPV6:-}
-      # Anubis anti-bot sidecar (see the anubis service above). The re-entry
-      # listener binds the nebula-net gateway: reachable from containers on
-      # that bridge and from the host itself, never from outside.
-      - ANTIBOT_UPSTREAM_HOST=127.0.0.1
-      - ANTIBOT_UPSTREAM_PORT=8923
-      - ANTIBOT_REENTRY_BIND=172.20.0.1
-      - ANTIBOT_REENTRY_PORT=8924
+      # Nebula Shield (native anti-bot). Difficulty of the proof-of-work
+      # challenge; the signing secret defaults to JWT_SECRET.
+      - ANTIBOT_DIFFICULTY=4
       - LOG_LEVEL=warn
       - LOG_RETENTION_DAYS=3
       # 2 workers now that the host has 8 cores / 24GB — was disabled when
@@ -441,8 +385,6 @@ services:
 
 volumes:
   redis-data:
-    driver: local
-  anubis-key:
     driver: local
   redis-secret:
     driver: local

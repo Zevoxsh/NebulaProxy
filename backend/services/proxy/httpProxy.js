@@ -25,11 +25,6 @@ async _startHttpProxy(domain) {
     await this._startSharedHttpsServer();
   }
 
-  // Anti-bot domains need the re-entry listener Anubis proxies back into
-  if (domain.antibot_enabled) {
-    this._ensureAntibotReentryServer();
-  }
-
   // Register domain in proxy map
   this.proxies.set(domain.id, {
     type: 'http',
@@ -257,9 +252,8 @@ import { AcmeHandler } from './http/acmeHandler.js';
 import { RequestProxy } from './http/requestProxy.js';
 import { WebSocketHandler } from './http/webSocketHandler.js';
 import { DomainLookup } from './http/domainLookup.js';
-import { AntibotHandler } from './http/antibotHandler.js';
 
-const _httpModules = [SniHandler, AcmeHandler, RequestProxy, WebSocketHandler, DomainLookup, AntibotHandler];
+const _httpModules = [SniHandler, AcmeHandler, RequestProxy, WebSocketHandler, DomainLookup];
 for (const Mod of _httpModules) {
   Object.getOwnPropertyNames(Mod.prototype)
     .filter(n => n !== 'constructor')
