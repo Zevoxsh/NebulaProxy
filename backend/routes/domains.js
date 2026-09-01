@@ -2152,6 +2152,44 @@ export async function domainRoutes(fastify, _options) {
     }
   });
 
+  // ── Anti-bot (Anubis) ─────────────────────────────────────────────────────
+  fastify.put('/:id/antibot', {
+    preHandler: fastify.authenticate
+  }, async (request, reply) => {
+    try {
+      const domainId = parseInt(request.params.id, 10);
+      const userId = request.user.id;
+      const isAdmin = request.user.role === 'admin';
+      const { enabled } = request.body || {};
+
+      const domain = await database.getDomainById(domainId);
+      if (!domain) return reply.code(404).send({ error: 'Not Found', message: 'Domain not found' });
+      if (!await canModifyDomain(domain, userId, isAdmin)) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'You do not have permission to modify this domain' });
+      }
+      if ((domain.proxy_type || 'http').toLowerCase() !== 'http') {
+        return reply.code(400).send({ error: 'Bad Request', message: 'Anti-bot protection is only available for HTTP domains' });
+      }
+
+      await database.execute(
+        `UPDATE domains SET
+          antibot_enabled = $1,
+          updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [enabled !== undefined ? !!enabled : domain.antibot_enabled, domainId]
+      );
+
+      const updated = await database.getDomainById(domainId);
+      if (domain.is_active) {
+        try { await proxyManager.reloadProxy(domainId); } catch (_) {}
+      }
+      return reply.send({ success: true, domain: updated });
+    } catch (error) {
+      fastify.log.error({ error }, 'Failed to update anti-bot settings');
+      return reply.code(500).send({ error: 'Internal Server Error', message: 'Failed to update anti-bot settings' });
+    }
+  });
+
   // ── Live Traffic (all accessible domains) ────────────────────────────────
 
   fastify.get('/traffic/live', { preHandler: fastify.authenticate }, async (request, reply) => {

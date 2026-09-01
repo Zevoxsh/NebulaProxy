@@ -245,6 +245,19 @@ export const config = {
     get injectConsoleScript() {
       return getConfig('PROXY_INJECT_CONSOLE_SCRIPT', 'false') === 'true';
     },
+    // Anubis anti-bot sidecar (see docker-compose.yml `anubis` service).
+    // Requests for antibot-enabled domains are forwarded to Anubis, which
+    // challenges the client then proxies verified traffic back into the
+    // re-entry listener below. reentryBind must NOT be publicly reachable:
+    // it skips the anti-bot step and trusts X-Real-IP/X-Forwarded-Proto.
+    // In the compose setup it binds the nebula-net bridge gateway, reachable
+    // only from containers on that bridge and the host itself.
+    antibot: {
+      get upstreamHost() { return getConfig('ANTIBOT_UPSTREAM_HOST', '127.0.0.1'); },
+      get upstreamPort() { return parseInt(getConfig('ANTIBOT_UPSTREAM_PORT', '8923'), 10); },
+      get reentryBind() { return getConfig('ANTIBOT_REENTRY_BIND', '127.0.0.1'); },
+      get reentryPort() { return parseInt(getConfig('ANTIBOT_REENTRY_PORT', '8924'), 10); },
+    },
     // Max sockets kept alive per backend (host:port) in the shared keep-alive agent
     get maxSocketsPerBackend() {
       return parseInt(getConfig('PROXY_MAX_SOCKETS_PER_BACKEND', '256'), 10);

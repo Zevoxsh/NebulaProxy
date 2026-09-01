@@ -159,8 +159,11 @@ _isTrustedProxy(ip) {
 _getRealClientIp(req) {
   const remoteAddr = req.socket?.remoteAddress || req.connection?.remoteAddress;
 
-  // If request does NOT come from trusted proxy, use socket IP directly
-  if (!this._isTrustedProxy(remoteAddr)) {
+  // Anti-bot re-entry: the socket peer is the Anubis container, but the
+  // X-Real-IP/X-Forwarded-For headers were set by our own outer pass (and
+  // the re-entry listener only accepts private-source connections), so the
+  // headers are trustworthy regardless of the trustedProxies config.
+  if (!req._antibotReentry && !this._isTrustedProxy(remoteAddr)) {
     return this._normalizeIp(remoteAddr);
   }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Zap, RefreshCw, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Check
+  Zap, RefreshCw, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Check, Bot
 } from 'lucide-react';
 import { domainAPI } from '../../api/client';
 import { Switch } from '@/components/ui/switch';
@@ -93,11 +93,14 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
 
   const [challengeMode, setChallengeMode] = useState(domain?.ddos_challenge_mode || false);
   const [selectedTypes, setSelectedTypes] = useState(domain?.ddos_challenge_types || []);
+  const [antibot, setAntibot] = useState(domain?.antibot_enabled || false);
+  const [antibotSaving, setAntibotSaving] = useState(false);
 
   useEffect(() => {
     if (!domain) return;
     setChallengeMode(domain.ddos_challenge_mode || false);
     setSelectedTypes(domain.ddos_challenge_types || []);
+    setAntibot(domain.antibot_enabled || false);
   }, [domain]);
 
   useEffect(() => {
@@ -114,6 +117,21 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
 
   const toggleType = (id) => {
     setSelectedTypes(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
+  };
+
+  const toggleAntibot = async (value) => {
+    setAntibot(value);
+    setAntibotSaving(true);
+    try {
+      await domainAPI.setAntibot(domain.id, { enabled: value });
+      flash(value ? 'Anti-bot Anubis activé' : 'Anti-bot Anubis désactivé');
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setAntibot(!value);
+      flash(err.response?.data?.message || "Échec de la mise à jour de l'anti-bot", true);
+    } finally {
+      setAntibotSaving(false);
+    }
   };
 
   const save = async () => {
@@ -142,6 +160,31 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
 
   return (
     <div className="space-y-4">
+      {message && (
+        <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${message.isError ? 'bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#F87171]' : 'bg-[#10B981]/10 border border-[#10B981]/20 text-[#34D399]'}`}>
+          {message.isError
+            ? <AlertCircle className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
+            : <CheckCircle className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
+          }
+          {message.text}
+        </div>
+      )}
+
+      <Section icon={Bot} title="Anti-bot (Anubis)" description="Challenge de preuve de travail bloquant les scrapers et bots IA avant l'accès au site" color="#F59E0B">
+        <ToggleRow
+          label="Activer la protection anti-bot"
+          description="Chaque visiteur passe par le challenge Anubis (invisible pour un navigateur normal) avant d'atteindre le backend"
+          checked={antibot}
+          onCheckedChange={v => { if (!antibotSaving) toggleAntibot(v); }}
+          icon={Bot}
+          color="#F59E0B"
+        />
+        <p className="text-xs text-white/35">
+          Propulsé par <a href="https://anubis.techaro.lol" target="_blank" rel="noreferrer" className="text-[#F59E0B]/80 hover:underline">Anubis</a>.
+          Les WebSockets et le trafic déjà vérifié passent sans re-challenge ; le cookie de vérification est valable 7 jours.
+        </p>
+      </Section>
+
       <Section icon={Zap} title="Challenge" description="Présente un challenge aux visiteurs avant l'accès au site" color="#3B82F6">
         <ToggleRow
           label="Activer le mode Challenge"
@@ -175,16 +218,6 @@ export default function DomainChallengePanel({ domain, onUpdate }) {
             </div>
           )}
         </div>
-
-        {message && (
-          <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${message.isError ? 'bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#F87171]' : 'bg-[#10B981]/10 border border-[#10B981]/20 text-[#34D399]'}`}>
-            {message.isError
-              ? <AlertCircle className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
-              : <CheckCircle className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
-            }
-            {message.text}
-          </div>
-        )}
 
         <button
           onClick={save}

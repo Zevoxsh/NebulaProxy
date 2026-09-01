@@ -90,6 +90,19 @@ if (domain.maintenance_mode) {
   return;
 }
 
+// ── 2. ANTI-BOT (Anubis) ─────────────────────────────────────────────────
+// Terminal: Anubis either serves its challenge or proxies verified traffic
+// back through the re-entry listener, where this pipeline runs in full with
+// _antibotReentry set. _antibotBypass marks a fail-open retry after Anubis
+// was found unreachable (GET/HEAD only — nothing sent, nothing consumed).
+if (domain.antibot_enabled && !req._antibotReentry && !req._antibotBypass) {
+  this._forwardToAnubis(req, res, domain, clientIp, () => {
+    req._antibotBypass = true;
+    this._proxyHttpRequest(req, res, domain);
+  });
+  return;
+}
+
 // ── 2.5. BANDWIDTH QUOTA CHECK ──────────────────────────────────────────────
 // Quota is cached in Redis for 5 min to avoid a DB hit on every request.
 if (domain.user_id) {
@@ -337,7 +350,13 @@ if (!circuitBreaker.isAvailable(cbKey)) {
 // This prevents issues with headers like 'Host', 'Connection', etc.
 const headers = {
   'X-Forwarded-For': clientIp,
-  'X-Forwarded-Proto': req.socket.encrypted ? 'https' : 'http',
+  // On anti-bot re-entry the socket is a plain-HTTP hop from Anubis: the
+  // original scheme only survives in the X-Forwarded-Proto set before the
+  // Anubis hop — recomputing from the socket would tell HTTPS backends
+  // 'http' and trigger their redirect loops.
+  'X-Forwarded-Proto': req._antibotReentry
+    ? (String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim())
+    : (req.socket.encrypted ? 'https' : 'http'),
   'X-Forwarded-Host': req.headers.host,
   'X-Real-IP': clientIp,
   // Use the original domain name as Host so SNI-based backends (Plesk, nginx vhosts) route correctly.
