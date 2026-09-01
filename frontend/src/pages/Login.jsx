@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, KeyRound, Sparkles, Lock, LogIn } from 'lucide-react';
+import { Loader2, AlertCircle, KeyRound, Sparkles, Lock, LogIn, ShieldAlert } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useBrandingStore } from '../store/brandingStore';
@@ -28,6 +28,41 @@ export default function Login() {
   const [bootstrapChangeStep, setBootstrapChangeStep] = useState(false);
   const [bootstrapNewPassword, setBootstrapNewPassword] = useState('');
   const [bootstrapConfirmPassword, setBootstrapConfirmPassword] = useState('');
+  // Break-glass local admin login (SSO bypass), revealed by a hidden
+  // press-and-slide gesture in the top-right corner. Only meaningful in OIDC
+  // mode — the credentials form already shows in local/ldap modes.
+  const [localAdmin, setLocalAdmin] = useState(false);
+  const cornerDragRef = useRef(null);
+
+  const showCredentials = authMode !== 'oidc' || localAdmin;
+  const usingBreakGlass = authMode === 'oidc' && localAdmin;
+
+  const onCornerPointerDown = (e) => {
+    cornerDragRef.current = { x: e.clientX, y: e.clientY };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+  };
+  const onCornerPointerMove = (e) => {
+    if (!cornerDragRef.current) return;
+    const dx = e.clientX - cornerDragRef.current.x;
+    const dy = e.clientY - cornerDragRef.current.y;
+    // Reveal once the pointer has been dragged far enough (down/left) while
+    // still held — long enough not to trigger on an accidental click.
+    if (Math.hypot(dx, dy) >= 90) {
+      cornerDragRef.current = null;
+      setLocalAdmin(true);
+      setError('');
+    }
+  };
+  const onCornerPointerEnd = (e) => {
+    cornerDragRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* not supported */ }
+  };
+
+  const exitLocalAdmin = () => {
+    setLocalAdmin(false);
+    setFormData({ username: '', password: '' });
+    setError('');
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -113,7 +148,8 @@ export default function Login() {
         return;
       }
 
-      const response = await authAPI.login(formData);
+      const loginFn = usingBreakGlass ? authAPI.localAdminLogin : authAPI.login;
+      const response = await loginFn(formData);
       if (response.data?.mustChangePassword) {
         setBootstrapChangeStep(true);
         setBootstrapNewPassword('');
@@ -241,6 +277,20 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-white">
+      {/* Hidden break-glass activator: press and slide from the top-right
+          corner to reveal the local admin login (SSO bypass). Invisible and
+          non-hinting on purpose. */}
+      {authMode === 'oidc' && !localAdmin && (
+        <div
+          onPointerDown={onCornerPointerDown}
+          onPointerMove={onCornerPointerMove}
+          onPointerUp={onCornerPointerEnd}
+          onPointerCancel={onCornerPointerEnd}
+          className="fixed top-0 right-0 z-50 h-14 w-14"
+          style={{ touchAction: 'none' }}
+          aria-hidden="true"
+        />
+      )}
       <div className="grid min-h-screen lg:grid-cols-2">
         <div className="flex items-center justify-center p-6 md:p-10">
           <div className="w-full max-w-sm space-y-6">
@@ -259,13 +309,27 @@ export default function Login() {
                   ? 'You signed in with bootstrap credentials. Set a new admin password now.'
                   : twoFactorStep
                   ? 'Choose your 2FA method and enter the verification code.'
-                  : authMode === 'local'
+                  : usingBreakGlass
+                    ? 'Local admin access (SSO bypass).'
+                    : authMode === 'local'
                     ? 'Local authentication is enabled.'
                     : authMode === 'oidc'
                       ? 'Single sign-on (OIDC) is enabled.'
                       : 'LDAP/Enterprise authentication is enabled.'}
               </p>
             </div>
+
+            {usingBreakGlass && !twoFactorStep && !bootstrapChangeStep && (
+              <div className="flex items-start justify-between gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-200">
+                <span className="flex items-start gap-2">
+                  <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>Emergency local admin login. Use only when SSO is unavailable.</span>
+                </span>
+                <button type="button" onClick={exitLocalAdmin} className="shrink-0 underline hover:text-white">
+                  Back to SSO
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
@@ -274,7 +338,7 @@ export default function Login() {
                   <span>{error}</span>
                 </div>
               )}
-              {!twoFactorStep && !bootstrapChangeStep && authMode === 'oidc' ? (
+              {!twoFactorStep && !bootstrapChangeStep && !showCredentials ? (
                 <div className="rounded-md border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70">
                   This instance uses single sign-on (SSO). Continue below to sign in through your identity provider.
                 </div>
@@ -434,7 +498,7 @@ export default function Login() {
                 </>
               )}
 
-              {!twoFactorStep && !bootstrapChangeStep && authMode === 'oidc' ? (
+              {!twoFactorStep && !bootstrapChangeStep && !showCredentials ? (
                 <button
                   type="button"
                   disabled={ssoRedirecting}

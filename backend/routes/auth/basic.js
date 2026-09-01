@@ -17,6 +17,101 @@ import {
 } from './helpers.js';
 
 export async function basicRoutes(fastify, _options) {
+  // Builds the 2FA-gate closure for a given request/reply. Returns true (and
+  // sends the pending-2FA response) when the user has 2FA and the caller must
+  // stop; false when login can proceed.
+  const makeHandleTwoFactorIfNeeded = (request, reply) => async (dbUser) => {
+    const methodConfigs = await getUserTwoFactorMethods(dbUser.id, dbUser);
+    const methods = methodConfigs.map((m) => m.method);
+    if (methods.length === 0) return false;
+
+    if (!dbUser.email) {
+      reply.code(400).send({
+        success: false,
+        error: 'Email required',
+        message: 'Two-factor authentication requires an email address on your account.'
+      });
+      return true;
+    }
+
+    const pendingToken = createPendingTwoFactorToken(
+      fastify,
+      dbUser,
+      methods,
+      { bootstrapPasswordChangeRequired: isDefaultBootstrapAdminUser(dbUser) }
+    );
+    reply.send({
+      success: true,
+      requires2fa: true,
+      methods,
+      defaultMethod: methods.includes('totp') ? 'totp' : methods[0],
+      pendingToken,
+      email: methods.includes('email') ? getTwoFactorEmailMask(dbUser.email) : undefined
+    });
+    return true;
+  };
+
+  // Local username/password login, shared by the normal /login handler (when
+  // auth mode is 'local') and the break-glass /login/local endpoint (any mode,
+  // admins only). Sends the reply itself; returns nothing.
+  const doLocalPasswordLogin = async (request, reply, { username, password, requireAdmin = false, breakGlass = false }) => {
+    const handleTwoFactorIfNeeded = makeHandleTwoFactorIfNeeded(request, reply);
+    const dbUser = await database.getUserByUsername(username);
+
+    // Uniform 401 whether the user is missing, has no local password, or (for
+    // break-glass) isn't an admin — never reveal which, and never let a
+    // password-less SSO/LDAP account be broken into via this path.
+    if (!dbUser || !dbUser.password_hash || (requireAdmin && dbUser.role !== 'admin')) {
+      return reply.code(401).send({
+        success: false,
+        error: 'Authentication failed',
+        message: 'Invalid credentials'
+      });
+    }
+
+    const requiresBootstrapPasswordChange = isDefaultBootstrapAdminUser(dbUser);
+    const allowDisabledBootstrapLogin = isBootstrapAdminIdentity(dbUser);
+
+    if (dbUser.is_active === false && !allowDisabledBootstrapLogin) {
+      return reply.code(403).send({
+        success: false,
+        error: 'Account disabled',
+        message: 'Your account is disabled'
+      });
+    }
+
+    if (!verifyPassword(password, dbUser.password_hash)) {
+      return reply.code(401).send({
+        success: false,
+        error: 'Authentication failed',
+        message: 'Invalid credentials'
+      });
+    }
+
+    if (dbUser.is_active === false && allowDisabledBootstrapLogin) {
+      await pool.query(
+        `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE id = $1`,
+        [dbUser.id]
+      );
+      dbUser.is_active = true;
+    }
+
+    if (await handleTwoFactorIfNeeded(dbUser)) {
+      return;
+    }
+
+    await database.updateUserLoginTime(dbUser.id);
+    sendAuthSuccess(request, reply, dbUser, {
+      tokenClaims: { bootstrapPasswordChangeRequired: requiresBootstrapPasswordChange },
+      responseData: { mustChangePassword: requiresBootstrapPasswordChange }
+    });
+    if (breakGlass) {
+      fastify.log.warn({ username: dbUser.username, role: dbUser.role, ip: request.ip }, 'Break-glass local admin login used (SSO bypass)');
+    } else {
+      fastify.log.info({ username: dbUser.username, role: dbUser.role }, 'User logged in (local)');
+    }
+  };
+
   // Auth mode endpoint. The login page's form genuinely differs by mode
   // (username/password vs a single SSO redirect button), so the frontend
   // needs the real mode here — unlike most config, this isn't meaningfully
@@ -86,91 +181,10 @@ export async function basicRoutes(fastify, _options) {
   }, async (request, reply) => {
     const { username, password } = request.body;
 
-    const handleTwoFactorIfNeeded = async (dbUser) => {
-      const methodConfigs = await getUserTwoFactorMethods(dbUser.id, dbUser);
-      const methods = methodConfigs.map((m) => m.method);
-      if (methods.length === 0) return false;
-
-      if (!dbUser.email) {
-        return reply.code(400).send({
-          success: false,
-          error: 'Email required',
-          message: 'Two-factor authentication requires an email address on your account.'
-        });
-      }
-
-      const pendingToken = createPendingTwoFactorToken(
-        fastify,
-        dbUser,
-        methods,
-        { bootstrapPasswordChangeRequired: isDefaultBootstrapAdminUser(dbUser) }
-      );
-      reply.send({
-        success: true,
-        requires2fa: true,
-        methods,
-        defaultMethod: methods.includes('totp') ? 'totp' : methods[0],
-        pendingToken,
-        email: methods.includes('email') ? getTwoFactorEmailMask(dbUser.email) : undefined
-      });
-      return true;
-    };
-
     try {
       fastify.log.info({ username }, 'Login request received');
       if (config.auth.mode === 'local') {
-        const dbUser = await database.getUserByUsername(username);
-        if (!dbUser || !dbUser.password_hash) {
-          return reply.code(401).send({
-            success: false,
-            error: 'Authentication failed',
-            message: 'Invalid credentials'
-          });
-        }
-
-        const requiresBootstrapPasswordChange = isDefaultBootstrapAdminUser(dbUser);
-        const allowDisabledBootstrapLogin = isBootstrapAdminIdentity(dbUser);
-
-        if (dbUser.is_active === false && !allowDisabledBootstrapLogin) {
-          return reply.code(403).send({
-            success: false,
-            error: 'Account disabled',
-            message: 'Your account is disabled'
-          });
-        }
-
-        const isValid = verifyPassword(password, dbUser.password_hash);
-        if (!isValid) {
-          return reply.code(401).send({
-            success: false,
-            error: 'Authentication failed',
-            message: 'Invalid credentials'
-          });
-        }
-
-        if (dbUser.is_active === false && allowDisabledBootstrapLogin) {
-          await pool.query(
-            `UPDATE users
-             SET is_active = TRUE, updated_at = NOW()
-             WHERE id = $1`,
-            [dbUser.id]
-          );
-          dbUser.is_active = true;
-        }
-
-        if (await handleTwoFactorIfNeeded(dbUser)) {
-          return;
-        }
-
-        await database.updateUserLoginTime(dbUser.id);
-        sendAuthSuccess(request, reply, dbUser, {
-          tokenClaims: { bootstrapPasswordChangeRequired: requiresBootstrapPasswordChange },
-          responseData: {
-            mustChangePassword: requiresBootstrapPasswordChange
-          }
-        });
-        fastify.log.info({ username: dbUser.username, role: dbUser.role }, 'User logged in (local)');
-        return;
+        return await doLocalPasswordLogin(request, reply, { username, password });
       }
 
       if (config.auth.mode === 'oidc') {
@@ -181,6 +195,7 @@ export async function basicRoutes(fastify, _options) {
         });
       }
 
+      const handleTwoFactorIfNeeded = makeHandleTwoFactorIfNeeded(request, reply);
       const ldapUser = await ldapAuth.authenticate(username, password);
       const dbUser = await autoRegisterUser(ldapUser);
 
@@ -200,6 +215,43 @@ export async function basicRoutes(fastify, _options) {
       fastify.log.error({ error, username }, 'Login failed');
 
       reply.code(401).send({
+        success: false,
+        error: 'Authentication failed',
+        message: 'Invalid credentials'
+      });
+    }
+  });
+
+  // Break-glass local admin login — a deliberate SSO/LDAP bypass for admins
+  // who hold a local password, so a locked-out admin can still get in when the
+  // identity provider is unreachable (e.g. the Authentik box or its tunnel is
+  // down). Works in ANY auth mode. Gated hard: local password_hash required
+  // AND role must be 'admin'; 2FA, disabled-account and bootstrap-change
+  // checks all still apply; same 5/min rate limit; every use is logged at warn.
+  // Not discoverable from the normal UI (revealed by a hidden gesture on the
+  // login page) — but the real protection is the credentials, not obscurity.
+  fastify.post('/login/local', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['username', 'password'],
+        properties: {
+          username: { type: 'string', minLength: 1, maxLength: 255, pattern: '^[a-zA-Z0-9._@-]+$' },
+          password: { type: 'string', minLength: 1, maxLength: 1024 }
+        },
+        additionalProperties: false
+      }
+    },
+    config: {
+      rateLimit: { max: 5, timeWindow: '1 minute' }
+    }
+  }, async (request, reply) => {
+    const { username, password } = request.body;
+    try {
+      return await doLocalPasswordLogin(request, reply, { username, password, requireAdmin: true, breakGlass: true });
+    } catch (error) {
+      fastify.log.error({ error, username }, 'Break-glass local login failed');
+      return reply.code(401).send({
         success: false,
         error: 'Authentication failed',
         message: 'Invalid credentials'

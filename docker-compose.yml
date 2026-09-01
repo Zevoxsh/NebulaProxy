@@ -16,11 +16,12 @@ networks:
     enable_ipv6: true
     ipam:
       config:
-        # Gateway pinned explicitly: the backend's anti-bot re-entry listener
+        # The anti-bot flow assumes this bridge's gateway is 172.20.0.1 (the
+        # docker default for this subnet): the backend's re-entry listener
         # binds it on the host (ANTIBOT_REENTRY_BIND) and anubis dials it as
-        # TARGET — both assume 172.20.0.1.
+        # TARGET. Not pinned via `gateway:` — that changes the network's
+        # config hash and makes compose try to recreate a live network.
         - subnet: 172.20.0.0/16
-          gateway: 172.20.0.1
         - subnet: fd00:db8:1::/48
 
 services:
@@ -161,10 +162,7 @@ services:
     image: alpine:3.20
     container_name: nebulaproxy-anubis-keygen
     logging: *default-logging
-    command: >
-      sh -c "test -s /data/anubis.key ||
-             (head -c32 /dev/urandom | od -An -v -tx1 | tr -d ' \\n' > /data/anubis.key
-              && chmod 444 /data/anubis.key)"
+    command: ["sh", "-c", "test -s /data/anubis.key || (head -c32 /dev/urandom | od -An -v -tx1 | tr -d ' \\n' > /data/anubis.key && chmod 444 /data/anubis.key)"]
     volumes:
       - anubis-key:/data
     network_mode: none

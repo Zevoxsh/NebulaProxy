@@ -2,6 +2,9 @@ import { api } from './instance';
 
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
+  // Break-glass local admin login (SSO/LDAP bypass) — revealed by a hidden
+  // gesture on the login page, admins with a local password only.
+  localAdminLogin: (credentials) => api.post('/auth/login/local', credentials),
   getPasskeyOptions: (data = {}) => api.post('/auth/passkey/options', data),
   verifyPasskeyLogin: (data) => api.post('/auth/passkey/verify', data),
   getAdminPinStatus: () => api.get('/auth/admin-pin/status'),
