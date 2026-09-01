@@ -279,6 +279,51 @@ export const nebulaShield = {
     return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost);
   },
 
+  /**
+   * Combined challenge: the existing interactive human game page (from
+   * ddosProtectionService) with the invisible Shield proof-of-work injected so
+   * both run on ONE screen. The human plays the game (visible); the PoW solves
+   * in the background and posts its own clearance. When the game redirects,
+   * both the game bypass cookie and the Shield clearance are already set.
+   */
+  injectPowInto(host, gamePageHtml, challenge) {
+    const data = JSON.stringify({
+      challenge: challenge.challenge,
+      issuedAt: challenge.issuedAt,
+      difficulty: challenge.difficulty,
+      sig: challenge.sig,
+      verifyPath: VERIFY_PATH,
+    }).replace(/</g, '\\u003c');
+
+    const inject = `
+<div id="nb-shield-badge" style="position:fixed;bottom:14px;right:14px;z-index:2147483647;display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid rgba(157,78,221,.35);background:rgba(20,15,30,.75);backdrop-filter:blur(6px);font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#cbb6ea">
+  <span id="nb-shield-dot" style="width:8px;height:8px;border-radius:50%;background:#9D4EDD;box-shadow:0 0 8px #9D4EDD;animation:nbp 1.4s infinite"></span>
+  <span id="nb-shield-txt">Sécurisation en arrière-plan…</span>
+</div>
+<style>@keyframes nbp{0%,100%{opacity:1}50%{opacity:.35}}</style>
+<script id="nb-shield-data" type="application/json">${data}</script>
+<script>
+(function(){
+  var cfg=JSON.parse(document.getElementById('nb-shield-data').textContent);
+  var txt=document.getElementById('nb-shield-txt'),dot=document.getElementById('nb-shield-dot');
+  function fp(){var n=navigator,f={};try{f.webdriver=n.webdriver===true}catch(e){}try{f.languages=n.languages?[].slice.call(n.languages):undefined}catch(e){}try{f.hw=n.hardwareConcurrency}catch(e){}try{f.tz=(Intl.DateTimeFormat().resolvedOptions().timeZone)||''}catch(e){}try{f.screen={w:screen.width,h:screen.height}}catch(e){}try{f.automationGlobals=!!(window.__nightmare||window._phantom||window.callPhantom||window.__selenium_unwrapped||window.domAutomation)}catch(e){}return f;}
+  var src=function(){function sha256(ascii){function rr(v,a){return (v>>>a)|(v<<(32-a));}var mp=Math.pow,mw=mp(2,32),i,j,result='',words=[],bl=ascii.length*8;var hash=sha256.h=sha256.h||[],k=sha256.k=sha256.k||[],pc=k.length,comp={};for(var c=2;pc<64;c++){if(!comp[c]){for(i=0;i<313;i+=c)comp[i]=c;hash[pc]=(mp(c,.5)*mw)|0;k[pc++]=(mp(c,1/3)*mw)|0;}}ascii+='\\x80';while(ascii.length%64-56)ascii+='\\x00';for(i=0;i<ascii.length;i++){j=ascii.charCodeAt(i);if(j>>8)return;words[i>>2]|=j<<((3-i)%4)*8;}words[words.length]=(bl/mw)|0;words[words.length]=bl;for(j=0;j<words.length;){var w=words.slice(j,j+=16),oh=hash;hash=hash.slice(0,8);for(i=0;i<64;i++){var w15=w[i-15],w2=w[i-2],a=hash[0],e=hash[4];var t1=hash[7]+(rr(e,6)^rr(e,11)^rr(e,25))+((e&hash[5])^((~e)&hash[6]))+k[i]+(w[i]=(i<16)?w[i]:(w[i-16]+(rr(w15,7)^rr(w15,18)^(w15>>>3))+w[i-7]+(rr(w2,17)^rr(w2,19)^(w2>>>10)))|0);var t2=(rr(a,2)^rr(a,13)^rr(a,22))+((a&hash[1])^(a&hash[2])^(hash[1]&hash[2]));hash=[(t1+t2)|0].concat(hash);hash[4]=(hash[4]+t1)|0;}for(i=0;i<8;i++)hash[i]=(hash[i]+oh[i])|0;}for(i=0;i<8;i++)for(j=3;j+1;j--){var b=(hash[i]>>(j*8))&255;result+=((b<16)?0:'')+b.toString(16);}return result;}onmessage=function(e){var ch=e.data.challenge,d=e.data.difficulty,p=Array(d+1).join('0'),n=0;while(true){var h=sha256(ch+n);if(h.slice(0,d)===p){postMessage({nonce:n,hash:h});return;}n++;}};};
+  var f=fp();
+  var w=new Worker(URL.createObjectURL(new Blob(['('+src.toString()+')()'],{type:'application/javascript'})));
+  w.onmessage=function(ev){
+    fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:ev.data.nonce,hash:ev.data.hash,fp:f})})
+    .then(function(r){return r.json();})
+    .then(function(j){if(j&&j.ok){window.__nbShieldCleared=true;if(dot)dot.style.background='#34d399';if(dot)dot.style.boxShadow='0 0 8px #34d399';if(txt)txt.textContent='Sécurisé ✓';}else{if(txt)txt.textContent='Vérification refusée';}})
+    .catch(function(){});
+  };
+  w.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
+})();
+</script>`;
+
+    if (gamePageHtml.includes('</body>')) return gamePageHtml.replace('</body>', inject + '</body>');
+    return gamePageHtml + inject;
+  },
+
   renderBlockPage(host, reason) {
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
     const safeReason = String(reason || 'requête bloquée').replace(/[<>&"]/g, '');

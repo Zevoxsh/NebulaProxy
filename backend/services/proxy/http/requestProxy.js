@@ -141,13 +141,17 @@ if (domain.antibot_enabled) {
     return;
   }
 
+  // Let the interactive game's own verify POST fall through to the DDoS step
+  // (3.5) that handles it — the combined challenge page below submits there.
+  const isDdosVerify = urlPath === '/__ddos_challenge/verify';
+
   // A valid clearance cookie covering the base difficulty passes cheaply,
   // without re-running the engine on every request.
   const shieldCookies = this._parseCookies(req.headers.cookie || '');
   const baseDiff = nebulaShield.BASE_DIFFICULTY[shieldMode] || 4;
   const cleared = nebulaShield.verifyClearance(clientIp, shieldHost, shieldCookies[nebulaShield.COOKIE_NAME], baseDiff);
 
-  if (!cleared) {
+  if (!cleared && !isDdosVerify) {
     let decision;
     try {
       const signals = await nebulaShield.analyze(req, clientIp, shieldHost);
@@ -170,10 +174,28 @@ if (domain.antibot_enabled) {
     if (decision.action === 'challenge') {
       nebulaShield.metric(domain.id, 'challenge');
       const challenge = nebulaShield.issueChallenge(clientIp, shieldHost, decision.difficulty);
-      const html = nebulaShield.renderChallengePage(shieldHost, challenge, req.url);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Nebula-Shield': `challenge; d=${decision.difficulty}` });
+
+      // When the interactive human challenge is ALSO enabled, serve both on a
+      // single screen: the game (visible) with the invisible PoW injected.
+      let html;
+      let combined = false;
+      if (domain.ddos_protection_enabled && domain.ddos_challenge_mode) {
+        try {
+          const ddos = getDdos();
+          if (ddos) {
+            const gameHtml = ddos.generateChallengePage(clientIp, req.url, domain.ddos_challenge_types);
+            html = nebulaShield.injectPowInto(shieldHost, gameHtml, challenge);
+            combined = true;
+          }
+        } catch (combErr) {
+          logger.error(`[Shield ${domain.id}] combined page failed: ${combErr.message}`);
+        }
+      }
+      if (!html) html = nebulaShield.renderChallengePage(shieldHost, challenge, req.url);
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Nebula-Shield': `${combined ? 'combined' : 'challenge'}; d=${decision.difficulty}` });
       res.end(html);
-      this._logBlockedRequest(domain, req, clientIp, 200, `Bouclier Nebula : défi (d=${decision.difficulty}, ${decision.reason})`, startTime);
+      this._logBlockedRequest(domain, req, clientIp, 200, `Bouclier Nebula : ${combined ? 'défi combiné' : 'défi'} (d=${decision.difficulty}, ${decision.reason})`, startTime);
       return;
     }
 
@@ -310,7 +332,11 @@ if (domain?.ddos_protection_enabled) {
       const bypassMatch  = cookieHeader.match(/__ddos_bypass=([^;]+)/);
       const bypassToken  = bypassMatch?.[1];
 
-      if (!ddosProtectionService.verifyChallengeToken(clientIp, bypassToken, domain.hostname)) {
+      // When the anti-bot shield is enabled it governs the challenge and
+      // serves the game itself (combined with the invisible PoW, step 2), so
+      // don't serve a second standalone game here — but the verify POST above
+      // still runs so the combined game can submit.
+      if (!domain.antibot_enabled && !ddosProtectionService.verifyChallengeToken(clientIp, bypassToken, domain.hostname)) {
         // Serve challenge page inline (no redirect)
         const html = ddosProtectionService.generateChallengePage(clientIp, reqUrl, domain.ddos_challenge_types);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Blocked-By': 'DDoS-Challenge' });
