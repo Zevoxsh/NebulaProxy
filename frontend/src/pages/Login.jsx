@@ -37,25 +37,37 @@ export default function Login() {
   const showCredentials = authMode !== 'oidc' || localAdmin;
   const usingBreakGlass = authMode === 'oidc' && localAdmin;
 
+  // Hidden reveal gesture: press in the top-right corner and slide. The
+  // move/up listeners live on window (not the small corner pad) so the drag
+  // is tracked across the whole viewport regardless of pointer capture — the
+  // pad itself is far smaller than the slide threshold. A ~500ms press-and-
+  // hold in the corner also reveals it, as a fallback for touch.
   const onCornerPointerDown = (e) => {
-    cornerDragRef.current = { x: e.clientX, y: e.clientY };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not supported */ }
-  };
-  const onCornerPointerMove = (e) => {
-    if (!cornerDragRef.current) return;
-    const dx = e.clientX - cornerDragRef.current.x;
-    const dy = e.clientY - cornerDragRef.current.y;
-    // Reveal once the pointer has been dragged far enough (down/left) while
-    // still held — long enough not to trigger on an accidental click.
-    if (Math.hypot(dx, dy) >= 90) {
-      cornerDragRef.current = null;
+    const start = { x: e.clientX, y: e.clientY };
+    const holdTimer = setTimeout(() => reveal(), 500);
+
+    const reveal = () => {
+      if (!cornerDragRef.current) return;
+      cleanup();
       setLocalAdmin(true);
       setError('');
-    }
-  };
-  const onCornerPointerEnd = (e) => {
-    cornerDragRef.current = null;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* not supported */ }
+    };
+    const onMove = (ev) => {
+      if (!cornerDragRef.current) return;
+      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) >= 60) reveal();
+    };
+    const cleanup = () => {
+      cornerDragRef.current = null;
+      clearTimeout(holdTimer);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', cleanup);
+      window.removeEventListener('pointercancel', cleanup);
+    };
+
+    cornerDragRef.current = { onMove, cleanup, holdTimer };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', cleanup);
+    window.addEventListener('pointercancel', cleanup);
   };
 
   const exitLocalAdmin = () => {
@@ -63,6 +75,9 @@ export default function Login() {
     setFormData({ username: '', password: '' });
     setError('');
   };
+
+  // Safety net: if the page unmounts mid-drag, drop the window listeners.
+  useEffect(() => () => { cornerDragRef.current?.cleanup?.(); }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -283,10 +298,7 @@ export default function Login() {
       {authMode === 'oidc' && !localAdmin && (
         <div
           onPointerDown={onCornerPointerDown}
-          onPointerMove={onCornerPointerMove}
-          onPointerUp={onCornerPointerEnd}
-          onPointerCancel={onCornerPointerEnd}
-          className="fixed top-0 right-0 z-50 h-14 w-14"
+          className="fixed top-0 right-0 z-50 h-16 w-16"
           style={{ touchAction: 'none' }}
           aria-hidden="true"
         />
