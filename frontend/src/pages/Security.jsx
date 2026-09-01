@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Mail, Key, Loader, AlertCircle, Check, Lock, Smartphone, Eye, EyeOff, Plus } from 'lucide-react';
+import { Mail, Key, Loader, AlertCircle, Check, Lock, Smartphone, Eye, EyeOff, Plus, ShieldCheck } from 'lucide-react';
 import { userAPI, authAPI } from '../api/client';
 import { startRegistration } from '@simplewebauthn/browser';
 import QRCode from 'qrcode';
@@ -15,6 +15,9 @@ export default function Security() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [email, setEmail] = useState('');
+  const [authType, setAuthType] = useState('local');
+
+  const managedExternally = authType !== 'local';
 
   const [twoFactor, setTwoFactor] = useState({ enabled: false, method: null, methods: [], hasEmail: false, email2faReady: false });
   const [twoFactorLoading, setTwoFactorLoading] = useState(false);
@@ -49,8 +52,8 @@ export default function Security() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [profileRes, twoFactorRes, passkeyPromptRes, passkeysRes] = await Promise.all([
-        userAPI.getMe(), authAPI.get2faStatus(), userAPI.getPasskeyPromptStatus(), userAPI.listPasskeys()
+      const [profileRes, twoFactorRes, passkeyPromptRes, passkeysRes, modeRes] = await Promise.all([
+        userAPI.getMe(), authAPI.get2faStatus(), userAPI.getPasskeyPromptStatus(), userAPI.listPasskeys(), authAPI.getMode()
       ]);
       const profile = profileRes.data.user || {};
       setEmail(profile.email || '');
@@ -60,6 +63,7 @@ export default function Security() {
       else if (nextTwoFactor.methods?.includes('email')) setDisableMethod('email');
       setPasskeyStatus({ hasPasskey: Boolean(passkeyPromptRes.data?.hasPasskey), passkeyCount: Number(passkeyPromptRes.data?.passkeyCount || 0) });
       setPasskeys(passkeysRes.data?.passkeys || []);
+      setAuthType(modeRes.data?.authType || 'local');
     } catch {
       setError('Failed to load settings');
     } finally {
@@ -224,6 +228,21 @@ export default function Security() {
 
         <div className="space-y-4">
           {/* Two-step verification */}
+          {managedExternally ? (
+            <SectionCard>
+              <div className="px-5 py-4 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4 text-white/60" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">Two-step verification</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Managed by your identity provider ({authType.toUpperCase()}) — sign-in security (including any second factor) is handled there, not here.
+                  </p>
+                </div>
+              </div>
+            </SectionCard>
+          ) : (
           <SectionCard>
             <div className="px-5 py-4 border-b border-[#27272a] flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -487,6 +506,7 @@ export default function Security() {
               )}
             </div>
           </SectionCard>
+          )}
 
           {/* Passkeys */}
           <SectionCard className={focusPasskey ? 'ring-1 ring-white/30' : ''}>

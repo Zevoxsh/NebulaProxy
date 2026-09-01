@@ -646,6 +646,7 @@ const dispatch = (target, attempt) => {
         const portNeedsRewrite = parsedLocation.origin && upstreamHost === requestedHostname && locPort === parseInt(String(dBackendPort), 10) && locPort !== publicPort;
 
         if (hostnameNeedsRewrite || portNeedsRewrite) {
+          parsedLocation.protocol = req.socket.encrypted ? "https:" : "http:";
           parsedLocation.hostname = requestedHostname;
           parsedLocation.port = (publicPort === 443 || publicPort === 80) ? "" : String(publicPort);
           const rewrittenLocation = parsedLocation.toString();

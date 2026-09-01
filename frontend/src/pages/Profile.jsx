@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Save, Loader, Check, AlertCircle } from 'lucide-react';
-import { userAPI } from '../api/client';
+import { Save, Loader, Check, AlertCircle, ShieldCheck } from 'lucide-react';
+import { userAPI, authAPI } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { getAvatarUrl } from '../utils/gravatar';
 import AccountNav from '../components/features/AccountNav';
@@ -12,17 +12,21 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [form, setForm] = useState({ displayName: '', email: '', avatarUrl: '' });
+  const [authType, setAuthType] = useState('local');
+
+  const managedExternally = authType !== 'local';
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await userAPI.getMe();
-        const profile = res.data.user || {};
+        const [meRes, modeRes] = await Promise.all([userAPI.getMe(), authAPI.getMode()]);
+        const profile = meRes.data.user || {};
         setForm({
           displayName: profile.displayName || '',
           email: profile.email || '',
           avatarUrl: profile.avatarUrl || ''
         });
+        setAuthType(modeRes.data?.authType || 'local');
       } catch {
         setError('Failed to load profile');
       } finally {
@@ -101,8 +105,17 @@ export default function Profile() {
 
       <div className="h-px bg-white/10 my-8" />
 
+      {managedExternally && (
+        <div className="mb-6 flex items-start gap-3 bg-blue-500/8 border border-blue-500/20 rounded-xl px-4 py-3">
+          <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-blue-300/80">
+            Your name, email and avatar are managed by your identity provider ({authType.toUpperCase()}) and can&apos;t be edited here.
+          </p>
+        </div>
+      )}
+
       {/* Form */}
-      <div className="space-y-5">
+      <div className={`space-y-5 ${managedExternally ? 'opacity-60' : ''}`}>
         <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] sm:items-center gap-1.5 sm:gap-4">
           <label className="text-sm text-white/50">Nom affiché</label>
           <input
@@ -111,6 +124,7 @@ export default function Profile() {
             onChange={(e) => setForm({ ...form, displayName: e.target.value })}
             className="input-futuristic text-sm"
             placeholder="Your name"
+            disabled={managedExternally}
           />
         </div>
 
@@ -122,6 +136,7 @@ export default function Profile() {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             className="input-futuristic text-sm"
             placeholder="you@example.com"
+            disabled={managedExternally}
           />
         </div>
 
@@ -133,17 +148,20 @@ export default function Profile() {
             onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })}
             className="input-futuristic text-sm"
             placeholder="Leave empty to use Gravatar"
+            disabled={managedExternally}
           />
         </div>
 
-        <div className="flex justify-end pt-2">
-          <button onClick={handleSave} disabled={saving} className="btn-primary text-sm px-5 py-2.5 flex items-center gap-2">
-            {saving
-              ? <><Loader className="w-4 h-4 animate-spin" strokeWidth={1.5} /> Saving…</>
-              : <><Save className="w-4 h-4" strokeWidth={1.5} /> Save changes</>
-            }
-          </button>
-        </div>
+        {!managedExternally && (
+          <div className="flex justify-end pt-2">
+            <button onClick={handleSave} disabled={saving} className="btn-primary text-sm px-5 py-2.5 flex items-center gap-2">
+              {saving
+                ? <><Loader className="w-4 h-4 animate-spin" strokeWidth={1.5} /> Saving…</>
+                : <><Save className="w-4 h-4" strokeWidth={1.5} /> Save changes</>
+              }
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

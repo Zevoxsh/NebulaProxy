@@ -1,5 +1,6 @@
 // @ts-check
 import { database } from '../../services/database.js';
+import { config } from '../../config/config.js';
 import { generateTotpSecret, generateOtpAuthUrl, verifyTotpCode } from '../../utils/totp.js';
 import {
   normalizeOtpCode,
@@ -17,6 +18,20 @@ import {
   sendTwoFactorEmailCode,
   sendAuthSuccess
 } from './helpers.js';
+
+// 2FA setup/disable only makes sense for local accounts — LDAP/OIDC users'
+// identity and second factors are owned by the external IdP, and enrolling
+// a local TOTP/email method on top would just be a factor NebulaProxy can't
+// actually enforce at their real login (which never reaches basic.js).
+const requireLocalAuth = async (request, reply) => {
+  if (config.auth.mode !== 'local') {
+    return reply.code(403).send({
+      success: false,
+      error: 'Not available',
+      message: 'Two-factor authentication is managed by your identity provider.'
+    });
+  }
+};
 
 export async function mfaRoutes(fastify, _options) {
   // Initiate selected second-factor challenge for pending login
@@ -192,7 +207,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // TOTP setup init
   fastify.post('/2fa/totp/init', {
-    preHandler: fastify.authenticate
+    preHandler: [fastify.authenticate, requireLocalAuth]
   }, async (request, reply) => {
     const user = await database.getUserById(request.user.id);
     if (!user?.email) {
@@ -221,7 +236,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // TOTP setup confirm
   fastify.post('/2fa/totp/enable', {
-    preHandler: fastify.authenticate,
+    preHandler: [fastify.authenticate, requireLocalAuth],
     schema: {
       body: {
         type: 'object',
@@ -266,7 +281,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // Email 2FA setup init
   fastify.post('/2fa/email/enable/init', {
-    preHandler: fastify.authenticate
+    preHandler: [fastify.authenticate, requireLocalAuth]
   }, async (request, reply) => {
     const user = await database.getUserById(request.user.id);
     if (!user?.email) {
@@ -298,7 +313,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // Email 2FA setup verify
   fastify.post('/2fa/email/enable/verify', {
-    preHandler: fastify.authenticate,
+    preHandler: [fastify.authenticate, requireLocalAuth],
     schema: {
       body: {
         type: 'object',
@@ -339,7 +354,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // Send disable code for email 2FA
   fastify.post('/2fa/email/disable/init', {
-    preHandler: fastify.authenticate
+    preHandler: [fastify.authenticate, requireLocalAuth]
   }, async (request, reply) => {
     const user = await database.getUserById(request.user.id);
     const methodConfigs = await getUserTwoFactorMethods(request.user.id, user);
@@ -367,7 +382,7 @@ export async function mfaRoutes(fastify, _options) {
 
   // Disable 2FA (TOTP code or email disable code)
   fastify.post('/2fa/disable', {
-    preHandler: fastify.authenticate,
+    preHandler: [fastify.authenticate, requireLocalAuth],
     schema: {
       body: {
         type: 'object',

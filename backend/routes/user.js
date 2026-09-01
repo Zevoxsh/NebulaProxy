@@ -58,6 +58,13 @@ export async function userRoutes(fastify, _options) {
       }
     }
   }, async (request, reply) => {
+    if (config.auth.mode !== 'local') {
+      return reply.code(403).send({
+        error: 'Not available',
+        message: 'Your profile is managed by your identity provider and cannot be edited here.'
+      });
+    }
+
     try {
       const { displayName, email, avatarUrl } = request.body || {};
       const normalizedEmail = typeof email === 'string' ? email.trim() : email;
