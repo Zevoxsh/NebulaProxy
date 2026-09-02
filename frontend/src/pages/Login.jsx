@@ -557,16 +557,8 @@ export default function Login() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(255,255,255,0.09),transparent_42%),radial-gradient(circle_at_80%_10%,rgba(255,255,255,0.05),transparent_35%),linear-gradient(160deg,#0f1014_0%,#11131a_55%,#0b0c11_100%)]" />
           <div className="absolute top-20 -left-28 h-80 w-80 rounded-full border border-white/10" />
           <div className="absolute -bottom-24 right-8 h-72 w-72 rounded-full border border-white/10" />
-          {/* Nebula mascot (generated character, see backend/services/shield/mascot.js) */}
-          <img
-            src="/mascot.webp"
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className="pointer-events-none select-none absolute bottom-0 right-0 z-20 h-[80%] w-auto max-w-[62%] object-contain object-right-bottom drop-shadow-[0_24px_60px_rgba(0,0,0,0.55)]"
-          />
-          <div className="relative z-10 flex h-full items-start justify-start p-10 pt-14">
-            <div className="w-full max-w-md rounded-2xl border border-white/15 bg-black/30 p-8 backdrop-blur-sm">
+          <div className="relative z-10 flex h-full flex-col p-10 pt-14">
+            <div className="w-full max-w-md shrink-0 rounded-2xl border border-white/15 bg-black/30 p-8 backdrop-blur-sm">
               <div className="mb-6 flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/5">
                   <img src="/nebula.svg" alt={appName} className="h-6 w-6" />
@@ -595,6 +587,19 @@ export default function Login() {
                   Admin Security
                 </div>
               </div>
+            </div>
+
+            {/* Nebula mascot (generated character, see backend/services/shield/mascot.js).
+                Lives in the space left under the card so it never overlaps it,
+                whatever the viewport ratio; anchored to the panel's bottom-right. */}
+            <div className="relative mt-6 min-h-0 flex-1 -mb-10 -mr-10">
+              <img
+                src="/mascot.webp"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                className="pointer-events-none select-none absolute bottom-0 right-0 h-full max-h-[560px] w-auto max-w-full object-contain object-right-bottom drop-shadow-[0_24px_60px_rgba(0,0,0,0.55)]"
+              />
             </div>
           </div>
         </div>
