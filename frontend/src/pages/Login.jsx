@@ -568,7 +568,7 @@ export default function Login() {
                 draggable={false}
                 className="pointer-events-none select-none absolute right-4 z-0 h-[340px] w-auto -top-[215px] drop-shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
               />
-              <div className="relative z-10 w-full rounded-2xl border border-white/15 bg-[#0c0d12]/85 p-8 backdrop-blur-sm">
+              <div className="relative z-10 w-full rounded-2xl border border-white/15 bg-[#121319] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.45)]">
                 <div className="mb-6 flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/5">
                     <img src="/nebula.svg" alt={appName} className="h-6 w-6" />
