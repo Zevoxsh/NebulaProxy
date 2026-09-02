@@ -557,49 +557,47 @@ export default function Login() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(255,255,255,0.09),transparent_42%),radial-gradient(circle_at_80%_10%,rgba(255,255,255,0.05),transparent_35%),linear-gradient(160deg,#0f1014_0%,#11131a_55%,#0b0c11_100%)]" />
           <div className="absolute top-20 -left-28 h-80 w-80 rounded-full border border-white/10" />
           <div className="absolute -bottom-24 right-8 h-72 w-72 rounded-full border border-white/10" />
-          <div className="relative z-10 flex h-full flex-col p-10 pt-14">
-            <div className="w-full max-w-md shrink-0 rounded-2xl border border-white/15 bg-black/30 p-8 backdrop-blur-sm">
-              <div className="mb-6 flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/5">
-                  <img src="/nebula.svg" alt={appName} className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold tracking-tight">{appName}</p>
-                  <p className="text-xs text-white/60 uppercase tracking-[0.18em]">Control Panel</p>
-                </div>
-              </div>
-
-              <h2 className="text-4xl font-semibold leading-none tracking-tight mb-5">
-                NEBULA
-              </h2>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
-                  Passkey Ready
-                </div>
-                <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
-                  2FA Enabled
-                </div>
-                <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
-                  {authMode === 'local' ? 'Local Auth' : authMode === 'oidc' ? 'OIDC / SSO' : 'LDAP / Enterprise'}
-                </div>
-                <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
-                  Admin Security
-                </div>
-              </div>
-            </div>
-
-            {/* Nebula mascot (generated character, see backend/services/shield/mascot.js).
-                Lives in the space left under the card so it never overlaps it,
-                whatever the viewport ratio; anchored to the panel's bottom-right. */}
-            <div className="relative mt-6 min-h-0 flex-1 -mb-10 -mr-10">
+          <div className="relative z-10 flex h-full items-center justify-center p-10">
+            <div className="relative w-full max-w-md">
+              {/* Nebula mascot (generated character, see backend/services/shield/mascot.js):
+                  peeks out from behind the card, top-right. */}
               <img
                 src="/mascot.webp"
                 alt=""
                 aria-hidden="true"
                 draggable={false}
-                className="pointer-events-none select-none absolute bottom-0 right-0 h-full max-h-[560px] w-auto max-w-full object-contain object-right-bottom drop-shadow-[0_24px_60px_rgba(0,0,0,0.55)]"
+                className="pointer-events-none select-none absolute right-4 z-0 h-[340px] w-auto -top-[215px] drop-shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
               />
+              <div className="relative z-10 w-full rounded-2xl border border-white/15 bg-[#0c0d12]/85 p-8 backdrop-blur-sm">
+                <div className="mb-6 flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/5">
+                    <img src="/nebula.svg" alt={appName} className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold tracking-tight">{appName}</p>
+                    <p className="text-xs text-white/60 uppercase tracking-[0.18em]">Control Panel</p>
+                  </div>
+                </div>
+
+                <h2 className="text-4xl font-semibold leading-none tracking-tight mb-5">
+                  NEBULA
+                </h2>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
+                    Passkey Ready
+                  </div>
+                  <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
+                    2FA Enabled
+                  </div>
+                  <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
+                    {authMode === 'local' ? 'Local Auth' : authMode === 'oidc' ? 'OIDC / SSO' : 'LDAP / Enterprise'}
+                  </div>
+                  <div className="rounded-md border border-white/15 bg-white/[0.03] px-3 py-2 text-xs text-white/75">
+                    Admin Security
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
