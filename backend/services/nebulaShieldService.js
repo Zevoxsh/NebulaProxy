@@ -20,7 +20,7 @@ import { config } from '../config/config.js';
 import { redisService } from './redis.js';
 import { classifyUserAgent, headerSuspicion, scoreFingerprint } from './shield/signatures.js';
 import { CELEBRATION_SNIPPET } from './shield/celebration.js';
-import { MASCOT_DATA_URI } from './shield/mascot.js';
+import { MASCOT_DATA_URI, MASCOT_BUST_DATA_URI } from './shield/mascot.js';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const BASE_DIFFICULTY = { lenient: 3, balanced: 4, strict: 5 };
@@ -278,7 +278,7 @@ export const nebulaShield = {
       return: returnUrl || '/',
     }).replace(/</g, '\\u003c');
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
-    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost).replace('__CELEBRATION__', CELEBRATION_SNIPPET).replace(/__MASCOT__/g, MASCOT_DATA_URI);
+    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost).replace('__CELEBRATION__', CELEBRATION_SNIPPET).replace(/__MASCOT__/g, MASCOT_DATA_URI).replace(/__BUST__/g, MASCOT_BUST_DATA_URI);
   },
 
   /**
@@ -329,7 +329,7 @@ export const nebulaShield = {
   renderBlockPage(host, reason) {
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
     const safeReason = String(reason || 'requête bloquée').replace(/[<>&"]/g, '');
-    return BLOCK_HTML.replace(/__HOST__/g, safeHost).replace('__REASON__', safeReason).replace(/__MASCOT__/g, MASCOT_DATA_URI);
+    return BLOCK_HTML.replace(/__HOST__/g, safeHost).replace('__REASON__', safeReason).replace(/__MASCOT__/g, MASCOT_DATA_URI).replace(/__BUST__/g, MASCOT_BUST_DATA_URI);
   },
 };
 
@@ -364,9 +364,11 @@ const CHALLENGE_HTML = `<!doctype html>
   .widget.ask .spinner{display:none}.widget.ask .box{display:block}
   .widget.ask:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .widget.err.retry{cursor:pointer}
-  .mascot{width:42px;height:42px;flex:none;margin-left:auto;opacity:.9;filter:invert(1)}
-  footer .mascot{width:18px;height:18px;margin:0 6px 0 0;vertical-align:-4px;opacity:.9}
-  @media (prefers-color-scheme:dark){.mascot{filter:none}}
+  .mascot{width:40px;height:40px;flex:none;margin-left:auto;border-radius:50%}
+  footer .mascot{width:20px;height:20px;margin:0 6px 0 0;vertical-align:-5px}
+  .figure{display:none;position:absolute;right:1.5rem;top:4.5rem;height:340px;width:auto;pointer-events:none;user-select:none;
+    filter:drop-shadow(0 12px 28px rgba(0,0,0,.18))}
+  @media (min-width:900px){main{position:relative;padding-right:22rem}.figure{display:block}}
   .label{font-size:14px;font-weight:500;line-height:1.25}
   .status{margin-top:.75rem;font-size:13px;color:var(--muted);min-height:1.2em}
   .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
@@ -383,6 +385,7 @@ const CHALLENGE_HTML = `<!doctype html>
 </head>
 <body>
   <main>
+    <img class="figure" src="__BUST__" alt="" aria-hidden="true">
     <h1>__HOST__</h1>
     <h2>Vérification de votre navigateur avant d'accéder au site.</h2>
     <div class="widget" id="widget" tabindex="-1">
@@ -557,13 +560,15 @@ const BLOCK_HTML = `<!doctype html>
   .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
   footer{width:100%;max-width:60rem;margin:0 auto;padding:1.5rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.5rem 2rem;justify-content:space-between;font-size:12px;color:var(--muted)}
   footer b{font-weight:600;color:var(--text)}
-  footer .mascot{width:18px;height:18px;margin:0 6px 0 0;vertical-align:-4px;opacity:.9;filter:invert(1)}
-  @media (prefers-color-scheme:dark){footer .mascot{filter:none}}
+  footer .mascot{width:20px;height:20px;margin:0 6px 0 0;vertical-align:-5px;border-radius:50%}
+  .figure{display:none;position:absolute;right:1.5rem;top:4.5rem;height:340px;width:auto;pointer-events:none;user-select:none;filter:grayscale(1) opacity(.85) drop-shadow(0 12px 28px rgba(0,0,0,.18))}
+  @media (min-width:900px){main{position:relative;padding-right:22rem}.figure{display:block}}
   @media (max-width:600px){main{padding-top:3.5rem}h1{font-size:1.75rem}h2{font-size:1.2rem}}
 </style>
 </head>
 <body>
   <main>
+    <img class="figure" src="__BUST__" alt="" aria-hidden="true">
     <h1>__HOST__</h1>
     <h2>Désolé, vous avez été bloqué.</h2>
     <div class="widget"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13"/><path d="M11 11l10 10M21 11L11 21"/></svg><span class="label">Accès refusé</span></div>
