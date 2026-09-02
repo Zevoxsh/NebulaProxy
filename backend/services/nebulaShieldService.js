@@ -20,6 +20,7 @@ import { config } from '../config/config.js';
 import { redisService } from './redis.js';
 import { classifyUserAgent, headerSuspicion, scoreFingerprint } from './shield/signatures.js';
 import { CELEBRATION_SNIPPET } from './shield/celebration.js';
+import { MASCOT_DATA_URI } from './shield/mascot.js';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const BASE_DIFFICULTY = { lenient: 3, balanced: 4, strict: 5 };
@@ -277,7 +278,7 @@ export const nebulaShield = {
       return: returnUrl || '/',
     }).replace(/</g, '\\u003c');
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
-    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost).replace('__CELEBRATION__', CELEBRATION_SNIPPET);
+    return CHALLENGE_HTML.replace('__DATA__', data).replace(/__HOST__/g, safeHost).replace('__CELEBRATION__', CELEBRATION_SNIPPET).replace(/__MASCOT__/g, MASCOT_DATA_URI);
   },
 
   /**
@@ -328,7 +329,7 @@ export const nebulaShield = {
   renderBlockPage(host, reason) {
     const safeHost = String(host || '').replace(/[<>&"]/g, '');
     const safeReason = String(reason || 'requête bloquée').replace(/[<>&"]/g, '');
-    return BLOCK_HTML.replace(/__HOST__/g, safeHost).replace('__REASON__', safeReason);
+    return BLOCK_HTML.replace(/__HOST__/g, safeHost).replace('__REASON__', safeReason).replace(/__MASCOT__/g, MASCOT_DATA_URI);
   },
 };
 
@@ -350,7 +351,7 @@ const CHALLENGE_HTML = `<!doctype html>
   main{flex:1;width:100%;max-width:60rem;margin:0 auto;padding:6rem 1.5rem 2rem}
   h1{font-size:2.25rem;line-height:1.2;font-weight:500;margin:0 0 .5rem;word-break:break-word}
   h2{font-size:1.5rem;line-height:1.3;font-weight:400;margin:0 0 2rem}
-  .widget{display:flex;align-items:center;gap:14px;width:300px;max-width:100%;height:65px;padding:0 16px;border:1px solid var(--line);
+  .widget{display:flex;align-items:center;gap:14px;width:360px;max-width:100%;height:65px;padding:0 14px 0 16px;border:1px solid var(--line);
     border-radius:4px;background:var(--box)}
   .spinner{width:28px;height:28px;flex:none;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
   .check{display:none;width:28px;height:28px;flex:none}
@@ -358,7 +359,15 @@ const CHALLENGE_HTML = `<!doctype html>
   .check path{fill:none;stroke:var(--ok);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30;animation:draw .35s ease-out .3s forwards}
   .widget.ok .spinner{display:none}.widget.ok .check{display:block}
   .widget.err{border-color:var(--err)}.widget.err .spinner{display:none}
-  .label{font-size:15px;font-weight:500}
+  .box{display:none;width:24px;height:24px;flex:none;border:2px solid var(--muted);border-radius:4px;background:var(--bg);position:relative}
+  .widget.ask{cursor:pointer}.widget.ask:hover{border-color:var(--accent)}.widget.ask:hover .box{border-color:var(--accent)}
+  .widget.ask .spinner{display:none}.widget.ask .box{display:block}
+  .widget.ask:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .widget.err.retry{cursor:pointer}
+  .mascot{width:42px;height:42px;flex:none;margin-left:auto;opacity:.9;filter:invert(1)}
+  footer .mascot{width:18px;height:18px;margin:0 6px 0 0;vertical-align:-4px;opacity:.9}
+  @media (prefers-color-scheme:dark){.mascot{filter:none}}
+  .label{font-size:14px;font-weight:500;line-height:1.25}
   .status{margin-top:.75rem;font-size:13px;color:var(--muted);min-height:1.2em}
   .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
   footer{width:100%;max-width:60rem;margin:0 auto;padding:1.5rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.5rem 2rem;
@@ -376,10 +385,12 @@ const CHALLENGE_HTML = `<!doctype html>
   <main>
     <h1>__HOST__</h1>
     <h2>Vérification de votre navigateur avant d'accéder au site.</h2>
-    <div class="widget" id="widget">
+    <div class="widget" id="widget" tabindex="-1">
       <div class="spinner" aria-hidden="true"></div>
+      <div class="box" aria-hidden="true"></div>
       <svg class="check" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13"/><path d="M10 16.5l4 4 8-9"/></svg>
       <span class="label" id="label">Vérification…</span>
+      <img class="mascot" src="__MASCOT__" alt="" aria-hidden="true">
     </div>
     <div class="status" id="status" aria-live="polite"></div>
     <noscript><div class="widget" style="margin-top:1rem"><span class="label">JavaScript est requis pour continuer.</span></div></noscript>
@@ -387,7 +398,7 @@ const CHALLENGE_HTML = `<!doctype html>
   </main>
   <footer>
     <span>Référence : <code id="ref">—</code></span>
-    <span>Performance et sécurité par <b>Bouclier Nebula</b></span>
+    <span><img class="mascot" src="__MASCOT__" alt="" aria-hidden="true">Performance et sécurité par <b>Bouclier Nebula</b></span>
   </footer>
   <script id="nb-data" type="application/json">__DATA__</script>
   <script>
@@ -455,26 +466,66 @@ const CHALLENGE_HTML = `<!doctype html>
       };
     };
     var fpData = collectFP();
-    var blob=new Blob(['('+sha256src.toString()+')()'],{type:'application/javascript'});
-    var worker=new Worker(URL.createObjectURL(blob));
-    worker.onmessage=function(ev){
-      var d=ev.data;
-      if(d.progress){ statusEl.textContent='Calcul en cours… ('+d.progress.toLocaleString('fr-FR')+' itérations)'; return; }
-      if(d.done){
-        statusEl.textContent='Validation auprès du serveur…';
-        fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:d.nonce,hash:d.hash,fp:fpData,'return':cfg['return']})})
-        .then(function(r){return r.json();})
-        .then(function(j){if(j&&j.ok){setState('ok','Réussi','Redirection…');
-            var go=function(){location.replace(j['return']||cfg['return']||'/');};
-            if(window.nebulaCelebrate){window.nebulaCelebrate(go);}else{setTimeout(go,600);}}
-          else if(j&&j.blocked){setState('err','Accès refusé','');location.reload();}
-          else{setState('err','Échec','Nouvelle tentative…');setTimeout(function(){location.reload();},1200);}})
-        .catch(function(){setState('err','Erreur réseau','Rechargez la page pour réessayer.');});
-      }
-    };
-    setState('', 'Vérification…', 'Analyse de votre navigateur…');
-    worker.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
+    var attempts = 0, interactive = false, worker = null, timer = null, busy = false;
+    var POW_TIMEOUT_MS = 25000;
+
+    function stopWorker(){ try{ if(worker) worker.terminate(); }catch(e){} worker = null; if(timer){ clearTimeout(timer); timer = null; } }
+
+    // Fallback: the automatic check failed (no worker, timeout, network error,
+    // rejected proof). Ask for an explicit click, Turnstile-style, then retry.
+    function askClick(reason){
+      stopWorker(); busy = false;
+      widget.setAttribute('role','button'); widget.setAttribute('tabindex','0');
+      setState('ask', 'Confirmez que vous êtes humain', reason || 'La vérification automatique n’a pas abouti. Cliquez pour continuer.');
+    }
+    function fail(reason){
+      stopWorker(); busy = false;
+      widget.setAttribute('role','button'); widget.setAttribute('tabindex','0');
+      setState('err retry', 'Échec de la vérification', (reason||'Impossible de valider votre navigateur.')+' Cliquez pour recharger la page.');
+    }
+    widget.addEventListener('click', function(){
+      if(busy) return;
+      if(widget.classList.contains('retry')){ location.reload(); return; }
+      if(widget.classList.contains('ask')){ interactive = true; run(); }
+    });
+    widget.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); widget.click(); } });
+
+    function submit(nonce, hash){
+      statusEl.textContent='Validation auprès du serveur…';
+      var body={challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:nonce,hash:hash,fp:fpData,'return':cfg['return']};
+      if(interactive) body.interaction = true;
+      fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(j&&j.ok){ busy=false; setState('ok','Réussi','Redirection…');
+          var go=function(){location.replace(j['return']||cfg['return']||'/');};
+          if(window.nebulaCelebrate){window.nebulaCelebrate(go);}else{setTimeout(go,600);} return; }
+        if(j&&j.blocked){ busy=false; setState('err','Accès refusé',''); setTimeout(function(){location.reload();},800); return; }
+        if(attempts>=2){ fail('Le défi a expiré.'); return; }
+        askClick('La preuve n’a pas été acceptée. Cliquez pour réessayer.');
+      })
+      .catch(function(){ if(attempts>=2){ fail('Erreur réseau.'); return; } askClick('Erreur réseau. Cliquez pour réessayer.'); });
+    }
+
+    function run(){
+      if(busy) return; busy = true; attempts++;
+      widget.removeAttribute('role'); widget.setAttribute('tabindex','-1');
+      setState('', 'Vérification…', interactive ? 'Nouvelle vérification…' : 'Analyse de votre navigateur…');
+      if(typeof Worker==='undefined' || typeof Blob==='undefined' || !window.URL || !URL.createObjectURL){ askClick('Votre navigateur ne permet pas la vérification automatique.'); return; }
+      try{
+        var blob=new Blob(['('+sha256src.toString()+')()'],{type:'application/javascript'});
+        worker=new Worker(URL.createObjectURL(blob));
+      }catch(e){ askClick('Votre navigateur ne permet pas la vérification automatique.'); return; }
+      worker.onerror=function(){ askClick(); };
+      worker.onmessage=function(ev){
+        var d=ev.data;
+        if(d.progress){ statusEl.textContent='Calcul en cours… ('+d.progress.toLocaleString('fr-FR')+' itérations)'; return; }
+        if(d.done){ stopWorker(); submit(d.nonce, d.hash); }
+      };
+      timer=setTimeout(function(){ if(busy && worker){ askClick('La vérification prend trop de temps. Cliquez pour réessayer.'); } }, POW_TIMEOUT_MS);
+      worker.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
+    }
+    run();
   })();
   </script>
 __CELEBRATION__
@@ -506,6 +557,8 @@ const BLOCK_HTML = `<!doctype html>
   .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
   footer{width:100%;max-width:60rem;margin:0 auto;padding:1.5rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.5rem 2rem;justify-content:space-between;font-size:12px;color:var(--muted)}
   footer b{font-weight:600;color:var(--text)}
+  footer .mascot{width:18px;height:18px;margin:0 6px 0 0;vertical-align:-4px;opacity:.9;filter:invert(1)}
+  @media (prefers-color-scheme:dark){footer .mascot{filter:none}}
   @media (max-width:600px){main{padding-top:3.5rem}h1{font-size:1.75rem}h2{font-size:1.2rem}}
 </style>
 </head>
@@ -519,7 +572,7 @@ const BLOCK_HTML = `<!doctype html>
   </main>
   <footer>
     <span>Code : <b>403</b></span>
-    <span>Performance et sécurité par <b>Bouclier Nebula</b></span>
+    <span><img class="mascot" src="__MASCOT__" alt="" aria-hidden="true">Performance et sécurité par <b>Bouclier Nebula</b></span>
   </footer>
 </body>
 </html>`;
