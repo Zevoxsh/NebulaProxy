@@ -339,45 +339,63 @@ const CHALLENGE_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex,nofollow" />
-<title>Vérification — Bouclier Nebula</title>
+<meta name="color-scheme" content="light dark" />
+<title>Un instant… | __HOST__</title>
 <style>
-  :root { --bg:#0a0a0b; --line:rgba(255,255,255,.09); --text:#f4f4f5; --muted:#a1a1aa; --accent:#9D4EDD; --accent2:#22d3ee; }
-  *{box-sizing:border-box} html,body{margin:0;height:100%}
-  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--text);
-    background:radial-gradient(circle at 25% 12%,rgba(157,78,221,.18),transparent 45%),radial-gradient(circle at 82% 12%,rgba(34,211,238,.10),transparent 40%),linear-gradient(160deg,#0a0a0b,#0d0d15 60%,#08080c);
-    display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{width:100%;max-width:420px;border:1px solid var(--line);border-radius:18px;padding:30px 28px;
-    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));text-align:center}
-  .mark{width:54px;height:54px;margin:0 auto 18px;border-radius:15px;border:1px solid rgba(157,78,221,.4);
-    display:flex;align-items:center;justify-content:center;background:rgba(157,78,221,.12)}
-  .mark .dot{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--accent2),var(--accent));
-    box-shadow:0 0 18px rgba(157,78,221,.75);animation:pulse 1.8s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  h1{font-size:19px;margin:0 0 6px;letter-spacing:-.01em}
-  p{margin:0;color:var(--muted);font-size:13px}
-  .bar{height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:22px 0 10px}
-  .fill{height:100%;width:8%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s}
-  .status{font-size:12px;color:var(--muted);min-height:16px}
-  .brand{margin-top:22px;font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
-  .brand b{color:#cbb6ea;font-weight:700}
-  noscript{display:block;margin-top:14px;color:#fca5a5;font-size:12px}
+  :root{--bg:#ffffff;--text:#313131;--muted:#6b6b6b;--line:#d9d9d9;--box:#fafafa;--accent:#6b21a8;--ok:#0f9d58;--err:#d93025}
+  @media (prefers-color-scheme:dark){:root{--bg:#1b1b1d;--text:#e8e8e8;--muted:#a3a3a3;--line:#3a3a3d;--box:#232326;--accent:#c084fc;--ok:#34d399;--err:#f87171}}
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100vh}
+  main{flex:1;width:100%;max-width:60rem;margin:0 auto;padding:6rem 1.5rem 2rem}
+  h1{font-size:2.25rem;line-height:1.2;font-weight:500;margin:0 0 .5rem;word-break:break-word}
+  h2{font-size:1.5rem;line-height:1.3;font-weight:400;margin:0 0 2rem}
+  .widget{display:flex;align-items:center;gap:14px;width:300px;max-width:100%;height:65px;padding:0 16px;border:1px solid var(--line);
+    border-radius:4px;background:var(--box)}
+  .spinner{width:28px;height:28px;flex:none;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+  .check{display:none;width:28px;height:28px;flex:none}
+  .check circle{fill:none;stroke:var(--ok);stroke-width:2.5;stroke-dasharray:80;stroke-dashoffset:80;animation:draw .45s ease-out forwards}
+  .check path{fill:none;stroke:var(--ok);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30;animation:draw .35s ease-out .3s forwards}
+  .widget.ok .spinner{display:none}.widget.ok .check{display:block}
+  .widget.err{border-color:var(--err)}.widget.err .spinner{display:none}
+  .label{font-size:15px;font-weight:500}
+  .status{margin-top:.75rem;font-size:13px;color:var(--muted);min-height:1.2em}
+  .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
+  footer{width:100%;max-width:60rem;margin:0 auto;padding:1.5rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.5rem 2rem;
+    justify-content:space-between;font-size:12px;color:var(--muted)}
+  footer code{font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
+  footer b{font-weight:600;color:var(--text)}
+  noscript .widget{border-color:var(--err)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2s}.check circle,.check path{animation:none;stroke-dashoffset:0}}
+  @media (max-width:600px){main{padding-top:3.5rem}h1{font-size:1.75rem}h2{font-size:1.2rem}}
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="mark"><span class="dot"></span></div>
-    <h1>Vérification en cours…</h1>
-    <p>On s'assure que vous n'êtes pas un robot avant d'accéder à <b>__HOST__</b>.</p>
-    <div class="bar"><div class="fill" id="fill"></div></div>
-    <div class="status" id="status">Initialisation…</div>
-    <div class="brand">Protégé par le <b>Bouclier Nebula</b></div>
-    <noscript>JavaScript est requis pour passer la vérification.</noscript>
-  </div>
+  <main>
+    <h1>__HOST__</h1>
+    <h2>Vérification de votre navigateur avant d'accéder au site.</h2>
+    <div class="widget" id="widget">
+      <div class="spinner" aria-hidden="true"></div>
+      <svg class="check" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13"/><path d="M10 16.5l4 4 8-9"/></svg>
+      <span class="label" id="label">Vérification…</span>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+    <noscript><div class="widget" style="margin-top:1rem"><span class="label">JavaScript est requis pour continuer.</span></div></noscript>
+    <p class="note">Cette vérification automatique protège <b>__HOST__</b> contre le trafic malveillant. Elle ne prend que quelques secondes et n'exige aucune action de votre part.</p>
+  </main>
+  <footer>
+    <span>Référence : <code id="ref">—</code></span>
+    <span>Performance et sécurité par <b>Bouclier Nebula</b></span>
+  </footer>
   <script id="nb-data" type="application/json">__DATA__</script>
   <script>
   (function(){
     var cfg = JSON.parse(document.getElementById('nb-data').textContent);
-    var statusEl = document.getElementById('status'), fill = document.getElementById('fill');
+    var statusEl = document.getElementById('status'), widget = document.getElementById('widget'), label = document.getElementById('label');
+    try{ document.getElementById('ref').textContent = String(cfg.sig||'').slice(0,16) || String(cfg.challenge||'').slice(0,16); }catch(e){}
+    function setState(kind, text, sub){ widget.className='widget'+(kind?' '+kind:''); label.textContent=text; statusEl.textContent=sub||''; }
 
     function collectFP(){
       var n = navigator, fp = {};
@@ -441,21 +459,21 @@ const CHALLENGE_HTML = `<!doctype html>
     var worker=new Worker(URL.createObjectURL(blob));
     worker.onmessage=function(ev){
       var d=ev.data;
-      if(d.progress){var pct=Math.min(90,8+(d.progress/700));fill.style.width=pct+'%';statusEl.textContent='Preuve de travail… ('+d.progress+' essais)';return;}
+      if(d.progress){ statusEl.textContent='Calcul en cours… ('+d.progress.toLocaleString('fr-FR')+' itérations)'; return; }
       if(d.done){
-        fill.style.width='96%';statusEl.textContent='Vérification…';
+        statusEl.textContent='Validation auprès du serveur…';
         fetch(cfg.verifyPath,{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({challenge:cfg.challenge,issuedAt:cfg.issuedAt,difficulty:cfg.difficulty,sig:cfg.sig,nonce:d.nonce,hash:d.hash,fp:fpData,'return':cfg['return']})})
         .then(function(r){return r.json();})
-        .then(function(j){if(j&&j.ok){fill.style.width='100%';statusEl.textContent='Vérifié !';
+        .then(function(j){if(j&&j.ok){setState('ok','Réussi','Redirection…');
             var go=function(){location.replace(j['return']||cfg['return']||'/');};
-            if(window.nebulaCelebrate){window.nebulaCelebrate(go);}else{go();}}
-          else if(j&&j.blocked){statusEl.textContent='Accès refusé.';location.reload();}
-          else{statusEl.textContent='Échec de la vérification. Nouvelle tentative…';setTimeout(function(){location.reload();},1200);}})
-        .catch(function(){statusEl.textContent='Erreur réseau. Rechargez la page.';});
+            if(window.nebulaCelebrate){window.nebulaCelebrate(go);}else{setTimeout(go,600);}}
+          else if(j&&j.blocked){setState('err','Accès refusé','');location.reload();}
+          else{setState('err','Échec','Nouvelle tentative…');setTimeout(function(){location.reload();},1200);}})
+        .catch(function(){setState('err','Erreur réseau','Rechargez la page pour réessayer.');});
       }
     };
-    statusEl.textContent='Résolution du défi…';
+    setState('', 'Vérification…', 'Analyse de votre navigateur…');
     worker.postMessage({challenge:cfg.challenge,difficulty:cfg.difficulty});
   })();
   </script>
@@ -470,30 +488,38 @@ const BLOCK_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex,nofollow" />
-<title>Accès refusé — Bouclier Nebula</title>
+<meta name="color-scheme" content="light dark" />
+<title>Accès refusé | __HOST__</title>
 <style>
-  html,body{margin:0;height:100%}
-  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#f4f4f5;
-    background:radial-gradient(circle at 25% 12%,rgba(239,68,68,.16),transparent 45%),linear-gradient(160deg,#0a0a0b,#12090c 60%,#08080c);
-    display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{width:100%;max-width:420px;border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:30px 28px;
-    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));text-align:center}
-  .mark{width:54px;height:54px;margin:0 auto 18px;border-radius:15px;border:1px solid rgba(239,68,68,.4);
-    display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.12);font-size:26px}
-  h1{font-size:19px;margin:0 0 6px}
-  p{margin:0;color:#a1a1aa;font-size:13px}
-  .reason{margin-top:14px;font-size:12px;color:#f0a1a1;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:8px 12px;display:inline-block}
-  .brand{margin-top:22px;font-size:11px;color:#a1a1aa;letter-spacing:.14em;text-transform:uppercase}
-  .brand b{color:#cbb6ea;font-weight:700}
+  :root{--bg:#ffffff;--text:#313131;--muted:#6b6b6b;--line:#d9d9d9;--box:#fafafa;--err:#d93025}
+  @media (prefers-color-scheme:dark){:root{--bg:#1b1b1d;--text:#e8e8e8;--muted:#a3a3a3;--line:#3a3a3d;--box:#232326;--err:#f87171}}
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100vh}
+  main{flex:1;width:100%;max-width:60rem;margin:0 auto;padding:6rem 1.5rem 2rem}
+  h1{font-size:2.25rem;line-height:1.2;font-weight:500;margin:0 0 .5rem;word-break:break-word}
+  h2{font-size:1.5rem;line-height:1.3;font-weight:400;margin:0 0 2rem}
+  .widget{display:flex;align-items:center;gap:14px;width:300px;max-width:100%;height:65px;padding:0 16px;border:1px solid var(--err);border-radius:4px;background:var(--box)}
+  .widget svg{width:28px;height:28px;flex:none;fill:none;stroke:var(--err);stroke-width:2.5;stroke-linecap:round}
+  .label{font-size:15px;font-weight:500}
+  .reason{margin-top:.75rem;font-size:13px;color:var(--muted)}
+  .note{margin-top:2rem;font-size:14px;color:var(--muted);max-width:40rem}
+  footer{width:100%;max-width:60rem;margin:0 auto;padding:1.5rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.5rem 2rem;justify-content:space-between;font-size:12px;color:var(--muted)}
+  footer b{font-weight:600;color:var(--text)}
+  @media (max-width:600px){main{padding-top:3.5rem}h1{font-size:1.75rem}h2{font-size:1.2rem}}
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="mark">⛔</div>
-    <h1>Accès refusé</h1>
-    <p>Le trafic automatisé vers <b>__HOST__</b> est bloqué.</p>
+  <main>
+    <h1>__HOST__</h1>
+    <h2>Désolé, vous avez été bloqué.</h2>
+    <div class="widget"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13"/><path d="M11 11l10 10M21 11L11 21"/></svg><span class="label">Accès refusé</span></div>
     <div class="reason">__REASON__</div>
-    <div class="brand">Protégé par le <b>Bouclier Nebula</b></div>
-  </div>
+    <p class="note">Le système de sécurité de <b>__HOST__</b> a identifié cette requête comme du trafic automatisé ou malveillant. Si vous pensez qu'il s'agit d'une erreur, contactez le propriétaire du site.</p>
+  </main>
+  <footer>
+    <span>Code : <b>403</b></span>
+    <span>Performance et sécurité par <b>Bouclier Nebula</b></span>
+  </footer>
 </body>
 </html>`;
