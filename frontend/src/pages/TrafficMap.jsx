@@ -21,6 +21,8 @@ export default function TrafficMap() {
 
   const pulseIdRef = useRef(0);
   const eventLogRef = useRef({}); // { [country]: number[] timestamps }
+  const pulseTimersRef = useRef(new Set()); // cleared on unmount, see the WS effect
+  const volumesSigRef = useRef('');
 
   // Recompute per-country volume over a trailing window every second —
   // gives a "current activity" heatmap instead of an ever-growing total.
@@ -36,7 +38,14 @@ export default function TrafficMap() {
           const coords = COUNTRY_COORDINATES[country];
         if (coords) next.push({ country, count: recent.length, position: toLngLat(coords) });
       }
-      setVolumes(next);
+      // This ticks every second and feeds an SVG map of up to ~250 markers.
+      // Re-rendering it when no count actually moved is pure waste, so only
+      // push a new array when the per-country tallies really changed.
+      const signature = next.map((v) => `${v.country}:${v.count}`).join('|');
+      if (signature !== volumesSigRef.current) {
+        volumesSigRef.current = signature;
+        setVolumes(next);
+      }
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -78,9 +87,11 @@ export default function TrafficMap() {
                 const next = [...prev, pulse];
                 return next.length > MAX_PULSES ? next.slice(next.length - MAX_PULSES) : next;
               });
-              setTimeout(() => {
+              const timer = setTimeout(() => {
+                pulseTimersRef.current.delete(timer);
                 setPulses((prev) => prev.filter((p) => p.id !== id));
               }, PULSE_TTL_MS);
+              pulseTimersRef.current.add(timer);
             }
           }
         } catch { /* ignore */ }
@@ -93,7 +104,19 @@ export default function TrafficMap() {
     }
 
     connect();
-    return () => { unmounted = true; clearTimeout(reconnectTimeout); if (ws) ws.close(); };
+    return () => {
+      unmounted = true;
+      clearTimeout(reconnectTimeout);
+      // One timer per incoming request is in flight at any time; leaving them
+      // running after unmount means setPulses() fires on a dead component.
+      // This also runs when user.id changes, so drop the pulses themselves
+      // too — their removal timers are gone and they would otherwise stay
+      // painted on the map forever.
+      for (const timer of pulseTimersRef.current) clearTimeout(timer);
+      pulseTimersRef.current.clear();
+      setPulses([]);
+      if (ws) ws.close();
+    };
   }, [user?.id]);
 
   return (
