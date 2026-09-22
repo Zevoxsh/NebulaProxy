@@ -149,12 +149,25 @@ if (this.acmeManager) {
     // Get domain info to check challenge type
     const domain = await database.getDomainByHostname(hostname);
 
+    // An unconfigured hostname must never reach certbot. This runs from the
+    // TLS SNI callback, so `hostname` is whatever the client put in the
+    // handshake — scanners sweep thousands of random subdomains a day
+    // (admin.*, accounts.*, uuid-shaped names...). The previous `else` branch
+    // was reached whenever `domain` was null and fired a real ACME order for
+    // every one of them. Two consequences, both observed in production:
+    // Let's Encrypt's 50-certificates-per-registered-domain weekly limit was
+    // burned on names that don't exist, leaving genuine subdomains unable to
+    // issue or renew and falling back to the self-signed cert; and any
+    // unauthenticated client could spawn unbounded certbot processes just by
+    // opening TLS connections with random SNI values.
+    if (!domain) {
+      logger.debug(`[ProxyManager] Skipping ACME for unconfigured hostname ${hostname}`);
+      return;
+    }
+
     // Only auto-request certificate for HTTP-01 challenges
     // DNS-01 challenges must be done manually through the web interface
-    if (domain && domain.acme_challenge_type === 'http-01') {
-      await this.acmeManager.ensureCert(hostname);
-      logger.info(`[ProxyManager] ACME certificate loaded for ${hostname}`);
-    } else if (domain && domain.acme_challenge_type === 'dns-01') {
+    if (domain.acme_challenge_type === 'dns-01') {
       logger.info(`[ProxyManager] Domain ${hostname} requires DNS-01 challenge (manual setup required)`);
     } else {
       await this.acmeManager.ensureCert(hostname);
