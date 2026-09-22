@@ -451,6 +451,18 @@ export const config = {
     get trustedProxies() {
       // SECURITY: Default to localhost/private IPs for trusted proxy headers
       // In production, set TRUSTED_PROXIES env var to specific IPs/CIDR ranges
+      //
+      // Behind a CDN (Cloudflare, Fastly...) this default is NOT enough and
+      // fails silently: the CDN's edge IPs are public, so _getRealClientIp()
+      // (proxyHelpers.js) refuses to trust cf-connecting-ip / x-forwarded-for
+      // and every request is attributed to the edge node instead of the
+      // visitor. Everything keyed on the client IP then collapses onto a
+      // handful of addresses — per-domain rate limiting, Nebula Shield, DDoS
+      // bans, bandwidth quotas and the traffic map alike, which is why a site
+      // behind Cloudflare shows all its traffic coming from one country.
+      // Add the CDN's published ranges to TRUSTED_PROXIES to fix it. The
+      // default stays private-only on purpose: trusting a public range that
+      // isn't actually in front of you lets anyone spoof their own IP.
       const defaultProxies = '127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
       return (getConfig('TRUSTED_PROXIES', defaultProxies) || '')
         .split(',')
